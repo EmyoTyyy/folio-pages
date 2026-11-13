@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build the single file
+        run: npm run build
+      - name: The published app and schema match the sources
+        run: |
+          git show HEAD:docs/folio-pages.html > /tmp/published.html
+          cp /tmp/published.html docs/folio-pages.html
+          node scripts/check-published.mjs
+          git diff --exit-code -- docs/schema
+      - name: Unit tests
+        run: npm test
+      - name: Browsers
+        run: npx playwright install --with-deps chromium firefox
+      - name: End-to-end tests
+        run: npx playwright test --project=chromium-ci --project=firefox
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7

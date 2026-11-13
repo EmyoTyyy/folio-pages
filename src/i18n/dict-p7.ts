@@ -1,0 +1,118 @@
+// Dictionnaire de la phase 7 : mot de passe, mode hors ligne, mises à jour,
+// paquets de langue. Fait partie du dictionnaire unique (dict.ts le réunit au reste).
+
+type Entry = string | { one: string; other: string }
+type Row = { fr: Entry; en: Entry }
+
+export const P7_DICT = {
+  // Protection par mot de passe.
+  'protect.fileTitle': { fr: 'Document protégé', en: 'Protected document' },
+  'protect.menu': { fr: 'Protéger par mot de passe…', en: 'Protect with a password…' },
+  'protect.group': { fr: 'Protéger', en: 'Protect' },
+  'protect.button': { fr: 'Mot de passe', en: 'Password' },
+  'protect.title': { fr: 'Protéger par mot de passe', en: 'Protect with a password' },
+  'protect.changeTitle': { fr: 'Mot de passe du document', en: 'Document password' },
+  'protect.intro': {
+    fr: 'Le document sera chiffré (AES-256) : sans le mot de passe, le fichier ne montre rien de son contenu, pas même son titre.',
+    en: 'The document will be encrypted (AES-256): without the password, the file shows nothing of its content, not even its title.',
+  },
+  'protect.warning': {
+    fr: 'Un mot de passe perdu ne peut pas être récupéré. Personne ne peut rouvrir le document sans lui : ni vous, ni nous. Notez-le en lieu sûr.',
+    en: 'A lost password cannot be recovered. Nobody can reopen the document without it: not you, not us. Keep it somewhere safe.',
+  },
+  'protect.password': { fr: 'Mot de passe', en: 'Password' },
+  'protect.confirm': { fr: 'Confirmer le mot de passe', en: 'Confirm the password' },
+  'protect.understand': { fr: 'J’ai compris : un mot de passe oublié ne se retrouve pas.', en: 'I understand: a forgotten password cannot be found again.' },
+  'protect.mismatch': { fr: 'Les deux mots de passe ne sont pas identiques.', en: 'The two passwords are not the same.' },
+  'protect.tooShort': { fr: 'Au moins 6 caractères.', en: 'At least 6 characters.' },
+  'protect.mustAccept': { fr: 'Cochez la case pour confirmer.', en: 'Tick the box to confirm.' },
+  'protect.apply': { fr: 'Protéger', en: 'Protect' },
+  'protect.change': { fr: 'Changer le mot de passe', en: 'Change password' },
+  'protect.remove': { fr: 'Retirer la protection', en: 'Remove protection' },
+  'protect.isOn': { fr: 'Ce document est protégé par un mot de passe.', en: 'This document is protected by a password.' },
+  'protect.done': { fr: 'Protection prête : elle s’applique à l’enregistrement.', en: 'Protection ready: it applies when you save.' },
+  'protect.removed': { fr: 'Protection retirée : le prochain enregistrement sera en clair.', en: 'Protection removed: the next save will be unencrypted.' },
+  'protect.strength.0': { fr: 'Faible', en: 'Weak' },
+  'protect.strength.1': { fr: 'Moyen', en: 'Fair' },
+  'protect.strength.2': { fr: 'Bon', en: 'Good' },
+  'protect.strength.3': { fr: 'Fort', en: 'Strong' },
+  'protect.chip': { fr: 'Protégé', en: 'Protected' },
+  'protect.show': { fr: 'Afficher', en: 'Show' },
+  // Écran de déverrouillage.
+  'unlock.title': { fr: 'Document protégé', en: 'Protected document' },
+  'unlock.body': { fr: 'Ce document est chiffré. Saisissez son mot de passe pour l’ouvrir.', en: 'This document is encrypted. Enter its password to open it.' },
+  'unlock.open': { fr: 'Ouvrir', en: 'Open' },
+  'unlock.wrong': { fr: 'Mot de passe incorrect.', en: 'Wrong password.' },
+  'unlock.working': { fr: 'Déchiffrement…', en: 'Decrypting…' },
+  'unlock.lost': {
+    fr: 'Mot de passe perdu ? Il ne peut pas être récupéré : le contenu reste illisible, sans exception.',
+    en: 'Lost the password? It cannot be recovered: the content stays unreadable, without exception.',
+  },
+  'unlock.damaged': { fr: 'Ce document chiffré est abîmé : il ne peut pas être lu.', en: 'This encrypted document is damaged: it cannot be read.' },
+  'open.passwordTitle': { fr: 'Ouvrir « {name} »', en: 'Open “{name}”' },
+  // Mode hors ligne.
+  'offline.label': { fr: 'Mode hors ligne', en: 'Offline mode' },
+  'offline.hint': {
+    fr: 'Aucune fonction réseau : ni image du web, ni lien externe, ni mise à jour, ni téléchargement de langue.',
+    en: 'No network feature: no web picture, no external link, no update, no language download.',
+  },
+  'offline.on': { fr: 'Mode hors ligne activé : rien ne part sur le réseau.', en: 'Offline mode on: nothing goes over the network.' },
+  'offline.off': { fr: 'Mode hors ligne désactivé.', en: 'Offline mode off.' },
+  'offline.chip': { fr: 'Hors ligne', en: 'Offline' },
+  // Mises à jour.
+  'update.group': { fr: 'Mises à jour', en: 'Updates' },
+  'update.check': { fr: 'Rechercher une mise à jour', en: 'Check for updates' },
+  'update.checking': { fr: 'Recherche d’une mise à jour…', en: 'Checking for updates…' },
+  'update.current': { fr: 'Folio Pages {version} est la dernière version.', en: 'Folio Pages {version} is the latest version.' },
+  'update.offline': { fr: 'Mode hors ligne : la recherche de mise à jour est désactivée.', en: 'Offline mode: checking for updates is turned off.' },
+  'update.failed': { fr: 'La mise à jour n’a pas abouti : {message}', en: 'The update did not go through: {message}' },
+  'update.availableTitle': { fr: 'Version {version} disponible', en: 'Version {version} available' },
+  'update.availableBody': {
+    fr: 'Mettre à jour ce fichier remplace l’application ({from} → {to}) et garde votre document tel quel.',
+    en: 'Updating this file replaces the application ({from} → {to}) and keeps your document as it is.',
+  },
+  'update.howInPlace': { fr: 'Le fichier ouvert est réécrit à sa place.', en: 'The open file is rewritten in place.' },
+  'update.howDownload': { fr: 'Le fichier mis à jour est téléchargé : il remplace l’ancien.', en: 'The updated file is downloaded: it replaces the old one.' },
+  'update.trust': {
+    fr: 'La nouvelle version n’est acceptée que si sa signature et son empreinte sont valides.',
+    en: 'The new version is accepted only if its signature and fingerprint are valid.',
+  },
+  'update.apply': { fr: 'Mettre à jour ce fichier', en: 'Update this file' },
+  'update.doneInPlace': { fr: '{name} est en version {version}. Rouvrez-le pour l’utiliser.', en: '{name} is now version {version}. Reopen it to use it.' },
+  'update.doneDownload': { fr: 'Version {version} téléchargée : {name}. Ouvrez ce fichier.', en: 'Version {version} downloaded: {name}. Open that file.' },
+  'update.updated': { fr: 'Folio Pages est passé de la version {from} à {to}.', en: 'Folio Pages went from version {from} to {to}.' },
+  'update.whatsNew': { fr: 'Nouveautés', en: 'What’s new' },
+  'update.whatsNewTitle': { fr: 'Nouveautés de Folio Pages {version}', en: 'What’s new in Folio Pages {version}' },
+  'update.versionLabel': { fr: 'Version {version}', en: 'Version {version}' },
+  // Paquets de langue.
+  'pack.title': { fr: 'Langues', en: 'Languages' },
+  'pack.intro': {
+    fr: 'Le français et l’anglais sont intégrés. Une autre langue s’ajoute par un paquet (un fichier .json) ; une phrase qu’il ne traduit pas s’affiche en anglais.',
+    en: 'French and English are built in. Another language comes as a pack (a .json file); a sentence it does not translate shows in English.',
+  },
+  'pack.current': { fr: 'Langue de l’interface : {name}', en: 'Interface language: {name}' },
+  'pack.none': { fr: 'Aucun paquet de langue ajouté.', en: 'No language pack added.' },
+  'pack.add': { fr: 'Ajouter une langue…', en: 'Add a language…' },
+  'pack.manage': { fr: 'Gérer les langues…', en: 'Manage languages…' },
+  'pack.remove': { fr: 'Retirer', en: 'Remove' },
+  'pack.embed': { fr: 'Garder dans ce fichier', en: 'Keep in this file' },
+  'pack.embedHint': {
+    fr: 'Une langue gardée dans le fichier voyage avec le document : qui l’ouvre l’a aussi (après l’enregistrement).',
+    en: 'A language kept in the file travels with the document: whoever opens it gets it too (after saving).',
+  },
+  'pack.template': { fr: 'Modèle de traduction', en: 'Translation template' },
+  'pack.count': {
+    fr: { one: '{n} phrase', other: '{n} phrases' },
+    en: { one: '{n} sentence', other: '{n} sentences' },
+  },
+  'pack.added': {
+    fr: { one: 'Langue ajoutée : {name} ({n} phrase traduite, {missing} en anglais).', other: 'Langue ajoutée : {name} ({n} phrases traduites, {missing} en anglais).' },
+    en: { one: 'Language added: {name} ({n} sentence translated, {missing} in English).', other: 'Language added: {name} ({n} sentences translated, {missing} in English).' },
+  },
+  'pack.format': { fr: 'Ce fichier n’est pas un paquet de langue Folio Pages.', en: 'This file is not a Folio Pages language pack.' },
+  'pack.lang': { fr: 'Le code de langue du paquet n’est pas valide (par exemple « de » ou « pt-BR »).', en: 'The pack’s language code is not valid (for example “de” or “pt-BR”).' },
+  'pack.builtin': { fr: 'Le français et l’anglais sont déjà intégrés.', en: 'French and English are already built in.' },
+  'pack.empty': { fr: 'Ce paquet ne contient aucune phrase utilisable.', en: 'This pack holds no usable sentence.' },
+  'pack.bad': { fr: 'Ce paquet de langue est illisible.', en: 'This language pack cannot be read.' },
+  'offline.blocked': { fr: 'Mode hors ligne : les adresses du web ne s’ouvrent pas. (Aide → Mode hors ligne pour le désactiver.)', en: 'Offline mode: web addresses do not open. (Help → Offline mode to turn it off.)' },
+} satisfies Record<string, Row>

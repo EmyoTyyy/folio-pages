@@ -1,0 +1,45 @@
+{
+  "format": "folio/doc",
+  "version": 1,
+  "meta": {
+    "title": "Compte rendu – Assemblée du club de randonnée",
+    "author": "Secrétariat du club",
+    "lang": "fr",
+    "keywords": ["randonnée", "assemblée", "budget"]
+  },
+  "blocks": [
+    { "type": "heading", "text": "Compte rendu – Assemblée du club de randonnée" },
+    { "md": "Réunion du **14 octobre 2026**, salle des fêtes. Présents : 23 membres sur 31. Le quorum est atteint." },
+    { "type": "heading", "level": 2, "text": "Ordre du jour" },
+    { "type": "list", "style": "number", "items": ["Bilan de la saison", "Budget 2027", "Sorties du printemps", "Questions diverses"] },
+    { "type": "heading", "level": 2, "text": "Bilan de la saison" },
+    { "md": "La saison compte **18 sorties** et 412 kilomètres parcourus. La sortie la plus suivie reste le tour du lac (*29 participants*)." },
+    { "type": "heading", "level": 2, "text": "Budget 2027" },
+    {
+      "type": "table",
+      "rows": [
+        ["Poste", "2026", "2027 (prévision)"],
+        ["Cotisations", "1 860 €", "1 950 €"],
+        ["Transport", "−940 €", "−1 000 €"],
+        ["Assurance", "−420 €", "−430 €"],
+        [{ "md": "**Solde**" }, { "md": "**500 €**" }, { "md": "**520 €**" }]
+      ]
+    },
+    { "type": "heading", "level": 2, "text": "Sorties du printemps" },
+    {
+      "type": "list",
+      "items": [
+        "Mars : forêt domaniale",
+        { "text": "Boucle courte de 9 km", "level": 1 },
+        { "text": "Boucle longue de 16 km", "level": 1 },
+        "Avril : crêtes du Jura",
+        { "md": "Mai : week-end en refuge (*inscription avant le 1^er^ avril*)" }
+      ]
+    },
+    { "type": "quote", "text": "Marcher ensemble, c’est déjà arriver un peu. — devise du club" },
+    { "type": "heading", "level": 2, "text": "Décisions" },
+    { "md": "La cotisation passe à **62 €** (adopté à l’unanimité). Le calendrier complet sera publié sur [le site du club](https://example.org/club)." },
+    { "type": "divider" },
+    { "md": "Prochaine assemblée : *octobre 2027*. Les comptes détaillés sont disponibles sur demande." }
+  ]
+}

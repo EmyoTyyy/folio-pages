@@ -1,0 +1,10 @@
+{
+  "name": "folio-pages",
+  "description": "Write Folio Pages documents: single-file HTML word-processor documents whose content is plain JSON. Starts from nothing: downloads the latest blank app automatically.",
+  "version": "0.1.0",
+  "author": { "name": "Folio Pages contributors", "url": "https://github.com/EmyoTyyy/folio-pages" },
+  "homepage": "https://emyotyyy.github.io/folio-pages/",
+  "repository": "https://github.com/EmyoTyyy/folio-pages",
+  "license": "MIT",
+  "keywords": ["document", "word processor", "report", "letter", "folio"]
+}

@@ -1,0 +1,4088 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://emyotyyy.github.io/folio-pages/schema/folio-1.json",
+  "title": "Folio Pages document",
+  "description": "A Folio Pages document.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "format": {
+      "description": "Always \"folio/doc\".",
+      "type": "string",
+      "maxLength": 40
+    },
+    "version": {
+      "description": "Format version. This is version 1.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "id": {
+      "description": "Document identity. Leave it out: the app creates one.",
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]{6,64}$"
+    },
+    "meta": {
+      "description": "Document properties.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "description": "Document title: browser tab and suggested file name.",
+          "type": "string",
+          "maxLength": 500,
+          "default": ""
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 300,
+          "default": ""
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 500,
+          "default": ""
+        },
+        "organization": {
+          "type": "string",
+          "maxLength": 300,
+          "default": ""
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "maxItems": 100
+        },
+        "lang": {
+          "description": "Language of the text, for example \"fr\" or \"en-GB\".",
+          "type": "string",
+          "maxLength": 35,
+          "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+          "default": ""
+        },
+        "created": {
+          "description": "Set by the app.",
+          "type": "string",
+          "maxLength": 40,
+          "format": "date-time",
+          "default": ""
+        },
+        "modified": {
+          "description": "Set by the app on every save.",
+          "type": "string",
+          "maxLength": 40,
+          "format": "date-time",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "page": {
+      "description": "Page setup. Lengths in millimetres.",
+      "type": "object",
+      "properties": {
+        "size": {
+          "description": "Paper: A3, A4, A5, B5, Letter, Legal, Tabloid, Executive, or custom (give width and height).",
+          "type": "string",
+          "enum": [
+            "A3",
+            "A4",
+            "A5",
+            "B5",
+            "Letter",
+            "Legal",
+            "Tabloid",
+            "Executive",
+            "custom"
+          ]
+        },
+        "width": {
+          "description": "Paper width in millimetres (portrait), for a custom size.",
+          "type": "number",
+          "minimum": 50,
+          "maximum": 1200
+        },
+        "height": {
+          "description": "Paper height in millimetres (portrait), for a custom size.",
+          "type": "number",
+          "minimum": 50,
+          "maximum": 1200
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "portrait",
+            "landscape"
+          ]
+        },
+        "margins": {
+          "description": "Margins in millimetres.",
+          "type": "object",
+          "properties": {
+            "top": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300
+            },
+            "right": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300
+            },
+            "bottom": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300
+            },
+            "left": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 300
+            }
+          },
+          "additionalProperties": false
+        },
+        "header": {
+          "description": "Distance of the header from the top edge, in millimetres.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "footer": {
+          "description": "Distance of the footer from the bottom edge, in millimetres.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "firstPage": {
+          "description": "A different header and footer on the first page.",
+          "type": "boolean"
+        },
+        "evenOdd": {
+          "description": "A different header and footer on even pages.",
+          "type": "boolean"
+        },
+        "numberStart": {
+          "description": "Number of the first page.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "numberFormat": {
+          "description": "Page numbers: decimal (1), roman (i), ROMAN (I), alpha (a), ALPHA (A).",
+          "type": "string",
+          "enum": [
+            "decimal",
+            "roman",
+            "ROMAN",
+            "alpha",
+            "ALPHA"
+          ]
+        },
+        "background": {
+          "description": "Page colour.",
+          "type": "string",
+          "maxLength": 30
+        },
+        "border": {
+          "description": "Draw a border around each page, in this colour.",
+          "type": "string",
+          "maxLength": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "headers": {
+      "description": "Page headers: paragraphs, images, small tables.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "The header of every page. Fields such as {{page}} and {{pages}} work here.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        },
+        "first": {
+          "description": "The header of the first page, when page.firstPage is true.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        },
+        "even": {
+          "description": "The header of even pages, when page.evenOdd is true.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        }
+      },
+      "additionalProperties": false
+    },
+    "footers": {
+      "description": "Page footers: paragraphs, images, small tables.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "The footer of every page. Fields such as {{page}} and {{pages}} work here.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        },
+        "first": {
+          "description": "The footer of the first page, when page.firstPage is true.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        },
+        "even": {
+          "description": "The footer of even pages, when page.evenOdd is true.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "description": "Numbering of footnotes and endnotes.",
+      "type": "object",
+      "properties": {
+        "foot": {
+          "description": "Footnotes.",
+          "type": "object",
+          "properties": {
+            "format": {
+              "description": "decimal (1), roman (i), ROMAN (I), alpha (a), ALPHA (A), symbols (*, †, ‡…).",
+              "type": "string",
+              "enum": [
+                "decimal",
+                "roman",
+                "ROMAN",
+                "alpha",
+                "ALPHA",
+                "symbols"
+              ],
+              "default": "decimal"
+            },
+            "start": {
+              "description": "Number of the first note.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999,
+              "default": 1
+            },
+            "restart": {
+              "description": "Start numbering again: never (continuous), at each section, or on each page.",
+              "type": "string",
+              "enum": [
+                "continuous",
+                "section",
+                "page"
+              ],
+              "default": "continuous"
+            }
+          },
+          "additionalProperties": false
+        },
+        "end": {
+          "description": "Endnotes.",
+          "type": "object",
+          "properties": {
+            "format": {
+              "description": "decimal (1), roman (i), ROMAN (I), alpha (a), ALPHA (A), symbols (*, †, ‡…).",
+              "type": "string",
+              "enum": [
+                "decimal",
+                "roman",
+                "ROMAN",
+                "alpha",
+                "ALPHA",
+                "symbols"
+              ],
+              "default": "roman"
+            },
+            "start": {
+              "description": "Number of the first note.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9999,
+              "default": 1
+            },
+            "restart": {
+              "description": "Start numbering again: never (continuous) or at each section.",
+              "type": "string",
+              "enum": [
+                "continuous",
+                "section",
+                "page"
+              ],
+              "default": "continuous"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "mailMerge": {
+      "description": "Mail merge: the kind of main document, its recipient list and its settings.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "Kind of main document: letters, emails, envelopes, labels, directory.",
+          "type": "string",
+          "enum": [
+            "letters",
+            "emails",
+            "envelopes",
+            "labels",
+            "directory"
+          ],
+          "default": "letters"
+        },
+        "source": {
+          "description": "The recipient list, kept in the document.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Name of the list (the imported file, for example).",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            },
+            "fields": {
+              "description": "Column names.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "maxItems": 60
+            },
+            "records": {
+              "description": "One array of values per recipient, in the order of \"fields\".",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "maxItems": 60
+              },
+              "maxItems": 10000
+            },
+            "excluded": {
+              "description": "Recipients left out (indices in \"records\").",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "maxItems": 10000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "fields",
+            "records"
+          ]
+        },
+        "map": {
+          "description": "Column of each standard address field (title, first, last, company, address1, address2, city, state, postal, country, email, phone).",
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "first": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "last": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "company": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "address1": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "address2": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "city": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "state": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "postal": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "country": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "email": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "phone": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "additionalProperties": false
+        },
+        "filters": {
+          "description": "Keep only the recipients that pass every filter.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "eq",
+                  "ne",
+                  "lt",
+                  "gt",
+                  "le",
+                  "ge",
+                  "empty",
+                  "notEmpty",
+                  "contains"
+                ],
+                "default": "eq"
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ]
+          },
+          "maxItems": 10
+        },
+        "sort": {
+          "description": "Order of the recipients.",
+          "type": "object",
+          "properties": {
+            "field": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "desc": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "field"
+          ]
+        },
+        "email": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "description": "Column of the e-mail address.",
+              "type": "string",
+              "maxLength": 80
+            },
+            "subject": {
+              "description": "Subject line; «Column» is replaced.",
+              "type": "string",
+              "maxLength": 300,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "to"
+          ]
+        },
+        "label": {
+          "description": "Sheet of labels, in millimetres.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 80,
+              "default": ""
+            },
+            "pageWidth": {
+              "type": "number",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "pageHeight": {
+              "type": "number",
+              "minimum": 50,
+              "maximum": 1000
+            },
+            "cols": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 40
+            },
+            "width": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 500
+            },
+            "height": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 500
+            },
+            "top": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "left": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "hgap": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "vgap": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "pageWidth",
+            "pageHeight",
+            "cols",
+            "rows",
+            "width",
+            "height"
+          ]
+        },
+        "envelope": {
+          "description": "Envelope size in millimetres, and the sender’s address.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 80,
+              "default": ""
+            },
+            "width": {
+              "type": "number",
+              "minimum": 50,
+              "maximum": 500
+            },
+            "height": {
+              "type": "number",
+              "minimum": 50,
+              "maximum": 500
+            },
+            "returnAddress": {
+              "type": "string",
+              "maxLength": 1000,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "description": "Sources cited with \"cite\" items and listed by \"bibliography\" blocks.",
+      "type": "array",
+      "items": {
+        "description": "A source that can be cited.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Short id used by \"cite\" items, for example \"Darwin1859\".",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[\\p{L}\\p{N}_:.-]{1,64}$"
+          },
+          "type": {
+            "description": "book, article (journal), chapter (in a book), website, report, thesis, conference, film, interview, other.",
+            "type": "string",
+            "enum": [
+              "book",
+              "article",
+              "chapter",
+              "website",
+              "report",
+              "thesis",
+              "conference",
+              "film",
+              "interview",
+              "other"
+            ],
+            "default": "book"
+          },
+          "authors": {
+            "description": "Authors as \"Last, First\", or an organisation name.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 30
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 1000,
+            "default": ""
+          },
+          "container": {
+            "description": "Journal, book, website or conference the work is part of.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "editors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20
+          },
+          "publisher": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "place": {
+            "description": "Place of publication.",
+            "type": "string",
+            "maxLength": 200
+          },
+          "year": {
+            "description": "Year, or a date (ISO 8601).",
+            "type": "string",
+            "maxLength": 40
+          },
+          "volume": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "issue": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "pages": {
+            "description": "Pages, for example \"12-34\".",
+            "type": "string",
+            "maxLength": 40
+          },
+          "edition": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "doi": {
+            "description": "DOI without \"https://doi.org/\", for example \"10.1038/171737a0\".",
+            "type": "string",
+            "maxLength": 200
+          },
+          "isbn": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "accessed": {
+            "description": "Date the website was consulted.",
+            "type": "string",
+            "maxLength": 40
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ]
+      },
+      "maxItems": 2000
+    },
+    "citationStyle": {
+      "description": "Citation and bibliography style: apa, mla, chicago (author-date), harvard, ieee (numbered), iso690.",
+      "type": "string",
+      "enum": [
+        "apa",
+        "mla",
+        "chicago",
+        "harvard",
+        "ieee",
+        "iso690"
+      ],
+      "default": "apa"
+    },
+    "math": {
+      "description": "Equations: macros shared by the whole document.",
+      "type": "object",
+      "properties": {
+        "macros": {
+          "description": "LaTeX definitions shared by every formula, for example \"\\newcommand{\\R}{\\mathbb{R}}\".",
+          "type": "string",
+          "maxLength": 50000,
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "theme": {
+      "description": "Document theme: colours and fonts defined once.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Preset the other fields start from: folio, classic, modern, slate, ink or system.",
+          "type": "string",
+          "maxLength": 40
+        },
+        "colors": {
+          "description": "Theme colours. Text and styles refer to them by name, so changing one changes the whole document.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent1": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent2": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent3": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent4": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent5": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "accent6": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "additionalProperties": false
+        },
+        "fonts": {
+          "description": "Built in: \"Hanken Grotesk\" (sans serif), \"Newsreader\" (serif), \"JetBrains Mono\" (monospace).",
+          "type": "object",
+          "properties": {
+            "heading": {
+              "description": "Font of titles and headings.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "body": {
+              "description": "Font of body text.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "mono": {
+              "description": "Font of code.",
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "additionalProperties": false
+        },
+        "code": {
+          "description": "Colours of code listings.",
+          "type": "object",
+          "properties": {
+            "background": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "text": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "keyword": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "string": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "number": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comment": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "function": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "type": {
+              "description": "A colour \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "styles": {
+      "description": "Changed built-in styles and new styles, by id.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "description": "A named style. Built-in styles (normal, title, subtitle, heading1 … heading6, quote, code, caption) may be changed field by field.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Displayed name. Required for a new style.",
+            "type": "string",
+            "maxLength": 100
+          },
+          "basedOn": {
+            "description": "Style this one inherits from.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "next": {
+            "description": "Style of the paragraph that follows.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+          },
+          "font": {
+            "description": "A font family name, or a theme font: heading, body or mono.",
+            "type": "string",
+            "maxLength": 100
+          },
+          "size": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 400
+          },
+          "color": {
+            "description": "A colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+            "type": "string",
+            "maxLength": 30
+          },
+          "highlight": {
+            "type": "string",
+            "maxLength": 30
+          },
+          "bold": {
+            "type": "boolean"
+          },
+          "italic": {
+            "type": "boolean"
+          },
+          "underline": {
+            "type": "boolean"
+          },
+          "strike": {
+            "type": "boolean"
+          },
+          "caps": {
+            "type": "boolean"
+          },
+          "smallcaps": {
+            "type": "boolean"
+          },
+          "letterSpacing": {
+            "type": "number",
+            "minimum": -20,
+            "maximum": 100
+          },
+          "align": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right",
+              "justify"
+            ]
+          },
+          "indent": {
+            "description": "Indents in points.",
+            "type": "object",
+            "properties": {
+              "left": {
+                "description": "Left indent in points (72 pt = 1 inch).",
+                "type": "number",
+                "minimum": -300,
+                "maximum": 1000
+              },
+              "right": {
+                "type": "number",
+                "minimum": -300,
+                "maximum": 1000
+              },
+              "first": {
+                "description": "First-line indent; negative for a hanging indent.",
+                "type": "number",
+                "minimum": -500,
+                "maximum": 1000
+              }
+            },
+            "additionalProperties": false
+          },
+          "spacing": {
+            "description": "Space before and after the paragraph, in points.",
+            "type": "object",
+            "properties": {
+              "before": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000
+              },
+              "after": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000
+              }
+            },
+            "additionalProperties": false
+          },
+          "line": {
+            "description": "Line spacing as a multiple: 1, 1.15, 1.5, 2.",
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 10
+          },
+          "keepNext": {
+            "description": "Keep on the same page as the next paragraph.",
+            "type": "boolean"
+          },
+          "keepLines": {
+            "description": "Do not split this paragraph across pages.",
+            "type": "boolean"
+          },
+          "pageBreakBefore": {
+            "description": "Start on a new page.",
+            "type": "boolean"
+          },
+          "shading": {
+            "description": "Background colour of the paragraph.",
+            "type": "string",
+            "maxLength": 30
+          },
+          "border": {
+            "description": "Draw a border around the paragraph, in this colour.",
+            "type": "string",
+            "maxLength": 30
+          },
+          "dropCap": {
+            "description": "Drop cap: the first letter is enlarged over this many lines (2 to 10).",
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 10
+          }
+        },
+        "additionalProperties": false
+      },
+      "maxProperties": 200
+    },
+    "fonts": {
+      "description": "Fonts embedded in the document.",
+      "type": "array",
+      "items": {
+        "description": "A font embedded in the document.",
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "src": {
+            "description": "\"asset:<id>\" or a data: URI of a .woff2, .woff, .ttf or .otf font.",
+            "type": "string",
+            "maxLength": 30000000
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 900,
+            "default": 400
+          },
+          "italic": {
+            "type": "boolean",
+            "default": false
+          },
+          "unicodeRange": {
+            "description": "Characters this file covers, as in CSS (\"U+0000-00FF, U+0131\"): a font split into subsets.",
+            "type": "string",
+            "maxLength": 4000,
+            "pattern": "^U\\+[0-9A-Fa-f?]{1,6}(-[0-9A-Fa-f]{1,6})?(,\\s*U\\+[0-9A-Fa-f?]{1,6}(-[0-9A-Fa-f]{1,6})?)*$"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "family",
+          "src"
+        ]
+      },
+      "maxItems": 40
+    },
+    "blocks": {
+      "description": "The content, top to bottom. A plain string is a paragraph.",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "description": "A paragraph of plain text.",
+            "type": "string",
+            "maxLength": 1000000
+          },
+          {
+            "$ref": "#/$defs/Block"
+          }
+        ]
+      },
+      "maxItems": 100000
+    },
+    "comments": {
+      "description": "Comment threads. A run says which comments are about it: { \"text\": \"…\", \"comments\": [\"c1\"] }.",
+      "type": "array",
+      "items": {
+        "description": "A comment thread about a passage of text.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Referred to by the \"comments\" of the runs it is about.",
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "author": {
+            "description": "Who wrote it.",
+            "type": "string",
+            "maxLength": 100
+          },
+          "date": {
+            "description": "When, as an ISO 8601 date (\"2026-11-09T14:30:00Z\").",
+            "type": "string",
+            "maxLength": 40
+          },
+          "text": {
+            "description": "The comment, as plain text.",
+            "type": "string",
+            "maxLength": 20000
+          },
+          "resolved": {
+            "description": "Marked as done.",
+            "type": "boolean",
+            "default": false
+          },
+          "replies": {
+            "description": "Answers, oldest first.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who wrote it.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date (\"2026-11-09T14:30:00Z\").",
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "text": {
+                  "description": "The reply, as plain text.",
+                  "type": "string",
+                  "maxLength": 20000
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "text"
+              ]
+            },
+            "maxItems": 1000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "maxItems": 5000
+    },
+    "trackChanges": {
+      "description": "Track changes: additions and deletions are marked until accepted or rejected.",
+      "type": "boolean",
+      "default": false
+    },
+    "hyphenate": {
+      "description": "Automatic hyphenation: long words are split at the end of lines, by the rules of the document language.",
+      "type": "boolean",
+      "default": false
+    },
+    "watermark": {
+      "description": "A watermark behind the text of every page: a text or a picture.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "The watermark text, for example \"DRAFT\" or \"CONFIDENTIAL\".",
+          "type": "string",
+          "maxLength": 60
+        },
+        "image": {
+          "description": "\"asset:<id>\" of a picture (instead of text).",
+          "type": "string",
+          "maxLength": 30000000
+        },
+        "color": {
+          "description": "Text colour (default a light grey).",
+          "type": "string",
+          "maxLength": 30
+        },
+        "diagonal": {
+          "description": "Diagonal (true) or horizontal (false).",
+          "type": "boolean",
+          "default": true
+        },
+        "opacity": {
+          "description": "Opacity in percent.",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 100,
+          "default": 35
+        },
+        "size": {
+          "description": "Font size in points; 0 fits the page.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 400,
+          "default": 0
+        },
+        "scale": {
+          "description": "Picture width, in percent of the text width.",
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 100,
+          "default": 70
+        }
+      },
+      "additionalProperties": false
+    },
+    "template": {
+      "description": "A template: each time the file opens, a new document starts from it.",
+      "type": "boolean",
+      "default": false
+    },
+    "readOnly": {
+      "description": "A read-only copy: the file opens in reading view, without editing.",
+      "type": "boolean",
+      "default": false
+    },
+    "markdown": {
+      "description": "The whole content as Markdown, instead of \"blocks\". Converted when the file opens.",
+      "type": "string",
+      "maxLength": 5000000
+    },
+    "assets": {
+      "description": "Pictures and fonts as base64 data: URIs, referred to as \"asset:<id>\".",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 30000000
+      },
+      "maxProperties": 2000
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Block": {
+      "description": "A block of the document. \"type\" may be omitted for a paragraph.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "paragraph"
+            },
+            "text": {
+              "description": "Plain text, used as is. \"\\n\" is a line break.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "md": {
+              "description": "Text in Markdown: **bold**, *italic*, ++underline++, ~~strike~~, `code`, ^sup^, ~sub~, [link](https://…), {{page}} and other fields.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "content": {
+              "description": "Formatted runs of text. A plain string is an unformatted run.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A plain run of text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Inline"
+                  }
+                ]
+              },
+              "maxItems": 20000
+            },
+            "style": {
+              "description": "Named style: normal, title, subtitle, caption, or the id of a style defined in \"styles\".",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+            },
+            "align": {
+              "type": "string",
+              "enum": [
+                "left",
+                "center",
+                "right",
+                "justify"
+              ]
+            },
+            "indent": {
+              "description": "Indents in points.",
+              "type": "object",
+              "properties": {
+                "left": {
+                  "description": "Left indent in points (72 pt = 1 inch).",
+                  "type": "number",
+                  "minimum": -300,
+                  "maximum": 1000
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": -300,
+                  "maximum": 1000
+                },
+                "first": {
+                  "description": "First-line indent; negative for a hanging indent.",
+                  "type": "number",
+                  "minimum": -500,
+                  "maximum": 1000
+                }
+              },
+              "additionalProperties": false
+            },
+            "spacing": {
+              "description": "Space before and after the paragraph, in points.",
+              "type": "object",
+              "properties": {
+                "before": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "after": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                }
+              },
+              "additionalProperties": false
+            },
+            "line": {
+              "description": "Line spacing as a multiple: 1, 1.15, 1.5, 2.",
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 10
+            },
+            "keepNext": {
+              "description": "Keep on the same page as the next paragraph.",
+              "type": "boolean"
+            },
+            "keepLines": {
+              "description": "Do not split this paragraph across pages.",
+              "type": "boolean"
+            },
+            "pageBreakBefore": {
+              "description": "Start on a new page.",
+              "type": "boolean"
+            },
+            "shading": {
+              "description": "Background colour of the paragraph.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "border": {
+              "description": "Draw a border around the paragraph, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "dropCap": {
+              "description": "Drop cap: the first letter is enlarged over this many lines (2 to 10).",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 10
+            }
+          },
+          "additionalProperties": false,
+          "description": "A paragraph. Give text, md or content."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "heading"
+            },
+            "level": {
+              "description": "1 is the top level.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 1
+            },
+            "text": {
+              "description": "Plain text, used as is. \"\\n\" is a line break.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "md": {
+              "description": "Text in Markdown: **bold**, *italic*, ++underline++, ~~strike~~, `code`, ^sup^, ~sub~, [link](https://…), {{page}} and other fields.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "content": {
+              "description": "Formatted runs of text. A plain string is an unformatted run.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A plain run of text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Inline"
+                  }
+                ]
+              },
+              "maxItems": 20000
+            },
+            "align": {
+              "type": "string",
+              "enum": [
+                "left",
+                "center",
+                "right",
+                "justify"
+              ]
+            },
+            "indent": {
+              "description": "Indents in points.",
+              "type": "object",
+              "properties": {
+                "left": {
+                  "description": "Left indent in points (72 pt = 1 inch).",
+                  "type": "number",
+                  "minimum": -300,
+                  "maximum": 1000
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": -300,
+                  "maximum": 1000
+                },
+                "first": {
+                  "description": "First-line indent; negative for a hanging indent.",
+                  "type": "number",
+                  "minimum": -500,
+                  "maximum": 1000
+                }
+              },
+              "additionalProperties": false
+            },
+            "spacing": {
+              "description": "Space before and after the paragraph, in points.",
+              "type": "object",
+              "properties": {
+                "before": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                },
+                "after": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000
+                }
+              },
+              "additionalProperties": false
+            },
+            "line": {
+              "description": "Line spacing as a multiple: 1, 1.15, 1.5, 2.",
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 10
+            },
+            "keepNext": {
+              "description": "Keep on the same page as the next paragraph.",
+              "type": "boolean"
+            },
+            "keepLines": {
+              "description": "Do not split this paragraph across pages.",
+              "type": "boolean"
+            },
+            "pageBreakBefore": {
+              "description": "Start on a new page.",
+              "type": "boolean"
+            },
+            "shading": {
+              "description": "Background colour of the paragraph.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "border": {
+              "description": "Draw a border around the paragraph, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "dropCap": {
+              "description": "Drop cap: the first letter is enlarged over this many lines (2 to 10).",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 10
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A heading, level 1 to 6. Use real headings rather than bold text."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "list"
+            },
+            "style": {
+              "description": "bullet (•) or number (1, 2, 3).",
+              "type": "string",
+              "enum": [
+                "bullet",
+                "number"
+              ],
+              "default": "bullet"
+            },
+            "start": {
+              "description": "First number of a numbered list.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            },
+            "numbering": {
+              "description": "Numbering scheme: default (1. a. i. by level), decimal, alpha (a.), ALPHA (A.), roman (i.), ROMAN (I.), outline (1.1.1).",
+              "type": "string",
+              "enum": [
+                "default",
+                "decimal",
+                "alpha",
+                "ALPHA",
+                "roman",
+                "ROMAN",
+                "outline"
+              ]
+            },
+            "bullet": {
+              "description": "Bullet character, for example \"–\" or \"✓\".",
+              "type": "string",
+              "maxLength": 4
+            },
+            "continue": {
+              "description": "Continue the numbering of the previous numbered list.",
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A plain-text item at level 0.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/ListItem"
+                  }
+                ]
+              },
+              "maxItems": 20000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "items"
+          ],
+          "description": "A bulleted or numbered list. Nested items carry a \"level\"."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "quote"
+            },
+            "text": {
+              "description": "Plain text, used as is. \"\\n\" is a line break.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "md": {
+              "description": "Text in Markdown: **bold**, *italic*, ++underline++, ~~strike~~, `code`, ^sup^, ~sub~, [link](https://…), {{page}} and other fields.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "content": {
+              "description": "Formatted runs of text. A plain string is an unformatted run.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A plain run of text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Inline"
+                  }
+                ]
+              },
+              "maxItems": 20000
+            },
+            "blocks": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A paragraph of plain text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Block"
+                  }
+                ]
+              },
+              "maxItems": 100000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A block quotation: text/md/content for one paragraph, or blocks."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "code"
+            },
+            "language": {
+              "description": "Language name, for example \"python\" or \"json\".",
+              "type": "string",
+              "maxLength": 40,
+              "default": ""
+            },
+            "text": {
+              "description": "The code, with \"\\n\" between lines.",
+              "type": "string",
+              "maxLength": 1000000,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A code listing in a monospace font, with syntax highlighting."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "table"
+            },
+            "header": {
+              "description": "The first row is a header row.",
+              "type": "boolean",
+              "default": true
+            },
+            "style": {
+              "description": "grid (all borders), lines (horizontal lines), zebra (striped rows), boxed (outer frame), minimal.",
+              "type": "string",
+              "enum": [
+                "grid",
+                "lines",
+                "zebra",
+                "boxed",
+                "minimal"
+              ],
+              "default": "grid"
+            },
+            "widths": {
+              "description": "Width of each column, in points.",
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 5,
+                "maximum": 2000
+              },
+              "maxItems": 100
+            },
+            "rowHeight": {
+              "description": "Exact height of every row, in points (labels). Left out: rows fit their content.",
+              "type": "number",
+              "minimum": 5,
+              "maximum": 1000
+            },
+            "align": {
+              "type": "string",
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ]
+            },
+            "firstColumn": {
+              "description": "Emphasise the first column.",
+              "type": "boolean"
+            },
+            "border": {
+              "description": "Colour of the borders.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "repeatHeader": {
+              "description": "Repeat the header row at the top of each page the table continues on.",
+              "type": "boolean"
+            },
+            "rows": {
+              "description": "Rows of cells, top to bottom.",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "description": "A plain-text cell.",
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    {
+                      "$ref": "#/$defs/Cell"
+                    }
+                  ]
+                },
+                "maxItems": 100
+              },
+              "maxItems": 5000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "rows"
+          ],
+          "description": "A table. Use tables for data, not lists of numbers."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "divider"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A horizontal line between sections."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "equation"
+            },
+            "tex": {
+              "description": "The formula in LaTeX, without $$, for example \"\\int_0^1 x^2\\,dx = \\frac{1}{3}\". Matrices, cases, aligned, \\ce{} for chemistry.",
+              "type": "string",
+              "maxLength": 20000
+            },
+            "numbered": {
+              "description": "Number the equation (1), (2)… on the right. Write \\label{name} in it and \\eqref{name} elsewhere to refer to it.",
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tex"
+          ],
+          "description": "A centred (display) equation. In md, a paragraph $$…$$ on its own."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "pagebreak"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "Start a new page."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "columns"
+            },
+            "count": {
+              "description": "Number of columns.",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 6,
+              "default": 2
+            },
+            "gap": {
+              "description": "Space between columns, in points (default 18).",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "rule": {
+              "description": "Draw a line between the columns.",
+              "type": "boolean",
+              "default": false
+            },
+            "blocks": {
+              "description": "The content, flowing from one column to the next. A columnbreak block moves to the next column.",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A paragraph of plain text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Block"
+                  }
+                ]
+              },
+              "maxItems": 100000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "blocks"
+          ],
+          "description": "Text in balanced columns, like a newsletter. Kept whole on one page."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "columnbreak"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "Inside columns: continue in the next column."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "toc"
+            },
+            "levels": {
+              "description": "Heading levels listed (3: levels 1 to 3).",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 3
+            },
+            "title": {
+              "description": "Title shown above the table, for example \"Contents\".",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A table of contents built from the headings, always up to date, with page numbers."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "figures"
+            },
+            "label": {
+              "description": "Caption label listed: figure, table, equation, or your own.",
+              "type": "string",
+              "maxLength": 40,
+              "default": "figure"
+            },
+            "title": {
+              "description": "Title shown above the list.",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A table of figures: every caption with this label (a \"seq\" item), with its page number."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "index"
+            },
+            "columns": {
+              "description": "Number of columns.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3,
+              "default": 2
+            },
+            "title": {
+              "description": "Title shown above the index.",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "An index of the entries marked with \"xe\" items, alphabetical, with page numbers."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "authorities"
+            },
+            "category": {
+              "description": "Category listed, or all.",
+              "type": "string",
+              "enum": [
+                "cases",
+                "statutes",
+                "other",
+                "rules",
+                "treatises",
+                "regulations",
+                "constitution",
+                "all"
+              ],
+              "default": "all"
+            },
+            "title": {
+              "description": "Title shown above the table.",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A table of authorities: the \"xe\" items with an \"authority\" category, with their pages."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "bibliography"
+            },
+            "title": {
+              "description": "Title, for example \"References\" or \"Works Cited\".",
+              "type": "string",
+              "maxLength": 200,
+              "default": ""
+            },
+            "all": {
+              "description": "List every source, not only the cited ones.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "The bibliography: the sources cited (\"cite\" items), in the citation style of the document."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "section"
+            },
+            "start": {
+              "description": "Where the new section starts: the next page, the next odd page or the next even page.",
+              "type": "string",
+              "enum": [
+                "page",
+                "odd",
+                "even"
+              ],
+              "default": "page"
+            },
+            "numberStart": {
+              "description": "Restart page numbering at this number.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "numberFormat": {
+              "description": "Page number format in this section.",
+              "type": "string",
+              "enum": [
+                "decimal",
+                "roman",
+                "ROMAN",
+                "alpha",
+                "ALPHA"
+              ]
+            },
+            "firstPage": {
+              "description": "A different header and footer on the first page of the section.",
+              "type": "boolean"
+            },
+            "headers": {
+              "description": "Page headers: paragraphs, images, small tables.",
+              "type": "object",
+              "properties": {
+                "default": {
+                  "description": "The header of every page. Fields such as {{page}} and {{pages}} work here.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                },
+                "first": {
+                  "description": "The header of the first page, when page.firstPage is true.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                },
+                "even": {
+                  "description": "The header of even pages, when page.evenOdd is true.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                }
+              },
+              "additionalProperties": false
+            },
+            "footers": {
+              "description": "Page footers: paragraphs, images, small tables.",
+              "type": "object",
+              "properties": {
+                "default": {
+                  "description": "The footer of every page. Fields such as {{page}} and {{pages}} work here.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                },
+                "first": {
+                  "description": "The footer of the first page, when page.firstPage is true.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                },
+                "even": {
+                  "description": "The footer of even pages, when page.evenOdd is true.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A paragraph of plain text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Block"
+                      }
+                    ]
+                  },
+                  "maxItems": 100000
+                }
+              },
+              "additionalProperties": false
+            },
+            "page": {
+              "description": "Page setup of this section (paper, orientation, margins); left out: the previous section’s. For example a landscape section for a wide table.",
+              "type": "object",
+              "properties": {
+                "size": {
+                  "description": "Paper of the section.",
+                  "type": "string",
+                  "enum": [
+                    "A3",
+                    "A4",
+                    "A5",
+                    "B5",
+                    "Letter",
+                    "Legal",
+                    "Tabloid",
+                    "Executive",
+                    "custom"
+                  ]
+                },
+                "width": {
+                  "description": "Paper width in millimetres (portrait), for a custom size.",
+                  "type": "number",
+                  "minimum": 50,
+                  "maximum": 1200
+                },
+                "height": {
+                  "type": "number",
+                  "minimum": 50,
+                  "maximum": 1200
+                },
+                "orientation": {
+                  "type": "string",
+                  "enum": [
+                    "portrait",
+                    "landscape"
+                  ]
+                },
+                "margins": {
+                  "description": "Margins in millimetres.",
+                  "type": "object",
+                  "properties": {
+                    "top": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 300
+                    },
+                    "right": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 300
+                    },
+                    "bottom": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 300
+                    },
+                    "left": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 300
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A section break, at the top level: what follows starts a new page and may have its own numbering, headers and footers (left out: the previous section’s)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "image"
+            },
+            "src": {
+              "description": "The picture: \"asset:<id>\" (see \"assets\"), a \"data:image/…;base64,\" URI, or an https:// address (shown only if the reader allows it).",
+              "type": "string",
+              "maxLength": 30000000
+            },
+            "alt": {
+              "description": "Alternative text: what the picture shows, for readers who cannot see it.",
+              "type": "string",
+              "maxLength": 2000,
+              "default": ""
+            },
+            "width": {
+              "description": "Width in points (the page text is about 470 pt wide). 0: natural size.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2000
+            },
+            "height": {
+              "description": "Height in points, only to stretch the picture on purpose. Leave it out to keep its proportions.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 4000
+            },
+            "align": {
+              "type": "string",
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ],
+              "default": "center"
+            },
+            "wrap": {
+              "description": "none: on its own line; left or right: floating on that side, with text flowing around it.",
+              "type": "string",
+              "enum": [
+                "none",
+                "left",
+                "right"
+              ],
+              "default": "none"
+            },
+            "caption": {
+              "anyOf": [
+                {
+                  "description": "Caption in Markdown.",
+                  "type": "string",
+                  "maxLength": 1000000
+                },
+                {
+                  "description": "Caption as formatted runs.",
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "description": "A plain run of text.",
+                        "type": "string",
+                        "maxLength": 1000000
+                      },
+                      {
+                        "$ref": "#/$defs/Inline"
+                      }
+                    ]
+                  },
+                  "maxItems": 20000
+                }
+              ]
+            },
+            "crop": {
+              "description": "Cropping, in percent of each side.",
+              "type": "object",
+              "properties": {
+                "top": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "bottom": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "left": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                }
+              },
+              "additionalProperties": false
+            },
+            "rotate": {
+              "description": "Rotation in degrees: 90, 180 or 270.",
+              "type": "integer",
+              "minimum": -360,
+              "maximum": 360
+            },
+            "flip": {
+              "type": "string",
+              "enum": [
+                "h",
+                "v",
+                "hv"
+              ]
+            },
+            "border": {
+              "description": "Draw a border around the picture, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "adjust": {
+              "description": "Picture corrections and effects.",
+              "type": "object",
+              "properties": {
+                "brightness": {
+                  "description": "Brightness, -100 to 100 (percent).",
+                  "type": "integer",
+                  "minimum": -100,
+                  "maximum": 100
+                },
+                "contrast": {
+                  "description": "Contrast, -100 to 100 (percent).",
+                  "type": "integer",
+                  "minimum": -100,
+                  "maximum": 100
+                },
+                "saturation": {
+                  "description": "Colour saturation in percent: 0 is grey, 100 unchanged.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 400
+                },
+                "recolor": {
+                  "type": "string",
+                  "enum": [
+                    "grayscale",
+                    "sepia",
+                    "washout",
+                    "blackwhite"
+                  ]
+                },
+                "artistic": {
+                  "type": "string",
+                  "enum": [
+                    "blur",
+                    "pencil",
+                    "negative"
+                  ]
+                },
+                "transparency": {
+                  "description": "Transparency in percent.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "shadow": {
+                  "description": "A drop shadow.",
+                  "type": "boolean"
+                },
+                "glow": {
+                  "description": "A soft glow around the picture, in this colour.",
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "softEdges": {
+                  "description": "Soft edges, in points.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "src"
+          ],
+          "description": "A picture, with an optional caption."
+        }
+      ]
+    },
+    "Cell": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "Plain text, used as is. \"\\n\" is a line break.",
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "md": {
+          "description": "Text in Markdown: **bold**, *italic*, ++underline++, ~~strike~~, `code`, ^sup^, ~sub~, [link](https://…), {{page}} and other fields.",
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "content": {
+          "description": "Formatted runs of text. A plain string is an unformatted run.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A plain run of text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Inline"
+              }
+            ]
+          },
+          "maxItems": 20000
+        },
+        "blocks": {
+          "description": "Several paragraphs or a list inside one cell.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A paragraph of plain text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Block"
+              }
+            ]
+          },
+          "maxItems": 100000
+        },
+        "colspan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 1
+        },
+        "rowspan": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000,
+          "default": 1
+        },
+        "bg": {
+          "description": "Background colour of the cell.",
+          "type": "string",
+          "maxLength": 30
+        },
+        "valign": {
+          "type": "string",
+          "enum": [
+            "top",
+            "middle",
+            "bottom"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Inline": {
+      "description": "An inline item: a run of text (no \"type\"), a field, a note, a formula, a caption number, a bookmark, a cross-reference, an index entry or a citation.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "text"
+            },
+            "text": {
+              "description": "The text of the run. \"\\n\" is a line break.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ],
+          "description": "A run of text with its formatting."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "field"
+            },
+            "name": {
+              "description": "title, author, subject, organization, keywords (document properties), date, time (now), created, modified, page, pages, filename.",
+              "type": "string",
+              "enum": [
+                "title",
+                "author",
+                "subject",
+                "organization",
+                "keywords",
+                "date",
+                "time",
+                "created",
+                "modified",
+                "page",
+                "pages",
+                "filename"
+              ]
+            },
+            "format": {
+              "description": "Date or time pattern, for example \"DD/MM/YYYY\" or \"HH:mm\". Empty: the usual format.",
+              "type": "string",
+              "maxLength": 60,
+              "default": ""
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name"
+          ],
+          "description": "A value computed when the document is shown, such as the page number. In md, write {{page}}."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "note"
+            },
+            "kind": {
+              "description": "foot: at the bottom of the page; end: at the end of the document.",
+              "type": "string",
+              "enum": [
+                "foot",
+                "end"
+              ],
+              "default": "foot"
+            },
+            "text": {
+              "description": "The note, as plain text.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "md": {
+              "description": "The note, in Markdown.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "blocks": {
+              "description": "The note as blocks (several paragraphs).",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A paragraph of plain text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Block"
+                  }
+                ]
+              },
+              "maxItems": 100000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A footnote or endnote, numbered automatically. In md, write ^[the note text]."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "mergefield"
+            },
+            "name": {
+              "description": "A column of the recipient list (top-level \"mailMerge\"), or a special field: @address (address block), @greeting (greeting line), @record, @sequence, @next, @nextif, @skipif, @if, @fillin.",
+              "type": "string",
+              "maxLength": 80
+            },
+            "opts": {
+              "description": "Settings of a special merge field.",
+              "type": "object",
+              "properties": {
+                "field": {
+                  "description": "Column tested by a rule.",
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "op": {
+                  "description": "Comparison: eq, ne, lt, gt, le, ge, empty, notEmpty, contains.",
+                  "type": "string",
+                  "enum": [
+                    "eq",
+                    "ne",
+                    "lt",
+                    "gt",
+                    "le",
+                    "ge",
+                    "empty",
+                    "notEmpty",
+                    "contains"
+                  ]
+                },
+                "value": {
+                  "description": "Value compared with.",
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "then": {
+                  "description": "@if: text when true; «Column» is replaced.",
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "else": {
+                  "description": "@if: text when false.",
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "prompt": {
+                  "description": "@fillin: the question asked when merging.",
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "default": {
+                  "description": "@fillin: the suggested answer.",
+                  "type": "string",
+                  "maxLength": 500
+                },
+                "salutation": {
+                  "description": "@greeting: \"Dear\", \"Bonjour\"…",
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "nameFormat": {
+                  "description": "@greeting: how the name is written.",
+                  "type": "string",
+                  "enum": [
+                    "first",
+                    "full",
+                    "title-last",
+                    "last"
+                  ]
+                },
+                "punct": {
+                  "description": "@greeting: punctuation after the name.",
+                  "type": "string",
+                  "maxLength": 4
+                },
+                "fallback": {
+                  "description": "@greeting: greeting used when the name is missing.",
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "company": {
+                  "description": "@address: include the company.",
+                  "type": "string",
+                  "enum": [
+                    "yes",
+                    "no"
+                  ]
+                },
+                "country": {
+                  "description": "@address: country line always, never, or only when it differs from \"home\".",
+                  "type": "string",
+                  "enum": [
+                    "always",
+                    "never",
+                    "foreign"
+                  ]
+                },
+                "home": {
+                  "description": "@address: the home country, left out when country is \"foreign\".",
+                  "type": "string",
+                  "maxLength": 80
+                }
+              },
+              "additionalProperties": false
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name"
+          ],
+          "description": "A mail merge field: replaced by each recipient’s value when merging. In md, write {{merge:Name}}."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "seq"
+            },
+            "label": {
+              "description": "Caption label counted: figure, table, equation, or your own label.",
+              "type": "string",
+              "maxLength": 40,
+              "default": "figure"
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A caption number, counted per label in document order. Write the word before it: [\"Figure \", {\"type\":\"seq\",\"label\":\"figure\"}, \": A cat\"] in a paragraph with style \"caption\" (or an image caption)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "bookmark"
+            },
+            "name": {
+              "description": "Name: a letter or _, then letters, digits, _ (40 at most). Starting with _: hidden.",
+              "type": "string",
+              "maxLength": 40,
+              "pattern": "^[\\p{L}_][\\p{L}\\p{N}_]{0,39}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name"
+          ],
+          "description": "A named, invisible anchor: the target of cross-references and of links \"#name\"."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "xref"
+            },
+            "target": {
+              "description": "Name of the bookmark referred to.",
+              "type": "string",
+              "maxLength": 40,
+              "pattern": "^[\\p{L}_][\\p{L}\\p{N}_]{0,39}$"
+            },
+            "show": {
+              "description": "text: the text of the paragraph holding the bookmark; label: \"Figure 3\" (caption label and number); number: \"3\"; page: its page number; above: \"above\" or \"below\".",
+              "type": "string",
+              "enum": [
+                "text",
+                "label",
+                "number",
+                "page",
+                "above"
+              ],
+              "default": "text"
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "target"
+          ],
+          "description": "A cross-reference to a bookmark, always up to date. To refer to a heading or caption, put a bookmark in it."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "xe"
+            },
+            "term": {
+              "description": "The index term (or, with \"authority\", the full citation).",
+              "type": "string",
+              "maxLength": 300
+            },
+            "sub": {
+              "description": "Subentry under the term.",
+              "type": "string",
+              "maxLength": 300
+            },
+            "see": {
+              "description": "Cross-reference instead of page numbers: \"See …\".",
+              "type": "string",
+              "maxLength": 300
+            },
+            "bold": {
+              "description": "Page number in bold.",
+              "type": "boolean"
+            },
+            "italic": {
+              "description": "Page number in italic.",
+              "type": "boolean"
+            },
+            "authority": {
+              "description": "Makes this an entry of the table of authorities, in this category.",
+              "type": "string",
+              "enum": [
+                "cases",
+                "statutes",
+                "other",
+                "rules",
+                "treatises",
+                "regulations",
+                "constitution"
+              ]
+            },
+            "short": {
+              "description": "Short form of an authority citation.",
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "term"
+          ],
+          "description": "An invisible index entry at this place (or a table of authorities entry). Listed by \"index\" blocks with its page."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "cite"
+            },
+            "ids": {
+              "description": "Ids of the cited sources (top-level \"sources\").",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[\\p{L}\\p{N}_:.-]{1,64}$"
+              },
+              "maxItems": 20
+            },
+            "id": {
+              "description": "One source id (same as \"ids\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[\\p{L}\\p{N}_:.-]{1,64}$"
+            },
+            "locator": {
+              "description": "Page or part cited, for example \"p. 12\".",
+              "type": "string",
+              "maxLength": 60
+            },
+            "bold": {
+              "type": "boolean"
+            },
+            "italic": {
+              "type": "boolean"
+            },
+            "underline": {
+              "type": "boolean"
+            },
+            "strike": {
+              "type": "boolean"
+            },
+            "code": {
+              "description": "Inline code, in a monospace font.",
+              "type": "boolean"
+            },
+            "sup": {
+              "description": "Superscript.",
+              "type": "boolean"
+            },
+            "sub": {
+              "description": "Subscript.",
+              "type": "boolean"
+            },
+            "caps": {
+              "description": "Shown in capitals (the text itself is unchanged).",
+              "type": "boolean"
+            },
+            "smallcaps": {
+              "description": "Small capitals.",
+              "type": "boolean"
+            },
+            "link": {
+              "description": "Link target: https://…, mailto:…, tel:… or #anchor.",
+              "type": "string",
+              "maxLength": 2048
+            },
+            "color": {
+              "description": "Text colour: \"#rrggbb\" or a theme colour (text, accent1 … accent6).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "highlight": {
+              "description": "Highlighter: yellow, green, cyan, pink, blue, red, orange, purple, gray, or \"#rrggbb\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "font": {
+              "description": "A font family name, or a theme font: heading, body or mono.",
+              "type": "string",
+              "maxLength": 100
+            },
+            "size": {
+              "description": "Font size in points.",
+              "type": "number",
+              "minimum": 1,
+              "maximum": 400
+            },
+            "letterSpacing": {
+              "description": "Extra space between letters, in points.",
+              "type": "number",
+              "minimum": -20,
+              "maximum": 100
+            },
+            "lang": {
+              "description": "Language of this passage, for example \"en\" or \"de-CH\".",
+              "type": "string",
+              "maxLength": 35,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+            },
+            "underlineStyle": {
+              "description": "Underline style (with \"underline\": true): double, thick, dotted, dashed or wavy.",
+              "type": "string",
+              "enum": [
+                "double",
+                "thick",
+                "dotted",
+                "dashed",
+                "wavy"
+              ]
+            },
+            "underlineColor": {
+              "description": "Colour of the underline.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "outline": {
+              "description": "Hollow letters (outline only).",
+              "type": "boolean"
+            },
+            "shadow": {
+              "description": "A drop shadow behind the letters.",
+              "type": "boolean"
+            },
+            "glow": {
+              "description": "A soft glow around the letters, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textBorder": {
+              "description": "A border around this text, in this colour.",
+              "type": "string",
+              "maxLength": 30
+            },
+            "textShading": {
+              "description": "Background shading of this text (distinct from the highlighter).",
+              "type": "string",
+              "maxLength": 30
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "inserted": {
+              "description": "Tracked change: this text was added, by author on date, and awaits acceptance.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            },
+            "deleted": {
+              "description": "Tracked change: this text was deleted, by author on date; it stays visible until accepted.",
+              "type": "object",
+              "properties": {
+                "author": {
+                  "description": "Who made the change.",
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "date": {
+                  "description": "When, as an ISO 8601 date.",
+                  "type": "string",
+                  "maxLength": 40
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A citation, written in the document’s citation style (APA, MLA…). Add a \"bibliography\" block to list the sources."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "math"
+            },
+            "tex": {
+              "description": "The formula in LaTeX, without the $ signs, for example \"E = mc^2\". Colour and size go in the LaTeX (\\textcolor, \\large).",
+              "type": "string",
+              "maxLength": 20000
+            },
+            "comments": {
+              "description": "Ids of the comments (top-level \"comments\") about this text.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "maxItems": 50
+            },
+            "comment": {
+              "description": "The id of one comment about this text (same as \"comments\": [id]).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "tex"
+          ],
+          "description": "A formula in the line of text. In md, write $E = mc^2$ (no space just inside the $ signs)."
+        }
+      ]
+    },
+    "ListItem": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "Plain text, used as is. \"\\n\" is a line break.",
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "md": {
+          "description": "Text in Markdown: **bold**, *italic*, ++underline++, ~~strike~~, `code`, ^sup^, ~sub~, [link](https://…), {{page}} and other fields.",
+          "type": "string",
+          "maxLength": 1000000
+        },
+        "content": {
+          "description": "Formatted runs of text. A plain string is an unformatted run.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "description": "A plain run of text.",
+                "type": "string",
+                "maxLength": 1000000
+              },
+              {
+                "$ref": "#/$defs/Inline"
+              }
+            ]
+          },
+          "maxItems": 20000
+        },
+        "level": {
+          "description": "Nesting level: 0 is the top level. Go one level deeper at a time.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "default": 0
+        },
+        "style": {
+          "description": "bullet (•) or number (1, 2, 3).",
+          "type": "string",
+          "enum": [
+            "bullet",
+            "number"
+          ]
+        },
+        "align": {
+          "type": "string",
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ]
+        },
+        "indent": {
+          "description": "Indents in points.",
+          "type": "object",
+          "properties": {
+            "left": {
+              "description": "Left indent in points (72 pt = 1 inch).",
+              "type": "number",
+              "minimum": -300,
+              "maximum": 1000
+            },
+            "right": {
+              "type": "number",
+              "minimum": -300,
+              "maximum": 1000
+            },
+            "first": {
+              "description": "First-line indent; negative for a hanging indent.",
+              "type": "number",
+              "minimum": -500,
+              "maximum": 1000
+            }
+          },
+          "additionalProperties": false
+        },
+        "spacing": {
+          "description": "Space before and after the paragraph, in points.",
+          "type": "object",
+          "properties": {
+            "before": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "after": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            }
+          },
+          "additionalProperties": false
+        },
+        "line": {
+          "description": "Line spacing as a multiple: 1, 1.15, 1.5, 2.",
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 10
+        },
+        "keepNext": {
+          "description": "Keep on the same page as the next paragraph.",
+          "type": "boolean"
+        },
+        "keepLines": {
+          "description": "Do not split this paragraph across pages.",
+          "type": "boolean"
+        },
+        "pageBreakBefore": {
+          "description": "Start on a new page.",
+          "type": "boolean"
+        },
+        "shading": {
+          "description": "Background colour of the paragraph.",
+          "type": "string",
+          "maxLength": 30
+        },
+        "border": {
+          "description": "Draw a border around the paragraph, in this colour.",
+          "type": "string",
+          "maxLength": 30
+        },
+        "dropCap": {
+          "description": "Drop cap: the first letter is enlarged over this many lines (2 to 10).",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 10
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

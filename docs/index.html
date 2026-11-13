@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Folio Pages</title>
+    <meta
+      name="description"
+      content="Folio Pages is a free word processor in a single HTML file. Open it in a browser, write, save: the file rewrites itself. It opens and exports .docx, offline. No install, no account, no server."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f6f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1210" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
+    <link rel="canonical" href="https://emyotyyy.github.io/folio-pages/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Folio Pages" />
+    <meta property="og:description" content="A word processor in a single file. Open it, write, save: the file rewrites itself." />
+    <meta property="og:url" content="https://emyotyyy.github.io/folio-pages/" />
+    <meta property="og:image" content="https://emyotyyy.github.io/folio-pages/assets/social.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preload" href="fonts/newsreader-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="styles.css" />
+
+    <script>
+      // Les sections ne commencent cachées que si quelque chose peut les révéler.
+      if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.documentElement.classList.add('js-reveal')
+      }
+    </script>
+  </head>
+
+  <body id="top">
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav" id="nav">
+      <div class="wrap">
+        <a class="brand" href="#top">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="1" y="1" width="30" height="30" rx="7" fill="#1E5E4B" />
+            <path d="M9.5 6H19l5 5v14a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 8 25V7.5A1.5 1.5 0 0 1 9.5 6z" fill="#F7F3EA" />
+            <path d="M19 6v4a1 1 0 0 0 1 1h4z" fill="#C3D9CF" />
+            <path d="M12 6h4v9.2l-2-1.7-2 1.7z" fill="#E8735A" />
+          </svg>
+          Folio Pages
+        </a>
+        <nav class="nav__links" aria-label="Sections">
+          <a href="#features" data-secondary>Features</a>
+          <a href="#docx">.docx</a>
+          <a href="#ai">For AIs</a>
+          <a href="#roadmap" data-secondary>Roadmap</a>
+          <a href="#get">Get it</a>
+          <a class="nav__icon" href="https://github.com/EmyoTyyy/folio-pages" aria-label="Folio Pages on GitHub" rel="noopener">
+            <svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">
+              <path d="M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z" />
+            </svg>
+          </a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero__inner">
+          <div class="hero__copy">
+            <h1>A word processor in a <em>single file.</em></h1>
+            <p class="hero__sub">Open it in a browser, write, save. The file rewrites itself with your text. No install, no account, no server.</p>
+            <div class="hero__actions">
+              <a class="button button--primary" href="folio-pages.html">Open in your browser</a>
+              <a class="button" href="folio-pages.html" download="Folio Pages.html">Download the file</a>
+            </div>
+          </div>
+
+          <figure class="hero__media">
+            <img
+              src="assets/hero.webp"
+              width="2200"
+              height="1375"
+              fetchpriority="high"
+              alt="The Folio Pages window: a title bar with the document name, a search box and a Save button; a row of tabs from File to Help with Comments, Editing and Share on the right; a ribbon of formatting tools; and a white page holding a community garden plan with a table of crops, a numbered list of work days and a quotation."
+            />
+          </figure>
+        </div>
+
+        <div class="facts">
+          <div class="wrap">
+          <dl class="facts__list">
+            <div>
+              <dt>one HTML file: the editor, its fonts and your document</dt>
+              <dd><span data-app-size>1166</span>&nbsp;KB</dd>
+            </div>
+            <div>
+              <dt>network requests of its own, checked on every build</dt>
+              <dd>0</dd>
+            </div>
+            <div>
+              <dt>opened and exported inside the file, offline</dt>
+              <dd>.docx</dd>
+            </div>
+            <div>
+              <dt>licence: free to use, change and share</dt>
+              <dd>MIT</dd>
+            </div>
+          </dl>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--tint anatomy" id="how">
+        <div class="wrap anatomy__grid">
+          <div data-reveal>
+            <h2>The file is the app, and the app is the file.</h2>
+            <p class="lede">
+              Every Folio Pages file carries the whole word processor, compressed, behind your document. Saving writes the
+              file back with the new document inside and every other byte unchanged.
+            </p>
+            <ul class="checks">
+              <li>Send one file, and the person who opens it can edit it too.</li>
+              <li>The document sits at the top as plain JSON that any text editor can read.</li>
+              <li>The licence notices and a guide for AIs travel with every copy.</li>
+            </ul>
+          </div>
+
+          <figure class="filemap" data-reveal style="--i: 1" aria-label="What is inside a Folio Pages file">
+            <figcaption class="filemap__name">Community garden.html</figcaption>
+            <ol class="filemap__rows">
+              <li class="filemap__row"><code>&lt;head&gt;</code><span>title, icon, licence notices</span></li>
+              <li class="filemap__row"><code>&lt;!-- guide --&gt;</code><span>how an AI should fill the file</span></li>
+              <li class="filemap__row filemap__row--doc">
+                <code>folio-doc</code><span><b>your document</b>, readable JSON</span>
+                <pre aria-hidden="true">{ "format": "folio/doc", "version": 1,
+  "meta": { "title": "Community garden" },
+  "blocks": [ { "type": "heading", … } ] }</pre>
+              </li>
+              <li class="filemap__row filemap__row--app"><code>folio-rt</code><span>the editor, compressed</span></li>
+              <li class="filemap__row filemap__row--app"><code>folio-rt-docx</code><span>the .docx converter, unpacked only when used</span></li>
+              <li class="filemap__row"><code>loader</code><span>unpacks and starts the editor</span></li>
+            </ol>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Plain on the outside. Careful underneath.</h2>
+            <p>The parts of a word processor you only notice when they go wrong are the parts Folio Pages starts with.</p>
+          </div>
+
+          <div class="bento">
+            <article class="tile tile--save" data-reveal style="--i: 0">
+              <div class="tile__keys" aria-hidden="true"><kbd>Ctrl</kbd><kbd>S</kbd></div>
+              <h3>It saves into itself.</h3>
+              <p>
+                Chrome and Edge rewrite the file you opened, in place. Firefox and Safari download an up-to-date copy, and
+                Folio Pages tells you so.
+              </p>
+            </article>
+
+            <article class="tile" data-reveal style="--i: 1">
+              <h3>Your text is never locked in.</h3>
+              <p>Open the file in any text editor: the document is right there, as JSON a person can read.</p>
+              <pre class="tile__code" aria-hidden="true"><span class="k">"blocks"</span>: [
+  { <span class="k">"type"</span>: <span class="s">"heading"</span>,
+    <span class="k">"text"</span>: <span class="s">"Work days"</span> },
+  <span class="s">"Twelve households…"</span>
+]</pre>
+            </article>
+
+            <article class="tile" data-reveal style="--i: 2">
+              <h3>It survives a crash.</h3>
+              <p>A copy is kept in your browser while you write. Reopen the file and Folio Pages offers it back.</p>
+              <div class="tile__shot">
+                <img
+                  src="assets/recovery.webp"
+                  width="960"
+                  height="364"
+                  loading="lazy"
+                  alt="A dialog titled Unsaved changes found, saying the changes were kept in this browser, with Ignore and Restore buttons."
+                />
+              </div>
+            </article>
+
+            <article class="tile tile--wide" data-reveal style="--i: 3">
+              <h3>A clumsy document still opens.</h3>
+              <p>Every field is checked and bounded. What cannot be used is set aside and listed, line by line. Text is never thrown away.</p>
+              <div class="tile__shot">
+                <img
+                  src="assets/report.webp"
+                  width="1200"
+                  height="722"
+                  loading="lazy"
+                  alt="The opening report: 2 fields ignored and 4 warnings, including an unknown field, a list level corrected from 4 to 1, and a javascript link refused while its text is kept."
+                />
+              </div>
+            </article>
+
+            <article class="tile tile--wide" data-reveal style="--i: 4">
+              <h3>A damaged file is never a blank page.</h3>
+              <p>If the JSON cannot be read, Folio Pages says where, to the line and column, and offers to recover the text it can still find.</p>
+              <div class="tile__shot">
+                <img
+                  src="assets/broken.webp"
+                  width="1100"
+                  height="664"
+                  loading="lazy"
+                  alt="A screen saying this file's document cannot be read, with an error at line 7, column 5, and buttons to recover the text, show the raw content or start a blank document."
+                />
+              </div>
+            </article>
+
+            <article class="tile tile--private" data-reveal style="--i: 5">
+              <h3>Nothing leaves your computer.</h3>
+              <p>
+                No account, no server, no tracking. The file makes no network request of its own, so it works the same on a
+                plane as at your desk.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--tint docx" id="docx">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Opens <em>.docx.</em> Exports .docx.</h2>
+            <p>The converter runs inside the file, offline. Text is never dropped, and a short report lists anything that did not carry over. The same menu also writes OpenDocument (.odt) for LibreOffice, an EPUB e-book, a web page, Markdown or plain text.</p>
+          </div>
+
+          <div class="docx__pair" data-reveal style="--i: 1">
+            <figure class="docx__sheet">
+              <img src="assets/docx-folio.webp" width="1100" height="1556" loading="lazy" alt="A page of a community garden plan in Folio Pages: a green title, a table of beds and crops, a numbered list of work days and a budget paragraph." />
+              <figcaption><b>In Folio Pages.</b> Styles, a table, a list, a quotation.</figcaption>
+            </figure>
+            <figure class="docx__sheet">
+              <img src="assets/docx-other.webp" width="795" height="1124" loading="lazy" alt="The same page after export to .docx, rendered by LibreOffice: the same title, table, numbered list and budget paragraph." />
+              <figcaption><b>The exported .docx, in LibreOffice.</b> Same headings, table and numbering; this computer lacks the fonts, so it substitutes its own.</figcaption>
+            </figure>
+          </div>
+
+          <ul class="docx__notes" data-reveal style="--i: 2">
+            <li><b>What crosses over</b>Styles and theme, lists, tables, pictures, footnotes, headers, sections and columns, in both directions.</li>
+            <li><b>Review survives</b>Comments with their replies, and tracked changes with author and date, stay what they are.</li>
+            <li><b>Nothing is hidden</b>Shapes, charts or a second page layout have no equivalent yet. The report says so, by name.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section maths" id="equations">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Equations, in plain <em>LaTeX.</em></h2>
+            <p>Type <code>$E = mc^2$</code> and it typesets as you finish it. The browser draws the maths itself (MathML), so the file stays small and the formula stays text.</p>
+          </div>
+          <figure class="maths__shot" data-reveal style="--i: 1">
+            <img src="assets/equations.webp" width="1800" height="1038" loading="lazy" alt="A physics revision page with two numbered equations for the height of a ball thrown upwards, and the equation editor open over it: the LaTeX source, a palette of templates, a live preview and the choice between an equation in the line, centred or numbered." />
+          </figure>
+          <ul class="docx__notes" data-reveal style="--i: 2">
+            <li><b>Edit with a preview</b>Double-click a formula: its source, a palette of fractions, roots, sums and matrices, and the result as you type.</li>
+            <li><b>Numbered and cited</b>Number an equation, give it a <code>\label</code>, and <code>\eqref</code> keeps the reference right as the text moves.</li>
+            <li><b>Real equations in .docx</b>They export as the word processor’s own equations, and come back as LaTeX. Chemistry with <code>\ce</code>, units with <code>\pu</code>.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section section--tint" id="mailings">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>One letter, <em>a whole list.</em></h2>
+            <p>The Mailings tab merges a list of recipients into letters, envelopes, labels, e-mails or a directory. The list is kept inside the document, and nothing is sent anywhere. The E-mail group sends the document itself, in the message or attached, or one personalized e-mail per recipient, through your own mail app, Gmail or Outlook.com.</p>
+          </div>
+          <ul class="docx__notes" data-reveal style="--i: 1">
+            <li><b>Any list</b>Import a spreadsheet saved as CSV, a JSON file or a vCard address book, or type the list in. Untick, filter and sort recipients.</li>
+            <li><b>Fields and rules</b>An address block, a greeting line, any column, and rules: If…Then…Else, skip a recipient, ask a question once.</li>
+            <li><b>Preview, then merge</b>Step through the recipients on the page, check for missing values, then open the merged copies in a new tab, ready to print.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" id="references">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Sources, <em>kept in order.</em></h2>
+            <p>Citations, captions, cross-references and an index that keep themselves up to date, in the styles your teachers and journals ask for.</p>
+          </div>
+          <ul class="docx__notes docx__notes--four" data-reveal style="--i: 1">
+            <li><b>Citations</b>APA, MLA, Chicago, Harvard, IEEE or ISO 690. Paste a DOI or an ISBN and the source fills itself in; the bibliography follows.</li>
+            <li><b>Captions</b>Figures and tables number themselves, and a table of figures lists them with their pages.</li>
+            <li><b>Cross-references</b>“See Figure 3 on page 12” stays right when the text moves, and a click takes you there.</li>
+            <li><b>Index</b>Mark a word once, or every time it appears; the index sorts itself, with sub-entries and “see” references.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section" id="locks">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Locked, <em>offline,</em> in your language.</h2>
+            <p>The file stays yours: it can be sealed with a password, cut off from the network, and translated.</p>
+          </div>
+          <ul class="docx__notes docx__notes--four" data-reveal style="--i: 1">
+            <li><b>Password</b>The document is encrypted with AES-256, title included. Without the password the file shows nothing. A lost password cannot be recovered.</li>
+            <li><b>Offline switch</b>One switch turns off every network feature: web links, updates, and the optional online helpers (asking Claude or ChatGPT in a window alongside, dictation, free pictures, synonyms, Google fonts). Nothing goes online without a click.</li>
+            <li><b>Signed updates</b>Updating replaces the application and keeps your document, and only if the new version carries the project’s signature.</li>
+            <li><b>Languages</b>French and English built in. A translation pack adds another, and can travel inside the file.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="section ai" id="ai">
+        <div class="wrap ai__grid">
+          <div data-reveal>
+            <h2>Made to be written by an AI.</h2>
+            <p class="lede">
+              Send the empty file to any AI with a one-sentence request. A guide at the top of the file tells it where the
+              document goes and what to check before handing the file back.
+            </p>
+            <ol class="steps">
+              <li><b>You</b><span>attach the file: “Make me a revision sheet on photosynthesis, with a table of the stages.”</span></li>
+              <li><b>The AI</b><span>reads the guide and writes the document into the file’s JSON block</span></li>
+              <li><b>You</b><span>open the file it sends back: headings, tables and lists are already in place</span></li>
+            </ol>
+            <p class="note">
+              <strong>No attachment in your chat?</strong> Use <em>AI → Copy compact JSON</em>, paste it with your request,
+              then paste the answer into <em>AI → Replace from JSON…</em> One <kbd>Ctrl</kbd>&thinsp;<kbd>Z</kbd> takes it
+              back.
+            </p>
+          </div>
+
+          <div class="ai__side" data-reveal style="--i: 1">
+            <div class="ai__shot">
+              <img
+                src="assets/ai-menu.webp"
+                width="1520"
+                height="420"
+                loading="lazy"
+                alt="The AI tab of the ribbon: the guide for AIs, Copy compact JSON, Replace from JSON, Copy document JSON and Convert $…$ to equations."
+              />
+            </div>
+            <div class="ai__links">
+              <h3>For agents and scripts</h3>
+              <ul>
+                <li><a href="agents.md">agents.md</a><span>the full guide: format, examples, checklist</span></li>
+                <li><a href="schema/folio-1.json">folio-1.json</a><span>JSON Schema, draft 2020-12</span></li>
+                <li><a href="llms.txt">llms.txt</a><span>the index for language models</span></li>
+              </ul>
+              <p>A Claude Code plugin downloads the latest blank file and fills it:</p>
+              <pre class="term"><code><span class="prompt">&gt;</span> /plugin marketplace add EmyoTyyy/folio-pages
+<span class="prompt">&gt;</span> /plugin install folio-pages@folio-pages</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--tint" id="roadmap">
+        <div class="wrap">
+          <div class="section__head" data-reveal>
+            <h2>Built in the open, one stage at a time.</h2>
+            <p>Each stage ships with its tests and a page in the built-in demo document. Version 0.7 completed the plan: password protection, mail merge, language packs, an offline switch and signed updates. Version 0.8 adds citations, captions, cross-references and an index, landscape sections, and optional online helpers. Version 0.9 adds AutoCorrect, a template gallery, and exports to OpenDocument, EPUB, web page, Markdown and plain text. Version 0.10 adds text effects, drop caps, hyphenation, watermarks, picture corrections, Go To, cover pages and signature lines.</p>
+          </div>
+
+          <ol class="track" data-reveal style="--i: 1">
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>Foundations</h3>
+              <p>The single file, saving in place, crash recovery, the readable format.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>Formatting</h3>
+              <p>Styles, themes, fonts, lists, tables, pictures, find and replace.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>Page layout</h3>
+              <p>Real pages, margins, headers and footers, sections, columns.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>Long documents</h3>
+              <p>Footnotes, contents, comments, tracked changes, version history.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>.docx</h3>
+              <p>Import and export, offline, with a report of what changed.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped</span>
+              <h3>Equations</h3>
+              <p>LaTeX typeset with the browser’s own MathML, edited with a live preview.</p>
+            </li>
+            <li class="is-done">
+              <span class="track__state">Shipped in 0.7</span>
+              <h3>Locks and languages</h3>
+              <p>Password encryption, mail merge, language packs, an offline switch, signed updates.</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section get" id="get">
+        <div class="wrap">
+          <div class="get__panel" data-reveal>
+            <div>
+              <h2>Nothing to install.</h2>
+              <p class="lede">The file is the whole application. Keep it anywhere and double-click it whenever you need a new document.</p>
+              <div class="get__actions">
+                <a class="button button--primary" href="folio-pages.html">Open in your browser</a>
+                <a class="button" href="folio-pages.html" download="Folio Pages.html">Download the file</a>
+              </div>
+              <p class="get__small"><span data-app-size>1166</span>&nbsp;KB. Every saved document is also a working copy of the app.</p>
+              <details class="source">
+                <summary>Build it from source</summary>
+                <pre class="term"><code><span class="prompt">$</span> git clone https://github.com/EmyoTyyy/folio-pages
+<span class="prompt">$</span> cd folio-pages &amp;&amp; npm install
+<span class="prompt">$</span> npm run build   <span class="c"># dist/folio-pages.html</span>
+<span class="prompt">$</span> npm test        <span class="c"># unit tests</span>
+<span class="prompt">$</span> npm run test:e2e</code></pre>
+              </details>
+            </div>
+
+            <table class="browsers">
+              <caption>Where it runs</caption>
+              <thead>
+                <tr><th scope="col">Browser</th><th scope="col">Since</th><th scope="col">Saving</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Chrome, Edge, Brave, Opera</th><td>111</td><td>Into the file you opened</td></tr>
+                <tr><th scope="row">Firefox</th><td>113</td><td>Downloads an updated copy</td></tr>
+                <tr><th scope="row">Safari</th><td>16.4</td><td>Downloads an updated copy</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <p>
+          Folio Pages is free software under the MIT licence. Its editor is built on
+          <a href="https://prosemirror.net" rel="noopener">ProseMirror</a>; its file format and loader come from
+          <a href="https://github.com/nyblnet/bento" rel="noopener">Bento</a>.
+        </p>
+        <nav aria-label="Project">
+          <a href="https://github.com/EmyoTyyy/folio-pages" rel="noopener">Source</a>
+          <a href="https://github.com/EmyoTyyy/folio-pages/releases" rel="noopener">Releases</a>
+          <a href="https://github.com/EmyoTyyy/folio-pages/issues" rel="noopener">Issues</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script>
+      // Deux observateurs, aucun gestionnaire de défilement : l'un donne son fond
+      // à l'en-tête une fois la page défilée, l'autre révèle les sections.
+      const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const sentinel = document.createElement('div')
+      sentinel.style.cssText = 'position:absolute;top:0;height:1px;width:1px'
+      document.body.prepend(sentinel)
+      new IntersectionObserver(([e]) => document.getElementById('nav').classList.toggle('nav--stuck', !e.isIntersecting)).observe(sentinel)
+
+      const revealed = document.querySelectorAll('[data-reveal]')
+      if (calm || !('IntersectionObserver' in window)) revealed.forEach((n) => n.classList.add('is-in'))
+      else {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue
+              e.target.classList.add('is-in')
+              io.unobserve(e.target)
+            }
+          },
+          { rootMargin: '0px 0px -48px', threshold: 0 },
+        )
+        revealed.forEach((n) => io.observe(n))
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "name": "folio-pages",
+  "version": "0.10.0",
+  "description": "Un traitement de texte libre dans un seul fichier HTML : l'éditeur et le document à la fois.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "author": "Folio Pages contributors",
+  "homepage": "https://emyotyyy.github.io/folio-pages/",
+  "repository": "https://github.com/EmyoTyyy/folio-pages",
+  "engines": {
+    "node": ">=18.19"
+  },
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc -p .",
+    "build": "tsc -p . && vite build && vite build -c vite.docx.config.ts && node scripts/build-single.mjs && npm run schema --silent",
+    "schema": "vite-node scripts/gen-schema.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test --project=chrome --project=firefox",
+    "test:all": "npm run build && npm test && npm run test:e2e",
+    "release": "npm run build && vite-node scripts/sign-release.ts"
+  },
+  "dependencies": {
+    "docx": "^9.15.3",
+    "fflate": "^0.8.3",
+    "prosemirror-commands": "^1.7.2",
+    "prosemirror-dropcursor": "^1.8.4",
+    "prosemirror-gapcursor": "^1.4.1",
+    "prosemirror-history": "^1.5.1",
+    "prosemirror-inputrules": "^1.5.1",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-model": "^1.25.13",
+    "prosemirror-schema-list": "^1.6.0",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-tables": "^1.8.5",
+    "prosemirror-transform": "^1.12.5",
+    "prosemirror-view": "^1.42.9"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48",
+    "@types/node": "^20.19.43",
+    "ajv": "^8.20.0",
+    "jsdom": "^25.0.1",
+    "typescript": "5.6",
+    "vite": "5.4",
+    "vitest": "2.1"
+  }
+}

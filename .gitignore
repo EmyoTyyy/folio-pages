@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+Word_assets/
+CLAUDE.md
+fonctionnalites_word.md
+TODO.txt
+Bento_Slides.bento.html

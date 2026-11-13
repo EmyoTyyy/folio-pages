@@ -1,0 +1,19 @@
+# Folio Pages
+
+> A free, open-source (MIT) word processor in a single HTML file. The file is both the editor and the document: open it in a browser, write, save, and the file rewrites itself. The document is readable JSON in a `<script type="application/folio+json" id="folio-doc">` block at the top of the file, made to be filled by AIs.
+
+To create a document: download the blank app, put a JSON document (format `folio/doc`, version 1) into its empty `folio-doc` block, escape every `<` as `<`, and change nothing else in the file.
+
+## Docs
+
+- [Guide for AI agents](https://emyotyyy.github.io/folio-pages/agents.md): mechanics, format reference, examples, advice for a good document, final checklist.
+- [JSON Schema](https://emyotyyy.github.io/folio-pages/schema/folio-1.json): draft 2020-12, generated from the app's own validation tables.
+
+## App
+
+- [Blank app, latest version](https://emyotyyy.github.io/folio-pages/folio-pages.html): download it, fill its `folio-doc` block, send it back.
+- [Source code](https://github.com/EmyoTyyy/folio-pages)
+
+## Optional
+
+- [Website](https://emyotyyy.github.io/folio-pages/)

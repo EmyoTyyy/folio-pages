@@ -1,0 +1,6 @@
+{
+  "format": "folio/doc",
+  "version": 1,
+  "meta": { "title": "Photosynthesis — revision sheet", "lang": "en" },
+  "markdown": "# Photosynthesis — revision sheet\n\nPlants turn light into chemical energy. The overall equation is $6CO_2 + 6H_2O \\rightarrow C_6H_{12}O_6 + 6O_2$.\n\n## The two stages\n\n| Stage | Where | Produces |\n|---|---|---|\n| Light-dependent reactions | Thylakoid membranes | ATP, NADPH, O~2~ |\n| Calvin cycle | Stroma | Glucose |\n\n## Key points\n\n1. Chlorophyll absorbs mostly **red** and **blue** light.\n2. Oxygen is a *by-product*.\n   - It comes from water, not from CO~2~.\n3. Rate depends on light, temperature and CO~2~ concentration.\n\n> Remember: no light, no light-dependent reactions.\n\n## References\n\n- [Photosynthesis, Wikipedia](https://en.wikipedia.org/wiki/Photosynthesis)\n"
+}

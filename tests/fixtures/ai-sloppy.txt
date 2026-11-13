@@ -1,0 +1,15 @@
+{
+  // une IA a laissé un commentaire
+  "format": "folio/doc",
+  "version": "1",
+  "id": "x",
+  "meta": { "title": "Notes", "colour": "blue", "keywords": "a, b", },
+  "blocks": [
+    { "type": "h2", "text": "Section" },
+    { "type": "heading", "level": 9, "text": "Trop profond" },
+    { "type": "callout", "text": "Texte d'un bloc inconnu, gardé." },
+    { "type": "list", "items": ["a", { "text": "b", "level": 5 }], "bullets": true },
+    { "text": "lien piégé", "content": [{ "text": "clic", "link": "javascript:alert(1)" }] },
+    "Une simple chaîne",
+  ],
+}

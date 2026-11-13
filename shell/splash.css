@@ -1,0 +1,11 @@
+#folio-splash{position:fixed;inset:0;z-index:9999;display:grid;place-content:center;justify-items:center;gap:16px;background:#e7eae6;transition:opacity .35s ease}
+#folio-splash.done{opacity:0;pointer-events:none}
+.fs-mark{width:68px;height:68px;filter:drop-shadow(0 10px 18px rgba(18,28,22,.22));animation:fsIn .55s cubic-bezier(.2,1.25,.4,1) both}
+.fs-rib{transform-box:fill-box;transform-origin:top;animation:fsRib .55s cubic-bezier(.3,1.4,.5,1) .35s both}
+.fs-word{font:600 19px/1 'Iowan Old Style',Charter,Georgia,serif;letter-spacing:-.01em;color:#121714;animation:fsUp .5s ease .25s both}
+.fs-slow{max-width:440px;margin:6px 0 0;padding:0 24px;text-align:center;font:13.5px/1.55 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#5c655f;opacity:0;animation:fsShow .4s ease 8s forwards}
+@keyframes fsIn{from{opacity:0;transform:translateY(10px) scale(.9)}}
+@keyframes fsRib{from{transform:scaleY(0)}}
+@keyframes fsUp{from{opacity:0;transform:translateY(6px)}}
+@keyframes fsShow{to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.fs-mark,.fs-rib,.fs-word{animation:none}}

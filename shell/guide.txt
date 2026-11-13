@@ -1,0 +1,171 @@
+  ════════════════════════════════════════════════════════════════════════
+  AI AGENTS AND TOOLS: READ THIS BEFORE EDITING THIS FILE
+  ════════════════════════════════════════════════════════════════════════
+  This file is a Folio Pages document: a word processor and its document
+  in one HTML file (format folio/doc, version 1, app {{VERSION}}).
+  Full guide: https://emyotyyy.github.io/folio-pages/agents.md
+  JSON Schema: https://emyotyyy.github.io/folio-pages/schema/folio-1.json
+
+  THE MECHANICS
+  · The document is the ONE script block of type "application/folio+json"
+    with the id folio-doc, just below this comment. Edit THAT block in
+    place. Never regenerate or retype the whole file.
+  · The script blocks of type "folio/deflate-b86" further down are the
+    compressed application. They hold no user content: leave them alone,
+    byte for byte.
+  · Write every "<" inside the JSON as <, so the JSON can never close
+    its own script tag.
+  · An empty block means "no document yet" (the app shows a demo). To make
+    a document, put your JSON into the empty block.
+  · Leave "id" out of a new document: the app creates one. Never change
+    the "id" of an existing document.
+  · A block holding { "format": "folio/enc", … } is a document protected
+    by a password: it cannot be read without it. Do not change it; tell
+    the person to open it, or to send an unprotected copy.
+  · In a running file: window.folio = { doc, serialize(), loadDoc(json),
+    schema(), i18n }. In the app: the AI tab, Copy JSON / Replace from JSON.
+
+  MINIMAL DOCUMENT (fields at their default value may be left out)
+  {
+    "format": "folio/doc",
+    "version": 1,
+    "meta": { "title": "Weekly report", "lang": "en" },
+    "blocks": [
+      { "type": "heading", "text": "Weekly report" },
+      { "text": "A paragraph of plain text." },
+      { "md": "A paragraph with **bold**, *italic* and a [link](https://example.org)." },
+      { "type": "heading", "level": 2, "text": "Tasks" },
+      { "type": "list", "items": ["First", { "text": "A sub-point", "level": 1 }, "Second"] },
+      { "type": "list", "style": "number", "items": ["Step one", "Step two"] },
+      { "type": "table", "rows": [["Item", "Cost"], ["Paper", "12 €"]] },
+      { "type": "quote", "text": "A quotation." },
+      { "type": "code", "language": "python", "text": "print('hello')" },
+      { "type": "divider" }
+    ]
+  }
+
+  BLOCKS
+  · paragraph: "type" may be left out; a plain string is a paragraph too.
+  · heading: "level" 1 to 6 (default 1).
+  · list: "style" "bullet" (default) or "number", "start" (default 1),
+    "items": strings, or objects with a "level" from 0 to 8 for nesting.
+  · quote: one paragraph (text/md) or "blocks".
+  · code: "language", "text" with \n between lines.
+  · table: "header" (true by default: the first row is the header),
+    "rows": arrays of cells; a cell is a string or
+    { "text"|"md", "colspan", "rowspan" }.
+  · equation: a centred formula in LaTeX, { "type": "equation", "tex":
+    "\\int_0^1 x^2\\,dx = \\frac{1}{3}" }; "numbered": true numbers it (1),
+    (2)… Put \\label{name} in it and write \\eqref{name} elsewhere.
+  · divider: a horizontal line.   · pagebreak: start a new page.
+  · image: "src" is "asset:<id>" with the picture in the top-level
+    "assets": { "<id>": "data:image/png;base64,…" } (a data: URI in "src"
+    works too). Add "alt" (what it shows), "caption", "width" in points
+    (the text is about 470 pt wide), "align", "wrap": "none" (own line),
+    "left" or "right" (text flows around it).
+  TEXT of a paragraph, heading, list item or cell, one of:
+  · "text": plain text, used as is; \n is a line break;
+  · "md": Markdown: **bold**, *italic*, ++underline++, ~~strike~~,
+    `code`, ^superscript^, ~subscript~, [link](https://…), fields
+    {{page}}, {{pages}}, {{title}}, {{author}}, {{date:DD/MM/YYYY}},
+    footnotes: Text.^[The note, numbered automatically.], and formulas
+    in LaTeX: $E = mc^2$ in the line (no space just inside the $ signs),
+    $$…$$ alone in its paragraph for a centred equation.
+  · "content": runs, e.g. ["plain ", { "text": "bold", "bold": true }].
+    A run may also have "color" ("#rrggbb" or "accent1"…"accent6"),
+    "highlight" ("yellow"…), "font", "size" (points), "caps", "smallcaps".
+    A note is a run too: { "type": "note", "text": "…" } (bottom of the
+    page), with "kind": "end" for an endnote, or "md" / "blocks".
+    A formula is a run too: { "type": "math", "tex": "x^2" }.
+    Comments (only when asked to review): a run { "text": "…",
+    "comments": ["c1"] } and, at the top level, "comments": [{ "id": "c1",
+    "author": "AI", "text": "Check this figure." }].
+    Suggested edits (only when asked): { "text": "old", "deleted":
+    { "author": "AI" } } then { "text": "new", "inserted": { "author": "AI" } }.
+    Mail merge (only for form letters, labels…): a run { "type":
+    "mergefield", "name": "First name" } (in md: {{merge:First name}}),
+    and at the top level "mailMerge": { "type": "letters", "source": {
+    "name": "list", "fields": ["First name", "Email"], "records":
+    [["Ada", "ada@example.org"]] } }. See agents.md.
+  OPTIONS, all optional:
+  · paragraphs and headings: "align" (left, center, right, justify),
+    "spacing" { "before", "after" } and "indent" { "left", "first" } in
+    points, "line" (1.5…); paragraphs: "style": "title", "subtitle",
+    "caption", or a style you define in the top-level "styles".
+  · lists: "numbering" (decimal, alpha, roman, outline), "bullet" ("✓").
+  · tables: "style" (grid, lines, zebra, boxed, minimal), "widths" in
+    points, "repeatHeader": true (header row on every page); cells: "bg".
+  · "theme": { "name": "classic" } (folio, classic, modern, slate, ink,
+    system); its colours accent1…accent6 can be used by name everywhere.
+  PAGES (all optional): "page": { "size": "A4" or "Letter"…, "orientation":
+    "landscape", "margins": { "top", "right", "bottom", "left" } in mm };
+    "headers"/"footers": { "default": [ blocks ] } on every page, e.g.
+    { "md": "Page {{page}} of {{pages}}", "align": "center" }.
+  · { "type": "columns", "count": 2, "blocks": [ … ] }: text in columns.
+  · { "type": "section", "numberStart": 1 }: a section break; what follows
+    starts a new page, may restart numbering and have its own "headers",
+    and its own "page": { "orientation": "landscape" } (a wide table).
+  · { "type": "toc" }: a table of contents of the headings, always up to
+    date ("levels": 3, "title": "Contents").
+  REFERENCES (all optional, all kept up to date by the app):
+  · Citations: top-level "sources": [{ "id": "Darwin1859", "type": "book",
+    "authors": ["Darwin, Charles"], "title": "On the Origin of Species",
+    "publisher": "John Murray", "year": "1859" }] (types: book, article,
+    chapter, website, report, thesis…; "container" is the journal or site),
+    a run { "type": "cite", "id": "Darwin1859", "locator": "p. 12" } where
+    a source is used, and a { "type": "bibliography", "title": "References" }
+    block. "citationStyle": "apa" (default), "mla", "chicago", "harvard",
+    "ieee" or "iso690" formats them all.
+  · Captions: a paragraph { "style": "caption", "content": ["Figure ",
+    { "type": "seq", "label": "figure" }, ": A harbour"] } (labels figure,
+    table, equation); { "type": "figures" } lists them with their pages.
+  · Cross-references: { "type": "bookmark", "name": "harbour" } in the target
+    paragraph, and { "type": "xref", "target": "harbour", "show": "label" }
+    (text, label, number, page, above) where you refer to it.
+  · Index: a run { "type": "xe", "term": "photosynthesis" } beside the word
+    (invisible), and an { "type": "index" } block at the end.
+  · "notes": { "foot": { "format": "symbols" }, "end": { "format":
+    "decimal" } } changes how notes are numbered (optional).
+  Or give the whole document as Markdown instead of "blocks":
+  { "format": "folio/doc", "version": 1, "markdown": "# Title\n\nText" }.
+
+  MAKE A GOOD DOCUMENT, NOT JUST A VALID ONE
+  · Write in the language of the request, and set meta.lang ("fr", "en"…).
+  · Set meta.title: it names the browser tab and the saved file.
+  · Structure with real headings: one level-1 heading for the title, then
+    levels 2 and 3. Never fake a heading with bold text or capitals.
+  · Data, comparisons, schedules, prices: a table with a header row, not a
+    list of numbers or tab-separated text.
+  · Steps in order: a numbered list. Points in no order: a bulleted list.
+    Nest only as deep as the ideas really go.
+  · Short, complete paragraphs. No filler and no placeholders such as
+    "Lorem ipsum" or "[insert here]".
+  · Maths, physics, chemistry: real LaTeX formulas, never pictures or
+    plain text: $…$ in a sentence, an "equation" block for anything that
+    deserves its own line, "numbered": true when the text refers to it.
+    Matrices, cases, aligned, \\frac, \\sum, \\int, \\ce{H2O} for chemistry
+    and \\pu{9.81 m/s^2} for units all work. Shared macros go in the
+    top-level "math": { "macros": "\\newcommand{\\R}{\\mathbb{R}}" }.
+    A price is not a formula: "5 $" stays text.
+  · Sources: real citations, never invented ones. Several sources: list
+    them in "sources", cite them with "cite" runs, end with a "bibliography"
+    block. One passing source: a footnote (md: …^[Author, Title, 2024]).
+    Long document (several headings): a { "type": "toc" } after the title.
+  · Look: choose a theme, and use styles (title, subtitle, headings) and
+    theme colours rather than colouring or resizing runs one by one.
+  · Pictures: only real ones you were given or can embed as data; always
+    with "alt" text, and a caption when it helps.
+
+  BEFORE YOU FINISH, CHECK
+  [ ] Only the #folio-doc block changed; the rest of the file is untouched.
+  [ ] The JSON parses: no trailing commas, no comments; every "<" is <.
+  [ ] "format": "folio/doc" and "version": 1 are present; "id" is absent
+      (new document) or unchanged (existing document).
+  [ ] meta.title and meta.lang are set.
+  [ ] Headings are real headings, data is in tables, steps are numbered.
+  [ ] Every image has "alt" text and its data in "assets" (or in "src").
+  [ ] Formulas are LaTeX in $…$ / "equation" blocks, with no space just
+      inside the $ signs, and every \\eqref names an existing \\label.
+  [ ] Every "cite" id is in "sources"; every "xref" target is a bookmark.
+  [ ] Nothing is invented that the request or the sources do not support.
+  ════════════════════════════════════════════════════════════════════════
