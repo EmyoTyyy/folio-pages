@@ -3,6 +3,7 @@
 // navigateur (ou « Enregistrer en PDF »).
 
 import type { FolioApp } from '../app'
+import { runScoped, scopeField } from './docscope'
 import type { CommentThread } from '../format/types'
 import { formatDate, t } from '../i18n/i18n'
 import { openDialog, toast } from './dialog'
@@ -80,11 +81,17 @@ export function printDialog(app: FolioApp): void {
   comments.disabled = !hasComments
   const error = h('p', { class: 'fp-field-error', role: 'alert', 'data-field': 'print-error' })
   for (const c of [all.r, cur.r, some.r, range, booklet]) c.toggleAttribute('disabled', !paged)
+  // Plusieurs documents : celui-ci, ou tous (toutes leurs pages, à la suite).
+  const scope = scopeField(app, (s) => {
+    if (s === 'all') all.r.checked = true
+    for (const c of [cur.r, some.r, range]) c.toggleAttribute('disabled', !paged || s === 'all')
+  })
   openDialog({
     name: 'print',
     title: t('print.title'),
     body: [
       paged ? null : h('p', { class: 'fp-form__hint', 'data-field': 'print-webview' }, t('print.pageViewOnly')),
+      scope.el,
       h('fieldset', { class: 'fp-print__set' }, h('legend', { class: 'fp-label' }, t('print.pages')), all.el, cur.el, h('div', { class: 'fp-print__some' }, some.el, range)),
       h('label', { class: 'fp-check' }, booklet, h('span', {}, t('print.booklet'))),
       h('p', { class: 'fp-form__hint' }, t('print.bookletHint')),
@@ -108,16 +115,19 @@ export function printDialog(app: FolioApp): void {
             }
             pages = p
           } else if (cur.r.checked) pages = [current]
-          const extra = comments.checked ? commentsPrintout(app) : null
-          if (pv && (pages || booklet.checked || extra)) pv.printOptions = { ...(pages ? { pages } : {}), ...(booklet.checked ? { booklet: true } : {}), ...(extra ? { extra } : {}) }
-          // Après la fermeture de la fenêtre (sinon elle serait imprimée).
-          setTimeout(() => {
+          const wantComments = comments.checked
+          const print = async () => {
+            const extra = wantComments ? commentsPrintout(app) : null
+            if (pv && (pages || booklet.checked || extra)) pv.printOptions = { ...(pages ? { pages } : {}), ...(booklet.checked ? { booklet: true } : {}), ...(extra ? { extra } : {}) }
             try {
               window.print()
             } catch {
               toast(t('print.failed'), { kind: 'error' })
             }
-          }, 0)
+          }
+          const chosen = scope.value()
+          // Après la fermeture de la fenêtre (sinon elle serait imprimée).
+          setTimeout(() => void (chosen === 'all' || app.documents.length > 1 ? runScoped(app, chosen, print) : print()), 0)
         },
       },
     ],

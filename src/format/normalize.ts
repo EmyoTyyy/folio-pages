@@ -210,7 +210,7 @@ export function runsFrom(content: unknown[], ctx: Ctx, path = ''): Inline[] {
           items.push({ type: 'bookmark', name })
         }
       } else if (o.type === 'xref') {
-        items.push({ type: 'xref', target: String(o.target ?? ''), show: (o.show as XrefShow) ?? 'text', ...cleanMarks(o) })
+        items.push({ type: 'xref', target: String(o.target ?? ''), show: (o.show as XrefShow) ?? 'text', ...(typeof o.doc === 'string' && o.doc ? { doc: o.doc } : {}), ...(typeof o.last === 'string' && o.last ? { last: o.last } : {}), ...cleanMarks(o) })
       } else if (o.type === 'xe') {
         const term = String(o.term ?? '').trim()
         if (!term) ctx.report.ignore(path, 'missing-field', 'term')
@@ -1211,6 +1211,7 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
     ...(raw.formsOnly === true ? { formsOnly: true as const } : {}),
     template: raw.template === true,
     readOnly: raw.readOnly === true,
+    ...(typeof raw.key === 'string' && raw.key ? { key: raw.key } : {}),
     assets: assets.result(),
   }
 }

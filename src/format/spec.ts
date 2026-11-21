@@ -10,7 +10,7 @@ import { arr, bool, either, enumOf, int, map, num, obj, ref, str, tagged, type D
 import { resolveFieldName } from './fields'
 import { CHART_LIMITS } from './chart'
 import { DIAGRAM_COLORS, DIAGRAM_KINDS, DIAGRAM_LIMITS } from './diagram'
-import { CALLOUT_KINDS, CHART_KINDS, FORM_KINDS, INK_LIMITS, UNDERLINE_STYLES, UNICODE_RANGE, AUTHORITY_CATEGORIES, BOOKMARK_NAME, CITATION_STYLES, SOURCE_ID, SOURCE_TYPES, XREF_SHOWS, CODE_COLORS, COMMENT_ID, FIELD_NAMES, ID_PATTERN, KEY_PATTERN, NOTE_FORMATS, NOTE_RESTARTS, NUMBERINGS, PAGE_NUMBER_FORMATS, PAPER_SIZES, TABLE_STYLES, THEME_COLORS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS } from './types'
+import { CALLOUT_KINDS, CHART_KINDS, FORM_KINDS, INK_LIMITS, UNDERLINE_STYLES, UNICODE_RANGE, AUTHORITY_CATEGORIES, BOOKMARK_NAME, DOC_KEY, CITATION_STYLES, SOURCE_ID, SOURCE_TYPES, XREF_SHOWS, CODE_COLORS, COMMENT_ID, FIELD_NAMES, ID_PATTERN, KEY_PATTERN, NOTE_FORMATS, NOTE_RESTARTS, NUMBERINGS, PAGE_NUMBER_FORMATS, PAPER_SIZES, TABLE_STYLES, THEME_COLORS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS } from './types'
 
 export const LIMITS = {
   /** Taille maximale du JSON du document, en caractères. */
@@ -19,6 +19,7 @@ export const LIMITS = {
   markdown: 5_000_000,
   runs: 20_000,
   blocks: 100_000,
+  documents: 50,
   listItems: 20_000,
   tableRows: 5_000,
   tableCols: 100,
@@ -305,6 +306,8 @@ const inline = tagged({
     xref: obj(
       {
         target: str({ max: 40, pattern: BOOKMARK_NAME, doc: 'Name of the bookmark referred to.' }),
+        doc: str({ max: 32, pattern: DOC_KEY, doc: 'Key of another document of this file (see "documents"): the bookmark is in that document.' }),
+        last: str({ max: 2000, doc: 'Filled in by the application: the last value shown for a reference to another document.' }),
         show: enumOf(XREF_SHOWS, {
           def: 'text',
           doc: 'text: the text of the paragraph holding the bookmark; label: "Figure 3" (caption label and number); number: "3"; page: its page number; above: "above" or "below".',
@@ -312,7 +315,7 @@ const inline = tagged({
         }),
         ...markFields(),
       },
-      { required: ['target'], doc: 'A cross-reference to a bookmark, always up to date. To refer to a heading or caption, put a bookmark in it.' },
+      { required: ['target'], doc: 'A cross-reference to a bookmark, always up to date. To refer to a heading or caption, put a bookmark in it. With "doc", the bookmark is in another document of the file.' },
     ),
     xe: obj(
       {
@@ -1131,6 +1134,11 @@ const documentDesc = obj(
       },
       { doc: 'A watermark behind the text of every page: a text or a picture.' },
     ),
+    key: str({ max: 32, pattern: DOC_KEY, doc: 'With several documents in the file: a short name for this one (a letter, then letters, digits or _), used by links "#key:anchor" and cross-references "doc": "key".' }),
+    documents: arr(ref('Document'), {
+      max: LIMITS.documents,
+      doc: 'More documents in the same file, each complete and independent (its own title, page setup, theme, styles, content…), shown as tabs at the bottom of the window. Only in the first document. Give each document, this one included, a "key".',
+    }),
     template: bool({ def: false, doc: 'A template: each time the file opens, a new document starts from it.' }),
     readOnly: bool({ def: false, doc: 'A read-only copy: the file opens in reading view, without editing.' }),
     markdown: str({

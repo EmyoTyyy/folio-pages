@@ -267,39 +267,61 @@ export function bookmarkDialog(app: FolioApp): void {
 
 // --- renvois ----------------------------------------------------------------------------
 
-/** Insertion → Renvoi / Références → Renvoi. */
+/** Insertion → Renvoi / Références → Renvoi. Avec plusieurs documents : vers celui qu'on choisit. */
 export function crossRefDialog(app: FolioApp): void {
-  const { headings, captions } = referenceables(app.state)
-  const labels = [...new Set(captions.map((c) => c.label))]
-  const type = select(
-    [['heading', t('xr.heading')], ['bookmark', t('xr.bookmark')], ...labels.map((l): [string, string] => [`cap:${l}`, labelWord(l)])],
-    labels.includes('figure') ? 'cap:figure' : headings.length ? 'heading' : 'bookmark',
-    { 'data-field': 'xref-type' },
+  const docs = app.documents
+  const here = app.activeKey
+  const docSel = select(
+    docs.map((d): [string, string] => [d.key, d.key === here ? `${d.title} (${t('docs.this').toLowerCase()})` : d.title]),
+    here,
+    { 'data-field': 'xref-doc' },
   )
+  const stateNow = () => app.stateOf(docSel.value) ?? app.state
+  const type = select([], 'heading', { 'data-field': 'xref-type' })
   const show = select([], 'text', { 'data-field': 'xref-show' })
   const list = h('select', { class: 'fp-input', size: '10', 'data-field': 'xref-list' }) as HTMLSelectElement
-  const shows = (): XrefShow[] => (type.value.startsWith('cap:') ? ['label', 'number', 'text', 'page', 'above'] : ['text', 'page', 'above'])
+  const other = () => docSel.value !== here
+  const shows = (): XrefShow[] => {
+    const all: XrefShow[] = type.value.startsWith('cap:') ? ['label', 'number', 'text', 'page', 'above'] : ['text', 'page', 'above']
+    // Vers un autre document, « ci-dessus / ci-dessous » n'a pas de sens.
+    return other() ? all.filter((x) => x !== 'above') : all
+  }
+  const fillTypes = () => {
+    const { headings, captions } = referenceables(stateNow())
+    const labels = [...new Set(captions.map((c) => c.label))]
+    const keep = type.value
+    type.replaceChildren(...[['heading', t('xr.heading')], ['bookmark', t('xr.bookmark')], ...labels.map((l): [string, string] => [`cap:${l}`, labelWord(l)])].map(([v, l]) => h('option', { value: v }, l)))
+    const values = ['heading', 'bookmark', ...labels.map((l) => `cap:${l}`)]
+    type.value = values.includes(keep) ? keep : labels.includes('figure') ? 'cap:figure' : headings.length ? 'heading' : 'bookmark'
+  }
   const fill = () => {
+    const { headings, captions } = referenceables(stateNow())
     const keep = show.value
     show.replaceChildren(...shows().map((s) => h('option', { value: s }, t(`xr.show.${s}` as Key))))
     show.value = shows().includes(keep as XrefShow) ? keep : shows()[0]
     list.replaceChildren()
     let items: { label: string; value: string }[] = []
     if (type.value === 'heading') items = headings.map((x) => ({ label: `${'  '.repeat(x.level - 1)}${x.text || '…'}`, value: `pos:${x.pos}` }))
-    else if (type.value === 'bookmark') items = bookmarkList(app.state).map((b) => ({ label: b.name, value: `bm:${b.name}` }))
+    else if (type.value === 'bookmark') items = bookmarkList(stateNow()).map((b) => ({ label: b.name, value: `bm:${b.name}` }))
     else items = captions.filter((c) => `cap:${c.label}` === type.value).map((c) => ({ label: c.text, value: `pos:${c.pos}` }))
     for (const it of items) list.append(h('option', { value: it.value }, it.label))
     if (!items.length) list.append(h('option', { disabled: '' }, t('xr.none')))
     else list.selectedIndex = 0
   }
   type.addEventListener('change', fill)
+  docSel.addEventListener('change', () => {
+    fillTypes()
+    fill()
+  })
+  fillTypes()
   fill()
+  const top = docs.length > 1 ? [row(t('docs.inFile'), docSel)] : []
   openDialog({
     name: 'xref',
     title: t('xr.title'),
     wide: true,
     focus: list,
-    body: [h('div', { class: 'fp-form--grid' }, row(t('xr.type'), type), row(t('xr.to'), show)), row(t('xr.which'), list), h('p', { class: 'fp-form__hint' }, t('xr.hint'))],
+    body: [...top, h('div', { class: 'fp-form--grid' }, row(t('xr.type'), type), row(t('xr.to'), show)), row(t('xr.which'), list), h('p', { class: 'fp-form__hint' }, t('xr.hint'))],
     actions: [
       { label: t('action.cancel'), value: 'cancel' },
       {
@@ -309,15 +331,27 @@ export function crossRefDialog(app: FolioApp): void {
         run: () => {
           const v = list.value
           if (!v) return false
-          return app.run(insertXref(v, show.value as XrefShow))
+          if (!other()) return app.run(insertXref(v, show.value as XrefShow))
+          // Dans un autre document : son signet (ajouté au titre ou à la légende s'il n'en a pas).
+          const key = docSel.value
+          let name = v.startsWith('bm:') ? v.slice(3) : ''
+          if (!name)
+            app.updateOther(key, (st) => {
+              const got = ensureBookmark(st, Number(v.slice(4)))
+              name = got.name
+              return got.tr ? got.tr.setMeta('addToHistory', false) : null
+            })
+          if (!name) return false
+          const last = app.crossValue(key, name, show.value as XrefShow)
+          return app.run(insertXref(`bm:${name}`, show.value as XrefShow, { doc: key, last }))
         },
       },
     ],
   })
 }
 
-/** Insère un renvoi vers un signet (« bm:nom ») ou un paragraphe (« pos:… », signet caché ajouté). */
-export function insertXref(target: string, show: XrefShow): Command {
+/** Insère un renvoi vers un signet (« bm:nom ») ou un paragraphe (« pos:… », signet caché ajouté) ; `other` : dans un autre document. */
+export function insertXref(target: string, show: XrefShow, other?: { doc: string; last: string }): Command {
   return (state, dispatch) => {
     if (!state.selection.$from.parent.inlineContent) return false
     let name = ''
@@ -332,7 +366,7 @@ export function insertXref(target: string, show: XrefShow): Command {
     if (dispatch) {
       const from = tr.mapping.map(state.selection.from)
       const to = tr.mapping.map(state.selection.to)
-      tr.replaceWith(from, to, n.xref.create({ target: name, show }).mark(state.selection.$from.marks()))
+      tr.replaceWith(from, to, n.xref.create({ target: name, show, doc: other?.doc ?? '', last: other?.last ?? '' }).mark(state.selection.$from.marks()))
       tr.setSelection(TextSelection.create(tr.doc, from + 1))
       dispatch(tr.scrollIntoView())
     }

@@ -25,10 +25,22 @@ export interface PageRef {
   label: string
 }
 
+/** Un autre document du même fichier, vu d'un renvoi { doc }. */
+export interface OtherDoc {
+  doc: PMNode
+  title: string
+  /** Dernière page connue d'un signet (le document a été mis en page), sinon null. */
+  page: (bookmark: string) => string | null
+}
+
 export interface RefsHooks {
   /** Page d'une position ; null hors de la vue page. */
   pageOf: (pos: number) => PageRef | null
   jump: (pos: number) => void
+  /** Plusieurs documents dans le fichier : un autre document, par sa clé. */
+  other?: (key: string) => OtherDoc | null
+  /** Aller à un signet d'un autre document. */
+  jumpDoc?: (key: string, bookmark: string) => void
   /** Langue des mots des citations (« et », « s. d. »…). */
   lang: () => string
   labels: () => RefsLabels
@@ -36,6 +48,8 @@ export interface RefsHooks {
 
 export interface RefsLabels {
   missingBookmark: string
+  /** « dans « Annexe » » : renvoi « ci-dessus / ci-dessous » vers un autre document. */
+  inDoc?: (title: string) => string
   above: string
   below: string
   emptyFigures: string
@@ -169,14 +183,65 @@ function blockText(node: PMNode, base: number, seq: Map<number, number>, until =
   return s.replace(/\s+/g, ' ').trim()
 }
 
+/** Numéros des légendes et signets d'un autre document (pour ses renvois), gardés tant qu'il ne change pas. */
+const targetsCache = new WeakMap<PMNode, { seq: Map<number, number>; bookmarks: Map<string, number>; block: Map<string, { node: PMNode; pos: number }> }>()
+
+function targetsOf(doc: PMNode) {
+  let got = targetsCache.get(doc)
+  if (got) return got
+  const seqCount = new Map<string, number>()
+  got = { seq: new Map(), bookmarks: new Map(), block: new Map() }
+  const g = got
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock && !(node.type === n.figure)) return isContainer(node)
+    node.forEach((child, off) => {
+      const p = pos + 1 + off
+      if (child.type === n.seq) {
+        const k = (seqCount.get(child.attrs.label) ?? 0) + 1
+        seqCount.set(child.attrs.label, k)
+        g.seq.set(p, k)
+      } else if (child.type === n.bookmark && !g.bookmarks.has(child.attrs.name)) {
+        g.bookmarks.set(child.attrs.name, p)
+        g.block.set(child.attrs.name, { node, pos })
+      }
+    })
+    return false
+  })
+  targetsCache.set(doc, got)
+  return got
+}
+
+/** La valeur d'un renvoi vers un signet d'un autre document ; null si le document ou le signet manque. */
+export function crossRefValue(other: OtherDoc, target: string, show: XrefShow, labels: RefsLabels): string | null {
+  const t = targetsOf(other.doc)
+  const blk = t.block.get(target)
+  if (!blk) return null
+  let firstSeq: number | null = null
+  blk.node.forEach((child, off) => {
+    if (firstSeq === null && child.type === n.seq) firstSeq = blk.pos + 1 + off
+  })
+  switch (show) {
+    case 'page':
+      return other.page(target)
+    case 'above':
+      return labels.inDoc ? labels.inDoc(other.title) : other.title
+    case 'number':
+      return firstSeq !== null ? String(t.seq.get(firstSeq) ?? '') : blockText(blk.node, blk.pos, t.seq)
+    case 'label':
+      return blockText(blk.node, blk.pos, t.seq, firstSeq ?? Infinity)
+    default:
+      return blockText(blk.node, blk.pos, t.seq)
+  }
+}
+
 /** Calcule les références d'un document. */
-export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' | 'labels'>): RefsData {
+export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' | 'labels' | 'other'>): RefsData {
   const seqCount = new Map<string, number>()
   const seq = new Map<number, number>()
   const bookmarks = new Map<string, number>()
   /** Paragraphe qui contient chaque signet. */
   const bookmarkBlock = new Map<string, { node: PMNode; pos: number }>()
-  const xrefs: { pos: number; target: string; show: XrefShow }[] = []
+  const xrefs: { pos: number; target: string; show: XrefShow; doc: string; last: string }[] = []
   const cites: { pos: number; ids: string[]; locator: string; inNote?: number }[] = []
   const captions: Caption[] = []
   const xes: { pos: number; attrs: Record<string, unknown> }[] = []
@@ -203,7 +268,7 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
           bookmarks.set(name, p)
           bookmarkBlock.set(name, { node, pos })
         }
-      } else if (child.type === n.xref) xrefs.push({ pos: p, target: child.attrs.target, show: child.attrs.show })
+      } else if (child.type === n.xref) xrefs.push({ pos: p, target: child.attrs.target, show: child.attrs.show, doc: child.attrs.doc, last: child.attrs.last })
       else if (child.type === n.cite) cites.push({ pos: p, ids: child.attrs.ids as string[], locator: child.attrs.locator as string })
       else if (child.type === n.xe) xes.push({ pos: p, attrs: child.attrs })
       else if (child.type === n.note) {
@@ -223,6 +288,13 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
   const labels = hooks.labels()
   const texts = new Map<number, string>()
   for (const x of xrefs) {
+    if (x.doc) {
+      // Vers un autre document du fichier : sa dernière valeur connue s'il n'est pas là (ou pas mis en page).
+      const other = hooks.other?.(x.doc)
+      const v = other ? crossRefValue(other, x.target, x.show, labels) : null
+      texts.set(x.pos, v ?? (x.last || (other && x.show === 'page' ? '?' : labels.missingBookmark)))
+      continue
+    }
     const target = bookmarks.get(x.target)
     const blk = bookmarkBlock.get(x.target)
     if (target === undefined || !blk) {
@@ -372,7 +444,7 @@ export function refsPlugin(hooks: RefsHooks, refreshKeys: PluginKey[] = []): Plu
       decorations: (state) => refsKey.getState(state)?.decos,
       nodeViews: {
         seq: (node, _v, _g, decos) => new ValueView(node, decos, 'fp-seq'),
-        xref: (node, view, _g, decos) => new ValueView(node, decos, 'fp-xref', (e) => jumpToTarget(view, node.attrs.target, hooks, e)),
+        xref: (node, view, _g, decos) => new ValueView(node, decos, 'fp-xref', (e) => jumpToTarget(view, node, hooks, e)),
         cite: (node, _v, _g, decos) => new ValueView(node, decos, 'fp-cite'),
         bookmark: (node) => new MarkerView(node, 'fp-bookmark', `[${node.attrs.name}]`),
         xe: (node) => new MarkerView(node, 'fp-xe', `{XE « ${node.attrs.term}${node.attrs.sub ? ':' + node.attrs.sub : ''} »}`),
@@ -382,8 +454,15 @@ export function refsPlugin(hooks: RefsHooks, refreshKeys: PluginKey[] = []): Plu
   })
 }
 
-function jumpToTarget(view: EditorView, target: string, hooks: RefsHooks, e: MouseEvent): boolean {
+function jumpToTarget(view: EditorView, node: PMNode, hooks: RefsHooks, e: MouseEvent): boolean {
   if (!(e.ctrlKey || e.metaKey)) return false
+  const target = node.attrs.target as string
+  if (node.attrs.doc) {
+    if (!hooks.jumpDoc) return false
+    // Après le clic : le document change sous la souris.
+    setTimeout(() => hooks.jumpDoc?.(node.attrs.doc as string, target))
+    return true
+  }
   const pos = refsKey.getState(view.state)?.data.bookmarks.get(target)
   if (pos === undefined) return false
   hooks.jump(pos)
@@ -417,6 +496,8 @@ class ValueView implements NodeView {
     if (this.node.type === n.xref) {
       this.dom.dataset.xref = a.target
       this.dom.dataset.show = a.show
+      if (a.doc) this.dom.dataset.doc = a.doc
+      else delete this.dom.dataset.doc
     }
     if (this.node.type === n.cite) this.dom.dataset.cite = (a.ids as string[]).join(' ')
   }

@@ -134,7 +134,7 @@ export function refInline(r: RefInline): Inline {
     case 'bookmark':
       return { type: 'bookmark', name: r.name }
     case 'xref':
-      return { type: 'xref', target: r.target, show: r.show, ...cleanMarks(r) }
+      return { type: 'xref', target: r.target, show: r.show, ...(r.doc ? { doc: r.doc } : {}), ...(r.last ? { last: r.last } : {}), ...cleanMarks(r) }
     case 'cite':
       return { type: 'cite', ids: [...r.ids], ...(r.locator ? { locator: r.locator } : {}), ...cleanMarks(r) }
     case 'xe':

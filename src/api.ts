@@ -40,7 +40,7 @@ declare global {
 export function publishApi(app: FolioApp): FolioApi {
   const api: FolioApi = {
     get doc() {
-      return app.getDoc()
+      return app.fileDoc()
     },
     version: __FOLIO_VERSION__,
     serialize: () => app.serialize(),
@@ -51,7 +51,7 @@ export function publishApi(app: FolioApp): FolioApi {
       return { ok: false, reason: res.reason }
     },
     schema: () => buildSchema(),
-    compact: () => toCompact(app.getDoc()),
+    compact: () => toCompact(app.fileDoc()),
     get dirty() {
       return app.dirty
     },

@@ -122,6 +122,8 @@ fills in the defaults; the file it saves always holds the complete form.
 | `blocks` | array | `[]` | The content, top to bottom. A plain string is a paragraph. |
 | `markdown` | string | — | The whole content as Markdown, *instead of* `blocks`. |
 | `assets` | object | `{}` | Pictures (and fonts) as `data:` URIs in base64, by id, used as `"asset:<id>"`. |
+| `key` | string | — | With several documents in the file: a short name for this one (a letter, then letters, digits, `_`). See *Several documents in one file*. |
+| `documents` | array | none | More documents in the same file, each complete and independent, shown as tabs. Only in the first document. |
 
 ### `meta`
 
@@ -746,6 +748,50 @@ with their pages.
 `constitution`, `other`), `"term"` the full citation and `"short"` its short
 form; an `authorities` block lists them by category.
 
+### Several documents in one file
+
+One file can hold several documents, shown as tabs at the bottom of the
+window: a report and its annexes, the chapters of a thesis, a letter and its
+attachments. Use this only when asked for several documents. The first
+document carries the others in `documents`; each one is complete and
+independent (its own `meta`, `page`, `headers`, `theme`, `styles`, `blocks`,
+`comments`, `assets`…) and has a `key`.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "key": "report",
+  "meta": { "title": "Annual report", "lang": "en" },
+  "blocks": [
+    { "type": "heading", "level": 1, "text": "Annual report" },
+    { "content": ["Sales grew in every region (see ", { "type": "xref", "doc": "annex", "target": "sales", "show": "label" }, ", in ", { "text": "the annex", "link": "#annex:" }, ")."] }
+  ],
+  "documents": [
+    {
+      "key": "annex",
+      "meta": { "title": "Annex A", "lang": "en" },
+      "page": { "orientation": "landscape" },
+      "blocks": [
+        { "type": "heading", "level": 1, "text": "Annex A: figures" },
+        { "type": "table", "rows": [["Region", "Sales"], ["North", "120"]] },
+        { "type": "paragraph", "style": "caption", "content": [{ "type": "bookmark", "name": "sales" }, "Table ", { "type": "seq", "label": "table" }, ": Sales by region"] }
+      ]
+    }
+  ]
+}
+```
+
+- A link `"#annex:sales"` opens the document `annex` at its bookmark (or a
+  heading whose text gives that anchor, `#annex:annex-a-figures`); `"#annex:"`
+  opens it at the start.
+- A cross-reference with `"doc": "annex"` shows the text, label or number
+  of a bookmark in that document, always up to date. `"show": "page"` shows
+  its page once that document has been laid out; the app keeps the last value
+  in `"last"` (leave it out).
+- Exporting or printing asks for the document on screen or all of them, one
+  after another, each starting on a new page.
+
 ### The whole document as Markdown
 
 ```json
@@ -796,7 +842,8 @@ lists (indent to nest), `>` quotations, fenced code blocks, pipe tables (with
 - [ ] Every picture has `alt` text, and its data in `assets` (or in `src`).
 - [ ] Formulas are LaTeX (`$…$`, `equation` blocks) with no space just inside
       the `$` signs, and every `\\eqref` names an existing `\\label`.
-- [ ] Every `cite` id is in `sources`; every `xref` target is a `bookmark`;
+- [ ] Every `cite` id is in `sources`; every `xref` target is a `bookmark`
+      (in the document named by its `doc`, if any);
       caption and page numbers are `seq` and `xref` runs, never typed by hand.
 - [ ] Nothing is invented that the request or the sources do not support.
 

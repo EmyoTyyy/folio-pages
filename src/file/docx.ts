@@ -175,8 +175,10 @@ export async function saveExport(bytes: Uint8Array, name: string, mime: string, 
       await w.close()
       return { kind: 'saved', name: handle.name }
     } catch (e) {
-      if (e && typeof e === 'object' && 'name' in e && (e as { name: string }).name === 'AbortError') return { kind: 'cancelled' }
-      return { kind: 'error', message: e instanceof Error ? e.message : String(e) }
+      const n = e && typeof e === 'object' && 'name' in e ? (e as { name: string }).name : ''
+      if (n === 'AbortError') return { kind: 'cancelled' }
+      // Plus de geste de l'utilisateur (un long export) : on télécharge, comme sans le sélecteur.
+      if (n !== 'SecurityError' && n !== 'NotAllowedError') return { kind: 'error', message: e instanceof Error ? e.message : String(e) }
     }
   }
   const url = URL.createObjectURL(blob)

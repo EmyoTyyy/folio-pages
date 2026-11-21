@@ -24,6 +24,8 @@ export interface Settings {
   immColor: string
   immFocus: number
   immSpacing: boolean
+  /** Mode lecture : pages côte à côte (deux par écran) plutôt que verticales. */
+  readSpread: boolean
   /** Vue page (feuilles séparées) ou vue web (texte continu). */
   view: 'page' | 'web' | 'draft' | 'outline'
   /** Afficher la règle. */
@@ -72,7 +74,7 @@ export interface Settings {
 }
 
 const KEY = 'folio-pages:settings'
-const DEFAULTS: Settings = { reduceImages: true, markdownTyping: true, spellcheck: true, showMarks: false, zoom: 1, ribbonCollapsed: false, ribbonAutoHide: true, offline: false, autoUpdate: true, immWidth: 'moderate', immColor: 'none', immFocus: 0, immSpacing: false, view: 'page', ruler: true, appearance: 'system', navPane: false, commentsPane: true, authorName: '', trackView: 'all', reviewPane: 'off', mailVia: 'app', autoCorrect: true, acQuotes: true, acFrenchSpacing: true, acReplace: true, acCapitalize: false, acCustom: [], acRemoved: [], defaultDesign: null, typewriter: false, dimOthers: false, autoSave: false, longSentences: false, imageWrap: 'none', imageAlign: 'center' }
+const DEFAULTS: Settings = { reduceImages: true, markdownTyping: true, spellcheck: true, showMarks: false, zoom: 1, ribbonCollapsed: false, ribbonAutoHide: true, offline: false, autoUpdate: true, immWidth: 'moderate', immColor: 'none', immFocus: 0, immSpacing: false, readSpread: false, view: 'page', ruler: true, appearance: 'system', navPane: false, commentsPane: true, authorName: '', trackView: 'all', reviewPane: 'off', mailVia: 'app', autoCorrect: true, acQuotes: true, acFrenchSpacing: true, acReplace: true, acCapitalize: false, acCustom: [], acRemoved: [], defaultDesign: null, typewriter: false, dimOthers: false, autoSave: false, longSentences: false, imageWrap: 'none', imageAlign: 'center' }
 
 let current: Settings = load()
 const listeners = new Set<(s: Settings) => void>()

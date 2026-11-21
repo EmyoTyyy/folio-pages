@@ -23,11 +23,13 @@ import type { MathHooks } from './editor/math'
 import type { MathProblem } from './math'
 import { toCompact } from './format/compact'
 import type { FieldContext } from './format/fields'
-import type { StyleDef, Theme } from './format/types'
+import type { StyleDef, Theme, XrefShow } from './format/types'
 import { settings } from './settings'
 import type { Report } from './format/dsl'
 import { prettyJson } from './format/json'
 import { loadDocument, type LoadResult } from './format/load'
+import { anchorSlug, combineDocuments, ensureKeys, freeKey, joinFile, parseDocLink, splitFile } from './format/documents'
+import { crossRefValue, refsKey, type OtherDoc } from './editor/refs'
 import { emptyMeta, mintId, type FolioDoc } from './format/types'
 import type { Key } from './i18n/dict'
 import { fileSize, formatDate, lang, t } from './i18n/i18n'
@@ -76,7 +78,24 @@ function contentKey(doc: FolioDoc): string {
     fonts: doc.fonts,
     blocks: doc.blocks,
     assets: doc.assets,
+    documents: doc.documents?.map(contentKey),
   })
+}
+
+/**
+ * Un document du fichier. Celui qui est affiché vit dans la vue (state et saved
+ * sont alors ceux de l'application) ; les autres gardent ici leur état, avec
+ * leur historique d'annulation.
+ */
+interface DocSlot {
+  key: string
+  state: EditorState | null
+  /** Ce document tel qu'il est dans le fichier ; null s'il n'y est pas. */
+  saved: PMNode | null
+  /** Défilement quand on l'a quitté. */
+  scroll: number
+  /** Dernières pages connues de ses signets (vue page), pour les renvois des autres documents. */
+  pages: Map<string, string> | null
 }
 
 export type ShortcutName = Parameters<NonNullable<EditorContext['onShortcut']>>[0]
@@ -164,6 +183,18 @@ export class FolioApp {
     problem: (p) => describeMathProblem(p),
   }
   private docListeners = new Set<(tr: Transaction) => void>()
+  /** Les documents du fichier, dans l'ordre des onglets ; `active` : celui qui est affiché. */
+  private slots: DocSlot[] = []
+  private active = 0
+  /** Ordre des documents au dernier enregistrement (ajout, suppression, déplacement : à enregistrer). */
+  private savedOrder = ''
+  private plugins: ReturnType<typeof editorPlugins> = []
+  /** Export de plusieurs documents : l'état réel, pendant qu'un document temporaire est affiché. */
+  private realState: EditorState | null = null
+  /** Défilement de la page (posé par l'interface), pour le retrouver en revenant sur un document. */
+  scrollHooks: { get: () => number; set: (y: number) => void } | null = null
+  /** Avant de changer de document (l'interface ferme ce qui est ouvert sur l'ancien). */
+  onBeforeSwitch: (() => void) | null = null
 
   constructor(init: AppInit, mount: HTMLElement) {
     this.boot = init.boot
@@ -197,9 +228,12 @@ export class FolioApp {
       refs: {
         pageOf: (pos) => (this.pagesInfo ? { index: this.pagesInfo.index(pos), label: this.pagesInfo.format(this.pagesInfo.pageAt(pos)) } : null),
         jump: (pos) => this.jumpTo(pos),
+        other: (key) => this.otherDoc(key),
+        jumpDoc: (key, bookmark) => void this.jumpToAnchor(`${key}:${bookmark}`),
         lang: () => lang(),
         labels: () => ({
           missingBookmark: t('ref.missingBookmark'),
+          inDoc: (title) => t('docs.inDoc', { title }),
           above: t('ref.above'),
           below: t('ref.below'),
           emptyFigures: t('ref.emptyFigures'),
@@ -255,11 +289,16 @@ export class FolioApp {
       },
     }
     this.editorCtx = ctx
-    let state = EditorState.create({ schema, doc: docToPM(init.doc), plugins: editorPlugins(ctx) })
-    // Les listes qui continuent la numérotation prennent leur numéro dès l'ouverture.
-    const fix = fixNumbering(state)
-    if (fix) state = state.apply(fix.setMeta('addToHistory', false))
+    this.plugins = editorPlugins(ctx)
+    const docs = splitFile(init.doc)
+    ensureKeys(docs)
+    const state = this.makeState(docs[0])
     this.savedDoc = init.boot === 'recovered-text' ? null : state.doc
+    this.slots = docs.map((d, i) => {
+      const st = i === 0 ? null : this.makeState(d)
+      return { key: d.key!, state: st, saved: st && init.boot !== 'recovered-text' ? st.doc : null, scroll: 0, pages: null }
+    })
+    this.savedOrder = this.order()
     this.docStyle = h('style', { id: 'fp-doc-style', 'data-folio-transient': '' })
     document.head.append(this.docStyle)
     this.view = new EditorView(mount, {
@@ -274,7 +313,7 @@ export class FolioApp {
         'aria-label': t('editor.label'),
       }),
       dispatchTransaction: (tr) => this.dispatch(tr),
-      editable: () => !this.reading,
+      editable: () => !this.reading && !this.realState,
       handleDOMEvents: {
         // Un fichier déposé qui n'est pas une image ne remplace jamais l'application : on l'ouvre comme document.
         drop: (_view, e) => {
@@ -290,6 +329,8 @@ export class FolioApp {
       },
     })
     this.updateDocStyle()
+    // Les renvois vers les autres documents du fichier (connus seulement maintenant).
+    if (this.slots.length > 1) this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
     // Les champs {{heure}} et {{date}} restent à l'heure.
     setInterval(() => {
       if (this.hasTimeFields()) this.view.dispatch(this.state.tr.setMeta(fieldsKey, true).setMeta('addToHistory', false))
@@ -375,6 +416,17 @@ export class FolioApp {
   /** Place le curseur à la fin d'un bloc (titre…) et le fait défiler en haut de l'écran. */
   /** Lien interne « #titre » : va au titre dont le texte correspond. */
   jumpToAnchor(anchor: string): boolean {
+    // « clé:ancre » : un autre document du fichier (ancre vide : son début).
+    const other = parseDocLink(`#${anchor}`)
+    if (other && this.slots.some((s) => s.key === other.doc)) {
+      if (!this.switchToKey(other.doc)) return false
+      if (!other.anchor) {
+        this.view.dispatch(this.state.tr.setSelection(Selection.atStart(this.state.doc)).scrollIntoView())
+        this.scrollHooks?.set(0)
+        return true
+      }
+      return this.jumpToAnchor(other.anchor)
+    }
     // Un signet de ce nom d'abord, puis un titre dont le texte correspond.
     let mark = -1
     this.state.doc.descendants((node, pos) => {
@@ -385,13 +437,7 @@ export class FolioApp {
       this.jumpTo(mark)
       return true
     }
-    const slug = (s: string) =>
-      s
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
+    const slug = anchorSlug
     const want = slug(anchor)
     if (!want) return false
     let found = -1
@@ -472,7 +518,322 @@ export class FolioApp {
   get dirty(): boolean {
     // Une fenêtre synchronisée : c'est la principale qui garde le fichier.
     if (this.syncClient?.active) return false
-    return this.protectionChanged || this.savedDoc === null || !this.state.doc.eq(this.savedDoc)
+    const live = this.realState ?? this.state
+    if (this.protectionChanged || this.savedDoc === null || !live.doc.eq(this.savedDoc) || this.order() !== this.savedOrder) return true
+    return this.slots.some((s, i) => i !== this.active && (s.saved === null || !s.state!.doc.eq(s.saved)))
+  }
+
+  // --- plusieurs documents dans le fichier -------------------------------------------
+
+  /** Nouvel état de l'éditeur pour un document (historique vide, numérotation des listes à jour). */
+  private makeState(doc: FolioDoc): EditorState {
+    let state = EditorState.create({ schema, doc: docToPM(doc), plugins: this.plugins })
+    // Les listes qui continuent la numérotation prennent leur numéro dès l'ouverture.
+    const fix = fixNumbering(state)
+    if (fix) state = state.apply(fix.setMeta('addToHistory', false))
+    return state
+  }
+
+  private order(): string {
+    return this.slots.map((s) => s.key).join(',')
+  }
+
+  /** L'état d'un document (celui qui est affiché : l'état réel, même pendant un export). */
+  private slotState(i: number): EditorState {
+    return i === this.active ? (this.realState ?? this.view.state) : this.slots[i].state!
+  }
+
+  /** Les documents du fichier, dans l'ordre des onglets. */
+  get documents(): { key: string; title: string; active: boolean; dirty: boolean }[] {
+    return this.slots.map((s, i) => {
+      const doc = this.slotState(i).doc
+      const saved = i === this.active ? this.savedDoc : s.saved
+      return { key: s.key, title: this.docTitleOf(doc, i), active: i === this.active, dirty: saved === null || !doc.eq(saved) }
+    })
+  }
+
+  get activeIndex(): number {
+    return this.active
+  }
+
+  get activeKey(): string {
+    return this.slots[this.active].key
+  }
+
+  /** Titre d'un document : le sien, sinon son premier titre, sinon « Document n ». */
+  private docTitleOf(doc: PMNode, i: number): string {
+    return (doc.attrs.title as string).trim() || firstHeadingText(doc) || t('docs.untitled', { n: i + 1 })
+  }
+
+  /** Un autre document, pour les renvois { doc } (null : ce document-ci, ou clé inconnue). */
+  private otherDoc(key: string): OtherDoc | null {
+    const i = this.slots.findIndex((s) => s.key === key)
+    if (i < 0) return null
+    if (i === this.active && !this.realState) return null
+    const slot = this.slots[i]
+    const doc = this.slotState(i).doc
+    return { doc, title: this.docTitleOf(doc, i), page: (b) => slot.pages?.get(b) ?? null }
+  }
+
+  /** Le document d'une clé : son état (pour les fenêtres Lien et Renvoi). */
+  stateOf(key: string): EditorState | null {
+    const i = this.slots.findIndex((s) => s.key === key)
+    return i < 0 ? null : this.slotState(i)
+  }
+
+  /** La valeur actuelle d'un renvoi vers un signet d'un autre document (vide s'il manque). */
+  crossValue(key: string, bookmark: string, show: XrefShow): string {
+    const other = this.otherDoc(key)
+    return other ? (crossRefValue(other, bookmark, show, this.editorCtx.refs!.labels()) ?? '') : ''
+  }
+
+  /** Une transaction sur un autre document (un signet ajouté pour un renvoi). */
+  updateOther(key: string, fn: (state: EditorState) => Transaction | null): void {
+    const i = this.slots.findIndex((s) => s.key === key)
+    if (i < 0) return
+    if (i === this.active) {
+      const tr = fn(this.state)
+      if (tr) this.view.dispatch(tr)
+      return
+    }
+    const tr = fn(this.slots[i].state!)
+    if (tr) {
+      this.slots[i].state = this.slots[i].state!.apply(tr)
+      this.scheduleSnapshot()
+    }
+  }
+
+  /** Pages des signets du document affiché (vue page), pour les renvois des autres documents. */
+  private bookmarkPages(): Map<string, string> | null {
+    const info = this.pagesInfo
+    if (!info) return this.slots[this.active].pages
+    const out = new Map<string, string>()
+    this.state.doc.descendants((node, pos) => {
+      if (node.type === schema.nodes.bookmark && !out.has(node.attrs.name)) out.set(node.attrs.name, info.format(info.pageAt(pos)))
+      return !node.isAtom || node.isBlock
+    })
+    return out
+  }
+
+  /** Affiche un autre document du fichier (son historique d'annulation le suit). */
+  switchTo(i: number): boolean {
+    if (i === this.active || !this.slots[i] || this.realState) return false
+    this.onBeforeSwitch?.()
+    const cur = this.slots[this.active]
+    cur.state = this.view.state
+    cur.saved = this.savedDoc
+    cur.scroll = this.scrollHooks?.get() ?? 0
+    cur.pages = this.bookmarkPages()
+    const next = this.slots[i]
+    const state = next.state!
+    next.state = null
+    this.active = i
+    this.savedDoc = next.saved
+    this.showState(state)
+    this.scrollHooks?.set(next.scroll)
+    return true
+  }
+
+  switchToKey(key: string): boolean {
+    const i = this.slots.findIndex((s) => s.key === key)
+    return i >= 0 && (i === this.active || this.switchTo(i))
+  }
+
+  /** Un état complet à l'écran : l'interface et les renvois suivent. */
+  private showState(state: EditorState): void {
+    this.view.updateState(state)
+    this.view.setProps({})
+    this.onStateReset?.()
+    this.updateDocStyle()
+    for (const fn of this.docListeners) fn(state.tr)
+    // Les renvois vers les autres documents : ils ont pu changer pendant ce temps.
+    this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
+    this.notify()
+  }
+
+  /** Ajoute un document au fichier (vide, ou celui donné) et l'affiche ; renvoie sa place. */
+  addDocument(doc?: FolioDoc, at = this.active + 1): number {
+    if (this.slots.length >= 50) {
+      toast(t('docs.tooMany'), { kind: 'info' })
+      return -1
+    }
+    let d = doc
+    if (!d) {
+      const fresh = loadDocument({ format: 'folio/doc', version: 1, blocks: [] })
+      d = withDefaultDesign({ ...(fresh.ok ? fresh.doc : this.getDoc()), meta: { ...emptyMeta(), title: t('docs.untitled', { n: this.slots.length + 1 }) }, blocks: [], comments: [] })
+    }
+    const key = freeKey(this.slots.map((s) => s.key))
+    const place = Math.max(0, Math.min(this.slots.length, at))
+    this.slots.splice(place, 0, { key, state: this.makeState(d), saved: null, scroll: 0, pages: null })
+    if (place <= this.active) this.active++
+    if (this.isDemo) this.isDemo = false
+    this.switchTo(place)
+    this.scheduleSnapshot()
+    this.notify()
+    return place
+  }
+
+  /** Copie d'un document, juste après lui. */
+  duplicateDocument(i: number): number {
+    if (!this.slots[i]) return -1
+    const d = pmToDoc(this.slotState(i).doc, this.identity)
+    d.meta = { ...d.meta, title: t('docs.copyOf', { title: this.docTitleOf(this.slotState(i).doc, i) }).slice(0, 500) }
+    return this.addDocument(d, i + 1)
+  }
+
+  /** Retire un document du fichier ; renvoie de quoi l'y remettre (Annuler). */
+  removeDocument(i: number): (() => void) | null {
+    if (this.slots.length < 2 || !this.slots[i] || this.realState) return null
+    if (i === this.active) this.switchTo(i > 0 ? i - 1 : 1)
+    const [slot] = this.slots.splice(i, 1)
+    if (i < this.active) this.active--
+    this.scheduleSnapshot()
+    this.notify()
+    return () => {
+      if (this.slots.some((s) => s.key === slot.key)) return
+      const at = Math.min(i, this.slots.length)
+      this.slots.splice(at, 0, slot)
+      if (at <= this.active) this.active++
+      this.switchTo(at)
+      this.scheduleSnapshot()
+      this.notify()
+    }
+  }
+
+  /** Change un document de place. */
+  moveDocument(from: number, to: number): void {
+    const n = this.slots.length
+    if (from === to || from < 0 || to < 0 || from >= n || to >= n) return
+    const activeKey = this.slots[this.active].key
+    const [slot] = this.slots.splice(from, 1)
+    this.slots.splice(to, 0, slot)
+    this.active = this.slots.findIndex((s) => s.key === activeKey)
+    this.scheduleSnapshot()
+    this.notify()
+  }
+
+  /** Renomme un document (son titre). */
+  renameDocument(i: number, title: string): void {
+    const v = title.replace(/\s+/g, ' ').trim().slice(0, 500)
+    if (i === this.active) return this.setTitle(v)
+    const slot = this.slots[i]
+    if (!slot?.state) return
+    slot.state = slot.state.apply(slot.state.tr.setDocAttribute('title', v).setMeta('addToHistory', false))
+    this.scheduleSnapshot()
+    this.notify()
+  }
+
+  /** Tous les documents du fichier en un seul (export ou impression de tous les documents). */
+  combinedDoc(): { doc: FolioDoc; styles: string[] } {
+    const docs = this.slots.map((s, i) => ({ ...this.withCrossValues(pmToDoc(this.slotState(i).doc, this.identity), i), key: s.key }))
+    const { doc, note } = combineDocuments(docs)
+    return { doc, styles: note.styles }
+  }
+
+  /** Le document affiché, prêt pour un export seul : les renvois et liens vers les autres documents deviennent du texte. */
+  standaloneDoc(): FolioDoc | null {
+    const doc = this.withCrossValues(pmToDoc(this.slotState(this.active).doc, this.identity), this.active)
+    let changed = false
+    const walk = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(walk)
+      if (!v || typeof v !== 'object') return v
+      const o = v as Record<string, unknown>
+      if (o.type === 'xref' && typeof o.doc === 'string' && o.doc) {
+        changed = true
+        const { type: _t, target: _g, show: _s, doc: _d, last, ...marks } = o
+        return { ...marks, text: (last as string) || '?' }
+      }
+      const out: Record<string, unknown> = {}
+      for (const [k, x] of Object.entries(o)) out[k] = walk(x)
+      if (typeof out.link === 'string' && parseDocLink(out.link)) {
+        changed = true
+        delete out.link
+      }
+      return out
+    }
+    const blocks = walk(doc.blocks) as FolioDoc['blocks']
+    return changed ? { ...doc, blocks } : null
+  }
+
+  /** Les renvois vers d'autres documents gardent leur valeur actuelle (« last »), pour le fichier et les exports. */
+  private withCrossValues(doc: FolioDoc, i: number): FolioDoc {
+    const labels = this.editorCtx.refs!.labels()
+    const resolve = (key: string, target: string, show: string): string | null => {
+      const j = this.slots.findIndex((s) => s.key === key)
+      if (j < 0 || j === i) return null
+      const other = this.slotState(j).doc
+      const pages = j === this.active && !this.realState ? this.bookmarkPages() : this.slots[j].pages
+      return crossRefValue({ doc: other, title: this.docTitleOf(other, j), page: (b) => pages?.get(b) ?? null }, target, show as never, labels)
+    }
+    let found = false
+    const walk = (v: unknown): unknown => {
+      if (Array.isArray(v)) return v.map(walk)
+      if (!v || typeof v !== 'object') return v
+      const o = v as Record<string, unknown>
+      if (o.type === 'xref' && typeof o.doc === 'string' && o.doc) {
+        found = true
+        const value = resolve(o.doc, String(o.target), String(o.show))
+        return value ? { ...o, last: value.slice(0, 2000) } : o
+      }
+      const out: Record<string, unknown> = {}
+      for (const [k, x] of Object.entries(o)) out[k] = walk(x)
+      return out
+    }
+    const blocks = walk(doc.blocks) as FolioDoc['blocks']
+    return found ? { ...doc, blocks } : doc
+  }
+
+  /**
+   * Affiche un document temporaire (export ou impression de tous les documents)
+   * le temps de `run`, puis revient au vrai. Rien n'est modifiable entre-temps,
+   * et rien de ce document temporaire ne va dans le fichier.
+   */
+  async showTemporarily<T>(doc: FolioDoc, run: () => Promise<T>): Promise<T> {
+    if (this.realState) return run()
+    this.onBeforeSwitch?.()
+    const scroll = this.scrollHooks?.get() ?? 0
+    this.realState = this.view.state
+    this.view.updateState(EditorState.create({ schema, doc: docToPM(doc), plugins: this.plugins }))
+    this.view.setProps({})
+    this.updateDocStyle()
+    this.notify()
+    try {
+      return await run()
+    } finally {
+      const real = this.realState
+      this.realState = null
+      this.view.updateState(real)
+      this.view.setProps({})
+      this.updateDocStyle()
+      this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
+      this.notify()
+      this.scrollHooks?.set(scroll)
+    }
+  }
+
+  get showingTemporary(): boolean {
+    return this.realState !== null
+  }
+
+  /** Le fichier entier : le premier document, avec les autres dans « documents ». */
+  fileDoc(): FolioDoc {
+    const docs = this.slots.map((s, i) => ({ ...this.withCrossValues(pmToDoc(this.slotState(i).doc, this.identity), i), key: s.key }))
+    return joinFile(docs)
+  }
+
+  /** Remplace tous les documents par ceux d'un fichier ; `saved` : le fichier les contient déjà. */
+  private resetSlots(file: FolioDoc, saved: boolean): void {
+    const docs = splitFile(file)
+    ensureKeys(docs)
+    const first = this.makeState(docs[0])
+    this.active = 0
+    this.slots = docs.map((d, i) => {
+      const st = i === 0 ? null : this.makeState(d)
+      return { key: d.key!, state: st, saved: saved && st ? st.doc : null, scroll: 0, pages: null }
+    })
+    this.savedOrder = saved ? this.order() : ''
+    this.resetTo(first, saved)
+    if (this.slots.length > 1) this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
   }
 
   // --- protection par mot de passe (phase 7) ---------------------------------
@@ -530,13 +891,13 @@ export class FolioApp {
    */
   async updateFile(release: ReleaseInfo, carry: (html: string) => string): Promise<SaveOutcome> {
     if (this.saving) return { kind: 'cancelled' }
-    const docAtSave = this.state.doc
+    const docAtSave = this.saveMarks()
     const modified = new Date().toISOString()
     this.saving = true
     this.notify()
     let outcome: SaveOutcome
     try {
-      const doc = this.getDoc()
+      const doc = this.fileDoc()
       doc.meta.modified = modified
       doc.template = this.editingTemplate
       doc.readOnly = this.lockedReadOnly
@@ -553,7 +914,7 @@ export class FolioApp {
 
   /** Le fichier complet à écrire (chiffré si le document est protégé). */
   async fileText(modified = this.identity.modified): Promise<string> {
-    const doc = this.getDoc()
+    const doc = this.fileDoc()
     doc.meta.modified = modified
     doc.template = this.editingTemplate
     doc.readOnly = this.lockedReadOnly
@@ -616,13 +977,13 @@ export class FolioApp {
 
   /** JSON du document ; la forme compacte (pour une IA) laisse les images de côté, elles sont reprises au retour. */
   json(compact = false): string {
-    const doc = this.getDoc()
+    const doc = this.fileDoc()
     return compact ? JSON.stringify(toCompact(doc, { assets: false }), null, 2) : prettyJson(doc)
   }
 
   /** Le fichier complet tel qu'il serait enregistré maintenant. */
   serialize(modified = this.identity.modified): string {
-    const doc = this.getDoc()
+    const doc = this.fileDoc()
     doc.meta.modified = modified
     doc.template = this.editingTemplate
     doc.readOnly = this.lockedReadOnly
@@ -646,9 +1007,10 @@ export class FolioApp {
     if (this.saving) return null
     const id = mintId()
     const now = new Date().toISOString()
-    const docAtSave = this.state.doc
-    const doc = this.getDoc()
+    const docAtSave = this.saveMarks()
+    const doc = this.fileDoc()
     doc.id = id
+    for (const d of doc.documents ?? []) d.id = id
     if (kind === 'new' || kind === 'template') doc.meta.created = now
     doc.meta.modified = now
     doc.template = kind === 'template'
@@ -790,9 +1152,10 @@ export class FolioApp {
 
   /** Nouvel état de l'éditeur (historique vide) ; `saved` : le fichier contient déjà ce document. */
   private resetState(doc: FolioDoc, saved: boolean): void {
-    let state = EditorState.create({ schema, doc: docToPM(doc), plugins: this.view.state.plugins })
-    const fix = fixNumbering(state)
-    if (fix) state = state.apply(fix.setMeta('addToHistory', false))
+    this.resetSlots(doc, saved)
+  }
+
+  private resetTo(state: EditorState, saved: boolean): void {
     this.view.updateState(state)
     this.view.setProps({})
     this.onStateReset?.()
@@ -858,7 +1221,8 @@ export class FolioApp {
   suggestedFileName(): string {
     if (this.chosenName) return this.chosenName
     const opened = this.boot === 'document' ? openedFileName() : null
-    return opened ?? fileNameFor(this.title().trim() || firstHeadingText(this.state.doc), t('title.placeholder'))
+    const first = this.slotState(0).doc
+    return opened ?? fileNameFor((first.attrs.title as string).trim() || firstHeadingText(first), t('title.placeholder'))
   }
 
   /** Un fichier mémorisé contient-il encore ce document ? (même identité) */
@@ -886,8 +1250,9 @@ export class FolioApp {
     }
     this.saving = true
     this.notify()
+    if (this.realState) return null
     let outcome: SaveOutcome
-    const docAtSave = this.state.doc
+    const docAtSave = this.saveMarks()
     const modified = new Date().toISOString()
     try {
       const html = await this.fileText(modified)
@@ -913,12 +1278,22 @@ export class FolioApp {
     return outcome
   }
 
-  private afterSave(outcome: SaveOutcome, docAtSave: PMNode, modified: string): void {
+  /** Ce que contient le fichier au moment de l'écrire : chaque document, et leur ordre. */
+  private saveMarks(): { docs: Map<string, PMNode>; order: string } {
+    return { docs: new Map(this.slots.map((s, i) => [s.key, this.slotState(i).doc])), order: this.order() }
+  }
+
+  private afterSave(outcome: SaveOutcome, marks: { docs: Map<string, PMNode>; order: string }, modified: string): void {
     switch (outcome.kind) {
       case 'saved':
       case 'downloaded': {
         this.identity.modified = modified
-        this.savedDoc = docAtSave
+        this.slots.forEach((s, i) => {
+          const d = marks.docs.get(s.key) ?? null
+          if (i === this.active) this.savedDoc = d
+          else s.saved = d
+        })
+        this.savedOrder = marks.order
         this.lastSave = { kind: outcome.kind, name: outcome.name }
         this.saveFailed = false
         this.isDemo = false
@@ -974,7 +1349,7 @@ export class FolioApp {
   /** Ajoute l'état actuel à l'historique (dans ce navigateur seulement). */
   recordVersion(reason: VersionReason): Promise<boolean> {
     this.lastVersionAt = Date.now()
-    const json = JSON.stringify(this.getDoc())
+    const json = JSON.stringify(this.fileDoc())
     const sealer = this.sealer
     // Document protégé : la version est chiffrée (et sans titre en clair) ; les doublons se voient ici.
     if (sealer && json === this.lastVersionJson) return Promise.resolve(false)
@@ -1007,7 +1382,7 @@ export class FolioApp {
     if (!res.ok || this.reading) return false
     await this.recordVersion('restore')
     this.isDemo = false
-    this.replaceDocument(res.doc, false)
+    this.replaceFile(res.doc)
     return true
   }
 
@@ -1019,7 +1394,7 @@ export class FolioApp {
       return false
     }
     const sealer = this.sealer
-    const json = JSON.stringify(this.getDoc())
+    const json = JSON.stringify(this.fileDoc())
     return putSnapshot({
       key: this.identity.id,
       at: Date.now(),
@@ -1044,7 +1419,7 @@ export class FolioApp {
       await deleteSnapshot(snap.key)
       return 'none'
     }
-    if (contentKey(stored.doc) === contentKey(this.getDoc())) {
+    if (contentKey(stored.doc) === contentKey(this.fileDoc())) {
       if (!snap.downloaded || this.boot === 'document') await deleteSnapshot(snap.key)
       return 'same'
     }
@@ -1071,7 +1446,7 @@ export class FolioApp {
       this.identity = { id: stored.doc.id, created: stored.doc.meta.created, modified: '' }
     }
     this.isDemo = false
-    this.replaceDocument(stored.doc, false)
+    this.replaceFile(stored.doc)
     toast(t('recovery.restored'), { kind: 'success' })
     return 'restored'
   }
@@ -1091,6 +1466,25 @@ export class FolioApp {
     // Une étape d'annulation à elle seule, séparée de la frappe d'avant et d'après.
     this.view.dispatch(closeHistory(tr))
     this.view.dispatch(closeHistory(this.state.tr))
+  }
+
+  /**
+   * Remplace le contenu du fichier : un seul document remplace celui qui est
+   * affiché (une étape annulable) ; plusieurs documents remplacent tout le
+   * fichier, et celui qui a la même clé que le document affiché reçoit son
+   * contenu de façon annulable.
+   */
+  replaceFile(file: FolioDoc): void {
+    const docs = splitFile(file)
+    if (docs.length === 1) return this.replaceDocument(docs[0], false)
+    ensureKeys(docs)
+    const keep = Math.max(0, docs.findIndex((d) => d.key === this.slots[this.active].key))
+    const current = this.slots[this.active]
+    this.slots = docs.map((d, i) => (i === keep ? { ...current, key: d.key! } : { key: d.key!, state: this.makeState(d), saved: null, scroll: 0, pages: null }))
+    this.active = keep
+    this.replaceDocument(docs[keep], false)
+    this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
+    this.notify()
   }
 
   private acCache: { key: string; list: Map<string, string> } | null = null
@@ -1131,10 +1525,11 @@ export class FolioApp {
   /** Charge un document (texte JSON ou objet) à la place du contenu actuel. */
   loadInto(input: unknown): LoadResult {
     // Une IA renvoie les images sous la forme « asset:… » sans leurs données : on reprend celles du document.
-    const res = loadDocument(input, { assets: this.getDoc().assets })
+    const known = Object.assign({}, ...this.slots.map((_, i) => pmToDoc(this.slotState(i).doc, this.identity).assets)) as Record<string, string>
+    const res = loadDocument(input, { assets: known })
     if (res.ok) {
       this.isDemo = false
-      this.replaceDocument(res.doc, false)
+      this.replaceFile(res.doc)
       this.report = res.report
       this.notify()
     }

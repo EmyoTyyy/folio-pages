@@ -333,7 +333,9 @@ export function toCompact(doc: FolioDoc, opts: CompactOptions = {}): Json {
   }
   if (doc.template) out.template = true
   if (doc.readOnly) out.readOnly = true
+  if (doc.key) out.key = doc.key
   if (opts.assets !== false && Object.keys(doc.assets).length) out.assets = { ...doc.assets }
+  if (doc.documents?.length) out.documents = doc.documents.map((d) => toCompact(d, opts))
   return out
 }
 

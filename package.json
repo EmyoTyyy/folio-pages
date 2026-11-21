@@ -1,6 +1,6 @@
 {
   "name": "folio-pages",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "description": "Un traitement de texte libre dans un seul fichier HTML : l'éditeur et le document à la fois.",
   "license": "MIT",
   "private": true,
@@ -12,7 +12,7 @@
     "node": ">=18.19"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --open /dev.html",
     "typecheck": "tsc -p .",
     "build": "tsc -p . && vite build && vite build -c vite.docx.config.ts && node scripts/build-single.mjs && npm run schema --silent",
     "schema": "vite-node scripts/gen-schema.ts",

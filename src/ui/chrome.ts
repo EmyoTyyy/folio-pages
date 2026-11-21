@@ -60,6 +60,8 @@ import { autoCorrectDialog } from './autocorrect'
 import { templateGallery } from './templates'
 import { exportDialog } from './exports'
 import * as NT from './navtools'
+import { SpreadView, isSideToSide, setSideToSide } from './spread'
+import { DocTabs } from './doctabs'
 
 export interface Chrome {
   root: HTMLElement
@@ -230,6 +232,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
         { id: 'm-ruler', label: t('ruler.label'), checked: settings().ruler, run: () => toggleRuler() },
         { id: 'm-nav', label: t('nav.title'), checked: settings().navPane, run: () => P.getNavPane()?.toggle() },
         { id: 'm-reading', label: t('read.mode'), checked: app.reading, run: () => app.setReading(!app.reading) },
+        { id: 'm-side', label: t('rb.sideToSide'), checked: isSideToSide(app), run: () => setSideToSide(app, !isSideToSide(app)) },
         { id: 'm-marks', label: t('ribbon.marks'), checked: settings().showMarks, run: () => toggleSetting('showMarks') },
         { id: 'm-spell', label: t('ribbon.spellcheck'), checked: settings().spellcheck, run: () => toggleSetting('spellcheck') },
         { id: 'm-markdown', label: t('ribbon.markdownTyping'), checked: settings().markdownTyping, run: () => toggleSetting('markdownTyping') },
@@ -407,7 +410,14 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     id: 'fp-read-exit',
     onclick: () => (app.lockedReadOnly ? app.editCopy() : app.setReading(false)),
   })
-  const readBar = h('div', { class: 'fp-banner fp-readbar', id: 'fp-readbar', role: 'status' }, icon(ICONS.page), readText, readBtn)
+  // Disposition des pages en lecture : verticale ou côte à côte.
+  const readLayout = h(
+    'div',
+    { class: 'fp-readbar__layout', role: 'group', 'aria-label': t('rb.pageMovement') },
+    h('button', { type: 'button', class: 'fp-readbar__seg', 'data-read-layout': 'vertical', title: t('rb.vertical'), onclick: () => setSideToSide(app, false) }, icon(I.vertical), h('span', {}, t('rb.vertical'))),
+    h('button', { type: 'button', class: 'fp-readbar__seg', 'data-read-layout': 'side', title: t('rb.sideToSide'), onclick: () => setSideToSide(app, true) }, icon(I.sideToSide), h('span', {}, t('rb.sideToSide'))),
+  )
+  const readBar = h('div', { class: 'fp-banner fp-readbar', id: 'fp-readbar', role: 'status' }, icon(ICONS.page), readText, readLayout, readBtn)
 
   const saveMode = h('span', { class: 'fp-statusbar__mode', id: 'fp-save-mode' })
   const reportChip = h('button', { type: 'button', class: 'fp-chip', id: 'fp-report', onclick: () => reportDialog(app) })
@@ -449,6 +459,8 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   const review = new ReviewPane(app, (side, el) => (side === 'vertical' ? nav.el.after(el) : splitBox.append(el)))
   P.setReviewPane(review)
   installWindows(app, splitBox, canvas)
+  // Mode lecture, pages côte à côte : par-dessus la page.
+  new SpreadView(app, pageView, canvas, zoomBox, page)
 
   const findHost = h('div', { class: 'fp-findhost', id: 'fp-findhost' })
   canvas.prepend(findHost)
@@ -458,7 +470,14 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   installTypewriter(app, canvas)
   installLongSentences(app)
   root.prepend(titlebar, ribbon.el, banner, readBar, ruler.el)
-  root.append(statusbar)
+  // Plusieurs documents dans le fichier : leurs onglets, au-dessus de la barre d'état.
+  const docTabs = new DocTabs(app)
+  root.append(docTabs.el, statusbar)
+  app.scrollHooks = { get: () => canvas.scrollTop, set: (y) => requestAnimationFrame(() => (canvas.scrollTop = y)) }
+  app.onBeforeSwitch = () => {
+    closePopovers()
+    pageView.closeEditor()
+  }
 
   // --- le ruban se replie quand on descend dans le document, et revient quand on remonte
   // (ou en haut du document). Le défilement causé par le repli lui-même est ignoré.
@@ -604,6 +623,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     readBar.hidden = !app.reading
     readText.textContent = app.lockedReadOnly ? `${t('read.lockedBar')} ${t('read.bar')}` : t('read.bar')
     readBtn.textContent = app.lockedReadOnly ? t('read.editCopy') : t('read.exit')
+    for (const b of Array.from(readLayout.children)) b.setAttribute('aria-pressed', String(((b as HTMLElement).dataset.readLayout === 'side') === settings().readSpread))
     root.classList.toggle('is-reading', app.reading)
     title.readOnly = app.reading
     saveBtn.disabled = s === 'saving' || app.lockedReadOnly
@@ -765,7 +785,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     } else if (mod && e.key === 'F1') {
       e.preventDefault()
       ribbon.setCollapsed(!settings().ribbonCollapsed)
-    } else if (e.key === 'Escape' && app.reading && !app.lockedReadOnly && !isDialogOpen()) {
+    } else if (e.key === 'Escape' && !e.defaultPrevented && app.reading && !app.lockedReadOnly && !isDialogOpen()) {
       app.setReading(false)
     } else if (e.key === 'Escape' && painterActive()) {
       painterStop(app)

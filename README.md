@@ -14,7 +14,7 @@ Guide for AIs: [`agents.md`](docs/agents.md)
 
 The interface is in French and English. The website and the app share one
 look: white paper on a neutral green-grey, green ink, Newsreader titles. This is
-**version 0.11**, with an interface laid out the way word processors usually are.
+**version 0.13**, with an interface laid out the way word processors usually are.
 
 ---
 
@@ -38,7 +38,7 @@ While you write, a backup copy is kept **in your browser only**. If the tab or
 the browser closes before you save, reopen the file: Folio Pages offers to
 restore the changes, and warns you if the backup is older than the file.
 
-## What it does (version 0.11)
+## What it does (version 0.13)
 
 - **A ribbon**: File first, then Home, Insert, Design, Layout, References,
   Mailings, Review, View, AI and Help, with contextual Table, Picture Format and
@@ -186,7 +186,10 @@ restore the changes, and warns you if the backup is older than the file.
   list can be edited (kept in the browser).
 - **Saving**: save a copy, save as a new document, save as a template (each
   opening starts a new document), save a read-only copy (opens in reading
-  view); a reading mode for any document; a version history kept in the
+  view); a reading mode for any document, with the pages one under the other
+  or **side to side** (new in 0.12: two pages per screen like an open book,
+  turned with the arrows, <kbd>←</kbd> <kbd>→</kbd>, the mouse wheel or a
+  swipe; one page on a narrow screen); a version history kept in the
   browser only (a version at each save and every ten minutes of editing),
   restorable and undoable.
 - **Mailings**: a list of recipients (imported from CSV, TSV, JSON or a vCard
@@ -242,6 +245,16 @@ restore the changes, and warns you if the backup is older than the file.
   soft, inverse), line focus on one, three or five lines (the arrow keys move
   it), wider text spacing, and read aloud paragraph by paragraph with the one
   being read highlighted. Settings are remembered; <kbd>Esc</kbd> closes it.
+- **Several documents in one file (new in 0.13)**: tabs at the bottom of the
+  window, like the sheets of a spreadsheet: **+** adds a document,
+  double-click (or <kbd>F2</kbd>) renames it, right-click duplicates, moves
+  or deletes it (with Undo), and tabs can be dragged. Each document is
+  complete and independent (its own page setup, theme, styles, comments and
+  undo history). **Insert → Link** lists the headings and bookmarks of every
+  document; **References → Cross-reference** can point into another document
+  (its text, "Table 2", the number or the page), always up to date. Export and
+  print offer this document or all of them, one after another, each starting
+  on a new page.
 - **Writing tools (new in 0.11)**: check lists (click a box to tick it, or
   type `[ ] `); callouts (Note, Tip, Important, Warning, Caution, or type
   `[!note] `); snippets (save a passage, insert it from Quick Parts or with
@@ -350,7 +363,7 @@ Node 18.19 or newer.
 
 ```bash
 npm install
-npm run dev          # Vite dev server, http://localhost:5173
+npm run dev          # Vite dev server, http://localhost:5173/dev.html
 npm run build        # typecheck → dist/folio-pages.html (copied to docs/) → docs/schema
                      # (FOLIO_FAST=1 npm run build: zlib instead of Zopfli, quicker, ≈ 30 KB bigger)
 npm test             # unit tests (Vitest)
@@ -420,12 +433,18 @@ every field is bounded. The application code is checked against a length and a
 checksum before it runs. Report vulnerabilities through GitHub's private
 advisories rather than public issues.
 
-## Known limitations (version 0.11)
+## Known limitations (version 0.13)
 
 Page layout: a block in columns, and an index in several columns, stay whole on
 one page. A landscape section in the middle of the document is printed page by
 page at its own size; browsers without named pages (older Safari) print it on
 the first section's paper.
+
+Several documents: a cross-reference to the page of another document shows
+the last page known, which is updated once that document has been shown (and
+kept in the file). Exporting all the documents uses the theme and styles of the
+first one. Undoing **Replace from JSON** with several documents restores the
+document on screen only.
 
 Notes: a footnote stays whole on its page (a very long one is not continued on
 the next page).

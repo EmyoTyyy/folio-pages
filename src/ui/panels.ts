@@ -4,6 +4,9 @@
 // compression), statistiques, raccourcis, zoom, presse-papiers.
 
 import { openUrl } from '../net'
+import { askScope, runScoped } from './docscope'
+import { anchorSlug, docLink } from '../format/documents'
+import { bookmarkList, referenceables } from '../editor/refs'
 import { decryptEnvelope, type Envelope } from '../file/crypto'
 import { loadDocument } from '../format/load'
 import { insertBlankPage as insertBlankPageCmd } from '../editor/commands'
@@ -942,11 +945,29 @@ export function linkDialog(app: FolioApp): void {
     },
   ]
   if (current) actions.unshift({ label: t('link.remove'), value: 'remove', run: () => void app.run(setLink(null)) } as never)
+  // Un titre ou un signet de ce document, ou d'un autre document du fichier.
+  const place = h('select', { class: 'fp-input', 'data-field': 'link-place' }, h('option', { value: '' }, t('docs.placeNone'))) as HTMLSelectElement
+  const here = app.activeKey
+  for (const d of app.documents) {
+    const st = app.stateOf(d.key)
+    if (!st) continue
+    const ref = (anchor: string) => (d.key === here ? `#${anchor}` : docLink(d.key, anchor))
+    const group = h('optgroup', { label: d.key === here ? `${d.title} (${t('docs.this').toLowerCase()})` : d.title })
+    if (d.key !== here) group.append(h('option', { value: docLink(d.key, '') }, t('docs.start')))
+    const { headings } = referenceables(st)
+    for (const x of headings) if (anchorSlug(x.text)) group.append(h('option', { value: ref(anchorSlug(x.text)) }, `${'  '.repeat(x.level - 1)}${x.text}`))
+    for (const b of bookmarkList(st)) group.append(h('option', { value: ref(b.name) }, `[${b.name}]`))
+    if (group.childElementCount) place.append(group)
+  }
+  place.addEventListener('change', () => {
+    if (place.value) href.value = place.value
+  })
+  const placeRow = place.querySelector('optgroup') ? field(t('docs.place'), place) : null
   openDialog({
     name: 'link',
     title: current ? t('link.edit') : t('link.insert'),
     focus: href,
-    body: [needText ? field(t('link.text'), text) : null, field(t('link.address'), href, t('link.hint')), error].filter(Boolean) as HTMLElement[],
+    body: [needText ? field(t('link.text'), text) : null, field(t('link.address'), href, t('link.hint')), placeRow, error].filter(Boolean) as HTMLElement[],
     actions,
   })
 }
@@ -2088,10 +2109,13 @@ export async function docxFile(app: FolioApp): Promise<{ name: string; res: { by
 /** Fichier → Exporter en .docx… : le fichier est fabriqué ici même, sans connexion. */
 export async function exportDocxUi(app: FolioApp): Promise<void> {
   if (exporting) return
+  // Plusieurs documents dans le fichier : celui-ci, ou tous.
+  const scope = await askScope(app)
+  if (!scope) return
   exporting = true
   const wait = window.setTimeout(() => toast(t('docx.export.preparing'), { kind: 'info', timeout: 2500 }), 400)
   try {
-    const made = await docxFile(app)
+    const made = await runScoped(app, scope, () => docxFile(app))
     if (!made) return
     const { name, res } = made
     window.clearTimeout(wait)

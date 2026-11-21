@@ -2,6 +2,7 @@
 // .odt, PDF, EPUB, page web, Markdown, texte). Tout est fabriqué ici, sans connexion.
 
 import type { FolioApp } from '../app'
+import { askScope, runScoped } from './docscope'
 import { strToU8, zipSync } from 'fflate'
 import { outline } from '../editor/outline'
 import { exportEpub } from '../export/epub'
@@ -65,9 +66,11 @@ export async function exportAs(app: FolioApp, format: ExportFormat): Promise<voi
   if (format === 'docx') return P.exportDocxUi(app)
   if (format === 'pdf') return exportPdfUi(app)
   if (busy) return
+  const scope = await askScope(app)
+  if (!scope) return
   busy = true
   try {
-    const f = await buildExport(app, format)
+    const f = await runScoped(app, scope, () => buildExport(app, format))
     const out = await saveExport(f.bytes, f.name, f.mime, f.ext, t(`exp.${format}` as Key))
     if (out.kind === 'cancelled') return
     if (out.kind === 'error') return void toast(t('exp.failed', { message: out.message }), { kind: 'error', timeout: 9000 })

@@ -15,7 +15,7 @@ import { texOfMathDom } from '../math/dom'
 import { defaultTheme } from '../format/theme'
 import { loadNoteBlocks } from '../format/load'
 import { calloutLabel } from '../format/callout'
-import { AUTHORITY_CATEGORIES, BOOKMARK_NAME, CALLOUT_KINDS, FIELD_NAMES, MERGE_OPTS, SOURCE_ID, XREF_SHOWS, defaultMath, defaultNotes, defaultPage, emptyHeaders } from '../format/types'
+import { AUTHORITY_CATEGORIES, BOOKMARK_NAME, CALLOUT_KINDS, DOC_KEY, FIELD_NAMES, MERGE_OPTS, SOURCE_ID, XREF_SHOWS, defaultMath, defaultNotes, defaultPage, emptyHeaders } from '../format/types'
 import { colorFromCss, cssFont, familyFromCss, paraCss, ptFromCss, type ParaAttrs } from './css'
 import { floatSide } from '../format/picture'
 
@@ -659,19 +659,22 @@ const nodes: Record<string, NodeSpec> = {
     group: 'inline',
     atom: true,
     selectable: true,
-    attrs: { target: { default: '' }, show: { default: 'text' } },
+    /** doc : clé d'un autre document du fichier ; last : dernière valeur montrée (document pas encore mis en page). */
+    attrs: { target: { default: '' }, show: { default: 'text' }, doc: { default: '' }, last: { default: '' } },
     leafText: () => '',
     parseDOM: [
       {
         tag: 'span[data-xref]',
         getAttrs: (dom) => {
-          const target = (dom as HTMLElement).getAttribute('data-xref') ?? ''
-          const show = (dom as HTMLElement).getAttribute('data-show') ?? 'text'
-          return BOOKMARK_NAME.test(target) ? { target, show: (XREF_SHOWS as readonly string[]).includes(show) ? show : 'text' } : false
+          const el = dom as HTMLElement
+          const target = el.getAttribute('data-xref') ?? ''
+          const show = el.getAttribute('data-show') ?? 'text'
+          const doc = el.getAttribute('data-doc') ?? ''
+          return BOOKMARK_NAME.test(target) ? { target, show: (XREF_SHOWS as readonly string[]).includes(show) ? show : 'text', doc: DOC_KEY.test(doc) ? doc : '', last: (el.getAttribute('data-last') ?? '').slice(0, 2000) } : false
         },
       },
     ],
-    toDOM: (node) => ['span', { class: 'fp-xref', 'data-xref': node.attrs.target, 'data-show': node.attrs.show }],
+    toDOM: (node) => ['span', { class: 'fp-xref', 'data-xref': node.attrs.target, 'data-show': node.attrs.show, ...(node.attrs.doc ? { 'data-doc': node.attrs.doc, 'data-last': node.attrs.last } : {}) }],
   },
   /** Entrée d'index ou de table des références : invisible (montrée avec les marques de mise en forme). */
   xe: {

@@ -112,6 +112,9 @@ export class PageView {
   private noteHeights = new Map<string, number>()
   private noteHeightsKey = ''
   private endListTimer: ReturnType<typeof setTimeout> | null = null
+  private layoutListeners = new Set<() => void>()
+  /** Augmente à chaque découpage en pages (les copies des pages côte à côte se refont). */
+  drawVersion = 0
 
   constructor(
     private app: FolioApp,
@@ -434,8 +437,18 @@ export class PageView {
     }
   }
 
+  /** Appelé après chaque découpage en pages. */
+  onLayout(fn: () => void): () => void {
+    this.layoutListeners.add(fn)
+    return () => this.layoutListeners.delete(fn)
+  }
+
   private drawn(pages: PageInfo[], g: Geometry, notes: NotesLayout): void {
     if (this.mode !== 'page') return
+    this.drawVersion++
+    queueMicrotask(() => {
+      for (const fn of this.layoutListeners) fn()
+    })
     const a = this.app.state.doc.attrs
     // Nombre de pages changé sans transaction (pages de notes de fin) : la barre d'état suit.
     if (pages.length !== this.drawnCount) {

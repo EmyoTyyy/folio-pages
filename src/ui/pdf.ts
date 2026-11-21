@@ -8,6 +8,7 @@ import { capturePdf, type CaptureReport } from '../layout/pdf-capture'
 import { t } from '../i18n/i18n'
 import { toast } from './dialog'
 import { getPageView } from './panels'
+import { askScope, runScoped } from './docscope'
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 
@@ -45,10 +46,12 @@ let busy = false
 /** Fichier → Exporter → PDF, Partager → PDF. */
 export async function exportPdfUi(app: FolioApp): Promise<void> {
   if (busy) return
+  const scope = await askScope(app)
+  if (!scope) return
   busy = true
   const done = toast(t('pdf.making'), { kind: 'info', timeout: 60000 })
   try {
-    const f = await pdfFile(app)
+    const f = await runScoped(app, scope, () => pdfFile(app))
     done()
     if (!f) return
     const out = await saveExport(f.bytes, f.name, 'application/pdf', '.pdf', 'PDF')

@@ -5,6 +5,7 @@
 
 import { check, DROP, isPlainObject, Report, type Ctx } from './dsl'
 import { locateJsonError, repairJson, type JsonError } from './json'
+import { ensureKeys } from './documents'
 import { normalizeDoc } from './normalize'
 import { DEFS, LIMITS, VALIDATION_LIMITS } from './spec'
 import type { Block, FolioDoc, NoteInline } from './types'
@@ -77,7 +78,28 @@ export function loadDocument(input: unknown, opts: LoadOptions = {}): LoadResult
   const ctx: Ctx = { report, defs: DEFS, limits: VALIDATION_LIMITS, depth: 0, nodes: 0, tooLarge: false }
   const checked = check(DEFS.Document, value, '', ctx)
   if (checked === DROP) return { ok: false, reason: 'not-a-document' }
-  const doc = normalizeDoc(checked as Record<string, unknown>, report, now, opts.assets)
+  // Plusieurs documents : chacun se vérifie et se complète à part ; un seul niveau.
+  const raw = checked as Record<string, unknown>
+  const more = Array.isArray(raw.documents) ? (raw.documents as unknown[]) : []
+  delete raw.documents
+  const doc = normalizeDoc(raw, report, now, opts.assets)
+  if (more.length) {
+    const subs: FolioDoc[] = []
+    more.forEach((d, i) => {
+      if (!isPlainObject(d)) return
+      if (Array.isArray(d.documents) && d.documents.length) report.ignore(`documents[${i}].documents`, 'invalid-value', 'documents')
+      delete d.documents
+      // Le format est celui du fichier : pas d'avertissement s'il n'est pas répété.
+      d.format ??= raw.format
+      d.version ??= raw.version
+      subs.push({ ...normalizeDoc(d, report, now, opts.assets), id: doc.id, template: false, readOnly: false })
+    })
+    if (subs.length) {
+      doc.documents = subs
+      const all = [doc, ...subs]
+      for (const k of ensureKeys(all)) report.warn('documents', 'invalid-value', `key ${k}`)
+    }
+  }
   return { ok: true, doc, report, repaired }
 }
 

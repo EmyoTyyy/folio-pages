@@ -2,6 +2,28 @@
 // montré une fois après une mise à jour (et à la demande, Aide → Nouveautés).
 
 export const RELEASE_NOTES: Record<string, { fr: string[]; en: string[] }> = {
+  '0.13.0': {
+    fr: [
+      'Plusieurs documents dans un fichier : des onglets en bas de la fenêtre (+ pour en ajouter, double-clic pour renommer, clic droit pour dupliquer, déplacer ou supprimer). Chaque document est complet et indépendant, avec sa mise en page, son thème et son historique d’annulation.',
+      'Liens et renvois d’un document à l’autre : Insertion → Lien propose les titres et signets de tous les documents du fichier, Références → Renvoi peut viser un autre document (texte, « Tableau 2 », numéro, page).',
+      'Exporter et imprimer : ce document ou tous les documents à la suite, chacun commençant une nouvelle page.',
+    ],
+    en: [
+      'Several documents in one file: tabs at the bottom of the window (+ to add one, double-click to rename, right-click to duplicate, move or delete). Each document is complete and independent, with its own page setup, theme and undo history.',
+      'Links and cross-references from one document to another: Insert → Link lists the headings and bookmarks of every document in the file, References → Cross-reference can point into another document (text, “Table 2”, number, page).',
+      'Export and print: this document or all of them, one after another, each starting on a new page.',
+    ],
+  },
+  '0.12.0': {
+    fr: [
+      'Mode lecture côte à côte (Affichage → Côte à côte, ou dans la barre du mode lecture) : deux pages par écran comme un livre ouvert, tournées avec les flèches, le clavier, la molette ou le doigt ; le sommaire, les liens et Rechercher y mènent à la bonne page.',
+      'Correction : en mode lecture, Échap dans la recherche ferme la recherche sans quitter le mode lecture.',
+    ],
+    en: [
+      'Side-to-side reading (View → Side to Side, or in the reading-mode bar): two pages per screen like an open book, turned with the arrows, keyboard, mouse wheel or a swipe; the table of contents, links and Find take you to the right page.',
+      'Fix: in reading mode, Esc in the find box closes the find box without leaving reading mode.',
+    ],
+  },
   '0.11.0': {
     fr: [
       'Listes à cocher, encadrés (Note, Astuce, Attention…), extraits réutilisables (F3), glossaire et liste des abréviations.',

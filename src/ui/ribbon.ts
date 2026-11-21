@@ -108,6 +108,7 @@ import { accessibilityDialog } from './a11y'
 import { isFocusMode, setFocusMode } from './focus'
 import { isSpeaking, readAloud, stopReading } from './speech'
 import { openInNewTab } from './mailings'
+import { isSideToSide, setSideToSide } from './spread'
 import { demoDocument } from '../demo/demo'
 import { baseLang } from '../i18n/i18n'
 
@@ -1808,8 +1809,8 @@ function viewGroups(app: FolioApp): Group[] {
       id: 'page-movement',
       label: t('rb.pageMovement'),
       controls: [
-        button({ id: 'movement-vertical', label: t('rb.vertical'), icon: I.vertical, large: true, active: () => true, run: () => app.focus() }),
-        soon({ id: 'movement-side', label: t('rb.sideToSide'), icon: I.sideToSide, large: true }),
+        button({ id: 'movement-vertical', label: t('rb.vertical'), icon: I.vertical, large: true, active: () => !isSideToSide(app), run: () => (isSideToSide(app) ? setSideToSide(app, false) : app.focus()) }),
+        button({ id: 'movement-side', label: t('rb.sideToSide'), icon: I.sideToSide, large: true, active: () => isSideToSide(app), run: () => setSideToSide(app, true) }),
       ],
     },
     {
@@ -1866,7 +1867,7 @@ function viewGroups(app: FolioApp): Group[] {
         button({ id: 'zoom-100', label: '100 %', icon: I.zoom100, large: true, active: () => settings().zoom === 1, run: () => P.setZoom(1) }),
         col(
           button({ id: 'zoom-page', label: t('rb.onePage'), icon: I.onePage, text: true, run: () => P.fitPage() }),
-          soon({ id: 'zoom-multi', label: t('rb.multiPage'), icon: I.multiPage, text: true }),
+          button({ id: 'zoom-multi', label: t('rb.multiPage'), icon: I.multiPage, text: true, active: () => isSideToSide(app), run: () => setSideToSide(app, true) }),
           button({ id: 'zoom-fit', label: t('ribbon.fitWidth'), icon: I.fitWidth, text: true, run: () => P.fitWidth() }),
         ),
       ],

@@ -66,6 +66,7 @@ export const RIBBON_ICONS = {
   /** Langue : deux bulles, « A » et « あ » remplacés par des traits. */
   language: svg('<path d="M3.5 5.5h9v7h-4l-3 2.5v-2.5h-2z"/><path d="M6 8h4M8 7v1c0 1.5-1 2.5-2 3"/><path d="M14.5 9.5h6v7h-2v2.5l-3-2.5h-3v-3"/><path d="M15.5 15l1.5-3.5 1.5 3.5M16 14h2"/>'),
   chevronRight: svg('<path d="m9 6 6 6-6 6"/>'),
+  chevronLeft: svg('<path d="m15 6-6 6 6 6"/>'),
   /** Paragraphe : des lignes et un pied-de-mouche. */
   paragraph: svg('<path d="M4 6h10M4 10h10M4 14h7"/><path d="M17.5 20V6M20.5 20V6M20.5 6h-4a2.5 2.5 0 0 0 0 5h1"/>'),
   /** Lire à voix haute : une lettre et des ondes. */

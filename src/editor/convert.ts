@@ -135,7 +135,7 @@ export function runsToInline(items: Inline[]): PMNode[] {
       continue
     }
     if (!isRun(r) && r.type === 'xref') {
-      out.push(n.xref.create({ target: r.target, show: r.show }, null, marks))
+      out.push(n.xref.create({ target: r.target, show: r.show, doc: r.doc ?? '', last: r.last ?? '' }, null, marks))
       continue
     }
     if (!isRun(r) && r.type === 'cite') {
@@ -545,7 +545,7 @@ export function inlineToRuns(node: PMNode): Inline[] {
     else if (child.type === n.note) items.push({ type: 'note', kind: child.attrs.kind === 'end' ? 'end' : 'foot', blocks: copy(child.attrs.blocks as Block[]) })
     else if (child.type === n.seq) items.push({ type: 'seq', label: child.attrs.label as string, ...marks })
     else if (child.type === n.bookmark) items.push({ type: 'bookmark', name: child.attrs.name as string })
-    else if (child.type === n.xref) items.push({ type: 'xref', target: child.attrs.target as string, show: child.attrs.show as XrefShow, ...marks })
+    else if (child.type === n.xref) items.push({ type: 'xref', target: child.attrs.target as string, show: child.attrs.show as XrefShow, ...(child.attrs.doc ? { doc: child.attrs.doc as string } : {}), ...(child.attrs.last ? { last: child.attrs.last as string } : {}), ...marks })
     else if (child.type === n.cite) items.push({ type: 'cite', ids: [...(child.attrs.ids as string[])], ...(child.attrs.locator ? { locator: child.attrs.locator as string } : {}), ...marks })
     else if (child.type === n.xe) {
       const a = child.attrs

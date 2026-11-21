@@ -136,6 +136,13 @@
     (text, label, number, page, above) where you refer to it.
   · Index: a run { "type": "xe", "term": "photosynthesis" } beside the word
     (invisible), and an { "type": "index" } block at the end.
+  SEVERAL DOCUMENTS IN ONE FILE (only when asked: a report and its annexes,
+  chapters, a letter and its attachments…): give the first document a
+  "key" and put the others, each a complete document with its own "key",
+  "meta", "page", "blocks"…, in its "documents": [ … ]. They show as tabs.
+  Link to another one with "link": "#annex:sales" (its bookmark or heading)
+  or "#annex:" (its start); a cross-reference adds "doc": { "type": "xref",
+  "doc": "annex", "target": "sales", "show": "label" }.
   · "notes": { "foot": { "format": "symbols" }, "end": { "format":
     "decimal" } } changes how notes are numbered (optional).
   Or give the whole document as Markdown instead of "blocks":
@@ -178,6 +185,7 @@
   [ ] Every image has "alt" text and its data in "assets" (or in "src").
   [ ] Formulas are LaTeX in $…$ / "equation" blocks, with no space just
       inside the $ signs, and every \\eqref names an existing \\label.
-  [ ] Every "cite" id is in "sources"; every "xref" target is a bookmark.
+  [ ] Every "cite" id is in "sources"; every "xref" target is a bookmark
+      (in the document named by its "doc", if any).
   [ ] Nothing is invented that the request or the sources do not support.
   ════════════════════════════════════════════════════════════════════════

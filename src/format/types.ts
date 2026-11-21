@@ -214,6 +214,8 @@ export interface SeqInline extends Marks {
 }
 
 /** Nom de signet : une lettre (ou _), puis lettres, chiffres, _ ; 40 au plus. Commençant par _ : caché. */
+/** Clé d'un document dans un fichier qui en contient plusieurs (liens « #clé:ancre », renvois). */
+export const DOC_KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/
 export const BOOKMARK_NAME = /^[\p{L}_][\p{L}\p{N}_]{0,39}$/u
 
 /** Signet : un point nommé du texte, cible des renvois et des liens « #nom ». */
@@ -235,6 +237,10 @@ export interface XrefInline extends Marks {
   type: 'xref'
   target: string
   show: XrefShow
+  /** Clé d'un autre document du même fichier (le signet est dans ce document). */
+  doc?: string
+  /** Dernière valeur affichée (renvoi vers un autre document : sert tant qu'il n'a pas été mis en page). */
+  last?: string
 }
 
 /** Catégories de la table des références (jurisprudence, lois…). */
@@ -856,6 +862,10 @@ export interface FolioDoc {
   terms?: Term[]
   /** Formulaire protégé : seuls les champs de formulaire se remplissent. */
   formsOnly?: true
+  /** Plusieurs documents dans le fichier : la clé de celui-ci (liens « #clé:ancre », renvois). */
+  key?: string
+  /** Les autres documents du fichier (seulement dans le premier), chacun complet et indépendant. */
+  documents?: FolioDoc[]
 }
 
 /** Un terme du glossaire (avec sa définition) ou une abréviation (avec sa forme longue). */
