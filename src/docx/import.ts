@@ -8,7 +8,12 @@
 // bornée habituelle (liens, images, tailles). Ce qui n'a pas d'équivalent est
 // compté dans `losses` ; le texte lui-même est toujours gardé.
 
+import { chartFromSpace } from './chart'
+import { dirToStore } from '../format/bidi'
+import { diagramFromAlt } from '../format/diagram'
 import { BUILTIN_STYLES, resolveStyle } from '../format/theme'
+import { calloutKindOfStyle, isDefaultCalloutTitle } from '../format/callout'
+import { INK_ALT } from '../format/ink'
 import { AUTHORITY_CATEGORIES, PAPER_SIZES, type StyleDef, type TableStyle, type Theme } from '../format/types'
 import {
   HIGHLIGHT_FROM_WORD,
@@ -42,6 +47,7 @@ export type ImportLossCode =
   | 'drawing'
   | 'textbox'
   | 'chart'
+  | 'chart-type'
   | 'object'
   | 'image-format'
   | 'image-large'
@@ -105,6 +111,10 @@ interface PProps {
   pageBreakBefore?: boolean
   shading?: string
   border?: string
+  /** De droite à gauche (w:bidi). */
+  bidi?: boolean
+  /** Sans numéros de ligne (w:suppressLineNumbers). */
+  noLines?: boolean
   /** Seulement un filet sous le paragraphe : un séparateur s'il est vide. */
   ruleBelow?: boolean
   numId?: number
@@ -167,6 +177,8 @@ interface Field {
 
 interface Inline {
   content: Raw[]
+  /** Dessin à main levée de nos fichiers (image « folio-ink » : les traits dans son texte de remplacement). */
+  ink?: unknown[]
   /** Blocs rencontrés dans le paragraphe (images, sauts) : le texte déjà lu passe avant. */
   split: (block: Raw) => void
   /** Paragraphes sortis d'une zone de texte : placés après le paragraphe. */
@@ -176,6 +188,8 @@ interface Inline {
   link?: string
   inserted?: Raw
   deleted?: Raw
+  /** Mise en forme changée (w:rPrChange) du run en cours : qui, quand, et celle d'avant. */
+  formatChange?: Raw
   /** Première ligne d'une note : l'espace qui suit son numéro est retirée. */
   trimStart?: boolean
   /** Un objet du paragraphe n'a pas été repris : s'il n'y avait que lui, le paragraphe disparaît. */
@@ -195,10 +209,29 @@ interface Sect {
   headers: Record<string, string>
   footers: Record<string, string>
   notes: Raw
+  /** Numéros de ligne (w:lnNumType), au format Folio. */
+  lineNumbers?: Raw
+}
+
+/** w:lnNumType → numéros de ligne (w:start compte à partir de 0 ; sans w:countBy, rien ne s'affiche). */
+function lineNumbersOf(n: XmlNode | undefined): Raw | undefined {
+  if (!n) return undefined
+  const countBy = Number(n.attrs['w:countBy'] ?? 0)
+  if (!(countBy >= 1)) return undefined
+  const out: Raw = { restart: n.attrs['w:restart'] === 'newPage' ? 'page' : n.attrs['w:restart'] === 'newSection' ? 'section' : 'continuous' }
+  out.start = Math.max(1, Math.min(32_767, (Number(n.attrs['w:start']) || 0) + 1))
+  out.countBy = Math.min(100, Math.round(countBy))
+  const d = Number(n.attrs['w:distance'])
+  if (Number.isFinite(d) && n.attrs['w:distance'] !== undefined) out.distance = Math.max(0, Math.min(144, Math.round((d / 20) * 2) / 2))
+  return out
 }
 
 const REL_DOC = 'officeDocument'
 const SAFE_LINK = /^(https?:|mailto:|tel:)/i
+/** Puces en forme de case : vide, cochée (Unicode, puis Wingdings en zone privée). */
+// Seulement des cases : ✓, □ ou ❑ sont aussi des puces décoratives courantes.
+const EMPTY_BOXES = new Set(['☐', '\uF0A8'])
+const CHECKED_BOXES = new Set(['☒', '☑', '\uF0FE', '\uF0FD'])
 const STD_BULLETS = new Set(['•', '·', 'o', '○', '◦', '▪', '■', '●', '', '', '', '', '-'])
 const first = (n: XmlNode | undefined, ...names: string[]): string | undefined => {
   for (const name of names) {
@@ -265,6 +298,10 @@ class Importer {
   private mathSources = new Map<string, string[]>()
   /** Publipostage d'un de nos fichiers (liste de destinataires comprise). */
   private ownMailMerge: unknown = null
+  /** Termes lus dans nos glossaires et listes d'abréviations. */
+  private terms: { term: string; definition: string; kind: 'glossary' | 'abbreviation' }[] = []
+  /** La liste de termes en cours (les paragraphes suivants de même style la continuent). */
+  private lastTermBlock: Raw | null = null
   /** Nos propres fichiers : sources exactes, style de citation, ce qu'affiche chaque renvoi. */
   private ownRefs: { sources?: unknown[]; citationStyle?: string; xrefShows?: string[] } | null = null
   /** Sources du gestionnaire de sources de Word (customXml « b:Sources »). */
@@ -542,6 +579,12 @@ class Importer {
         case 'w:pageBreakBefore':
           o.pageBreakBefore = onOff(c)
           break
+        case 'w:bidi':
+          o.bidi = onOff(c)
+          break
+        case 'w:suppressLineNumbers':
+          o.noLines = onOff(c)
+          break
         case 'w:shd': {
           const fill = this.themed(c, 'w:fill', 'w:themeFill')
           if (fill) o.shading = fill
@@ -628,7 +671,7 @@ class Importer {
     if (this.own) {
       // Nos propres fichiers : tout style de paragraphe qui n'est pas des nôtres est un style du document, même inutilisé.
       for (const s of this.styles.values()) {
-        if (s.type !== 'paragraph' || builtinOfStyleName(s.name, s.id) || /^(ListParagraph|TOCHeading|TOC\d|EndnoteText|Equation)$/.test(s.id)) continue
+        if (s.type !== 'paragraph' || builtinOfStyleName(s.name, s.id) || /^(ListParagraph|TOCHeading|TOC\d|EndnoteText|Equation|FolioGlossary|FolioAbbreviations)$/.test(s.id)) continue
         const folio = styleKey(s.id.replace(/_$/, ''))
         if (!Object.prototype.hasOwnProperty.call(BUILTIN_STYLES, folio)) this.customUsed.set(s.id, folio)
       }
@@ -952,6 +995,17 @@ class Importer {
       for (const c of pick?.children ?? []) this.drawing(c, s)
       return
     }
+    // Notre dessin à main levée : les traits reviennent sur le paragraphe (l'image n'était qu'une copie).
+    const inkAlt = descendants(node, 'wp:docPr')[0]?.attrs.descr ?? ''
+    if (inkAlt.startsWith(INK_ALT)) {
+      try {
+        const strokes = JSON.parse(inkAlt.slice(INK_ALT.length)) as unknown
+        if (Array.isArray(strokes)) s.ink = [...(s.ink ?? []), ...strokes].slice(0, 200)
+      } catch {
+        // Texte de remplacement abîmé : le dessin est perdu, rien d'autre.
+      }
+      return
+    }
     // Filigrane (forme VML d'un en-tête, « PowerPlusWaterMarkObject ») : un réglage du document, pas une image.
     const mark = descendants(node, 'v:shape').find((v) => /watermark/i.test(v.attrs.id ?? ''))
     if (mark) {
@@ -969,8 +1023,14 @@ class Importer {
         s.dropped = true
         return
       }
-      const img: Raw = { type: 'image', src }
       const pr = descendants(node, 'wp:docPr')[0]
+      // Nos diagrammes : l'image porte leurs données ; on refait un diagramme modifiable.
+      const dg = diagramFromAlt(pr?.attrs.descr ?? '')
+      if (dg) {
+        s.split(dg)
+        return
+      }
+      const img: Raw = { type: 'image', src }
       const alt = (pr?.attrs.descr || pr?.attrs.title || vml?.attrs['o:title'] || '').slice(0, 1000)
       if (alt) img.alt = alt
       const extent = descendants(node, 'wp:extent')[0]
@@ -1001,6 +1061,17 @@ class Importer {
       if (flip) img.flip = flip
       const outline = colorOf(attr(path(descendants(node, 'pic:spPr')[0], 'a:ln', 'a:solidFill', 'a:srgbClr'), 'val'))
       if (outline) img.border = outline
+      // Effets de Word : ombre portée, halo, reflet.
+      const effects = path(descendants(node, 'pic:spPr')[0], 'a:effectLst')
+      if (effects) {
+        const fx: Record<string, unknown> = {}
+        if (child(effects, 'a:outerShdw')) fx.shadow = true
+        const glow = colorOf(attr(path(effects, 'a:glow', 'a:srgbClr'), 'val'))
+        if (glow) fx.glow = glow
+        const refl = child(effects, 'a:reflection')
+        if (refl) fx.reflection = Math.min(100, Math.max(10, Math.round((numOf(refl.attrs.endPos) ?? 100000) / 1000)))
+        if (Object.keys(fx).length) img.adjust = { ...((img.adjust as object | undefined) ?? {}), ...fx }
+      }
       // Hauteur donnée seulement si l'image est déformée par rapport à ses proportions (rognage compris).
       const nat = this.naturalSize.get(src)
       if (nat && cx && cy && cx > 0 && cy > 0) {
@@ -1013,8 +1084,15 @@ class Importer {
       img.align = s.align === 'center' || s.align === 'right' ? s.align : 'left'
       if (anchor) {
         const side = textOf(path(anchor, 'wp:positionH', 'wp:align')).trim()
-        const wraps = !!(child(anchor, 'wp:wrapSquare') || child(anchor, 'wp:wrapTight') || child(anchor, 'wp:wrapThrough'))
-        if (wraps && (side === 'left' || side === 'right')) img.wrap = side
+        const lr = side === 'left' || side === 'right'
+        if (child(anchor, 'wp:wrapNone')) {
+          // Sans habillage : derrière ou devant le texte.
+          img.wrap = on(anchor.attrs.behindDoc) ? 'behind' : 'front'
+          if (side === 'center' || side === 'right') img.align = side
+        } else if (child(anchor, 'wp:wrapTight') || child(anchor, 'wp:wrapThrough')) {
+          img.wrap = child(anchor, 'wp:wrapTight') ? 'tight' : 'through'
+          img.align = side === 'right' ? 'right' : 'left'
+        } else if (child(anchor, 'wp:wrapSquare') && lr) img.wrap = side
         else if (side === 'center' || side === 'right') img.align = side
       }
       s.split(img)
@@ -1027,8 +1105,19 @@ class Importer {
       for (const b of boxes) s.after.push(...this.walk(b.children, s.ctx))
       return
     }
+    // Graphique : ses valeurs en cache donnent un graphique Folio.
+    const chartRef = descendants(node, 'c:chart')[0]
+    if (chartRef) {
+      const rel = this.rels(this.part).get(chartRef.attrs['r:id'] ?? '')
+      const space = rel && !rel.external ? this.xml(rel.target) : undefined
+      const chart = space ? chartFromSpace(space, (code) => this.lose(code)) : null
+      if (chart) {
+        s.split(chart)
+        return
+      }
+    }
     s.dropped = true
-    if (descendants(node, 'c:chart').length) this.lose('chart')
+    if (chartRef) this.lose('chart')
     else if (node.name === 'w:object') this.lose('object')
     else this.lose('drawing')
   }
@@ -1236,12 +1325,37 @@ class Importer {
 
   // --- éléments en ligne ----------------------------------------------------------
 
+  /** Un contrôle de contenu en ligne qui est un champ de formulaire, sinon null. */
+  private formOfSdt(n: XmlNode): Raw | null {
+    const pr = child(n, 'w:sdtPr')
+    if (!pr) return null
+    const text = textOf(child(n, 'w:sdtContent')).trim()
+    const placeholder = !!child(pr, 'w:showingPlcHdr')
+    const name = attr(child(pr, 'w:alias')) ?? ''
+    const base = { type: 'formfield', ...(name ? { name } : {}) }
+    const box = child(pr, 'w14:checkbox')
+    if (box) return { ...base, kind: 'checkbox', ...(['1', 'true'].includes(attr(child(box, 'w14:checked'), 'w14:val') ?? '') ? { checked: true } : {}) }
+    const list = child(pr, 'w:dropDownList') ?? child(pr, 'w:comboBox')
+    if (list) {
+      const options = kids(list, 'w:listItem').map((li) => li.attrs['w:displayText'] ?? li.attrs['w:value'] ?? '').filter(Boolean)
+      return { ...base, kind: 'dropdown', options, ...(placeholder ? { placeholder: text } : { value: text }) }
+    }
+    const date = child(pr, 'w:date')
+    if (date) {
+      const full = date.attrs['w:fullDate'] ?? ''
+      return { ...base, kind: 'date', ...(/^\d{4}-\d{2}-\d{2}/.test(full) && !placeholder ? { value: full.slice(0, 10) } : {}) }
+    }
+    if (child(pr, 'w:text')) return { ...base, kind: 'text', ...(placeholder ? { placeholder: text } : { value: text }) }
+    return null
+  }
+
   private push(item: Raw, s: Inline): void {
     const extra: Raw = {}
     const link = s.link ?? [...this.fields].reverse().find((f) => f.link)?.link
     if (link && (item.type === undefined || item.type === 'field')) extra.link = link
     if (s.deleted) extra.deleted = s.deleted
     else if (s.inserted) extra.inserted = s.inserted
+    else if (s.formatChange && (item.type === undefined || item.type === 'field')) extra.formatChange = s.formatChange
     if (this.activeComments.size && !s.ctx.note && !s.ctx.hf) {
       extra.comments = [...this.activeComments]
       for (const id of this.activeComments) this.anchored.add(id)
@@ -1278,6 +1392,18 @@ class Importer {
 
   private runNode(r: XmlNode, s: Inline): void {
     const rp = this.runProps(child(r, 'w:rPr'))
+    // Mise en forme suivie : la mise en forme d'avant est dans w:rPrChange/w:rPr.
+    const rc = path(r, 'w:rPr', 'w:rPrChange')
+    const outer = s.formatChange
+    s.formatChange = rc ? { ...this.change(rc), before: this.marks(this.runProps(child(rc, 'w:rPr')), s.style.r) } : undefined
+    try {
+      this.runChildren(r, rp, s)
+    } finally {
+      s.formatChange = outer
+    }
+  }
+
+  private runChildren(r: XmlNode, rp: RProps & { code?: boolean }, s: Inline): void {
     let buf = ''
     const flush = () => {
       if (buf) this.text(buf, rp, s)
@@ -1455,9 +1581,13 @@ class Importer {
         case 'w:bdo':
           this.inline(n.children, s)
           break
-        case 'w:sdt':
-          this.inline(child(n, 'w:sdtContent')?.children ?? [], s)
+        case 'w:sdt': {
+          // Contrôle de contenu de formulaire (texte, liste, date, case) → champ de formulaire.
+          const form = this.formOfSdt(n)
+          if (form && !this.suppressed && !s.deleted) this.push(form, s)
+          else this.inline(child(n, 'w:sdtContent')?.children ?? [], s)
           break
+        }
         case 'mc:AlternateContent':
           if (!this.suppressed) this.drawing(n, s)
           break
@@ -1488,6 +1618,26 @@ class Importer {
       if (!content.length && (startedSuppressed || this.suppressed || out.length || s.dropped || s.after.length)) return
       pieces++
       const props = this.paraOut(direct, style.p, isItem)
+      // Mise en forme de paragraphe suivie (w:pPrChange) : celle d'avant, avec son style (titre ou non).
+      const pc = path(pPr, 'w:pPrChange')
+      if (pc) {
+        const oldDirect = this.pProps(child(pc, 'w:pPr'))
+        const oldStyle = this.paraStyle(oldDirect.pStyle)
+        const before: Raw = { ...this.paraOut(oldDirect, oldStyle.p, isItem) }
+        delete before.ink
+        before.kind = oldStyle.heading ? 'heading' : 'paragraph'
+        if (oldStyle.heading) before.level = oldStyle.heading
+        else if (oldStyle.folio && oldStyle.folio !== 'normal' && !oldStyle.role) before.style = oldStyle.folio
+        props.formatChange = { ...this.change(pc), before }
+      }
+      // Sens d'écriture : gardé seulement s'il ne se déduit pas du texte.
+      const dir = dirToStore(!!(direct.bidi ?? style.p.bidi), content)
+      if (dir) props.dir = dir
+      if (direct.noLines ?? style.p.noLines) props.noLineNumbers = true
+      if (s.ink?.length) {
+        props.ink = s.ink
+        s.ink = undefined
+      }
       if (direct.lineExact !== undefined && direct.line === undefined) {
         const size = style.r.size ?? 11
         props.line = Math.max(0.5, Math.min(10, Math.round((direct.lineExact / size) * 100) / 100))
@@ -1640,6 +1790,10 @@ class Importer {
         const va = attr(path(c.node, 'w:tcPr', 'w:vAlign'))
         if (va === 'center') cell.valign = 'middle'
         else if (va === 'bottom') cell.valign = 'bottom'
+        // Texte vertical : tbRl (et tbRlV, ses caractères debout) de haut en bas, btLr de bas en haut.
+        const td = attr(path(c.node, 'w:tcPr', 'w:textDirection'))
+        if (td === 'tbRl' || td === 'tbRlV') cell.textDir = 'tbrl'
+        else if (td === 'btLr') cell.textDir = 'btlr'
         return cell
       })
     })
@@ -1734,6 +1888,9 @@ class Importer {
     const out: Entry[] = []
     let firstPara = !!ctx.note
     for (const n of nodes) {
+      // Une liste de termes ne continue que sur le paragraphe suivant de même style.
+      const glossStyle = n.name === 'w:p' ? attr(path(n, 'w:pPr', 'w:pStyle')) : null
+      if (glossStyle !== 'FolioGlossary' && glossStyle !== 'FolioAbbreviations' && n.name !== 'w:bookmarkStart' && n.name !== 'w:bookmarkEnd') this.lastTermBlock = null
       switch (n.name) {
         case 'w:p': {
           // Un paragraphe qui ne tient que le filigrane : il n'en reste rien dans l'en-tête.
@@ -1752,6 +1909,26 @@ class Importer {
               break
             }
           }
+          // Nos glossaires et listes d'abréviations : « terme <tab> définition », un style par liste.
+          const pStyle = attr(path(n, 'w:pPr', 'w:pStyle'))
+          if ((pStyle === 'FolioGlossary' || pStyle === 'FolioAbbreviations') && !ctx.cell && !ctx.note && !ctx.hf) {
+            const kind = pStyle === 'FolioGlossary' ? 'glossary' : 'abbreviation'
+            let text = ''
+            const walkText = (x: XmlNode) => {
+              if (x.name === 'w:tab') text += '\t'
+              else if (x.name === 'w:t') text += textOf(x)
+              else x.children.forEach(walkText)
+            }
+            walkText(n)
+            const tab = text.indexOf('\t')
+            if (tab > 0) this.terms.push({ term: text.slice(0, tab).trim(), definition: text.slice(tab + 1).trim(), kind })
+            const type = kind === 'glossary' ? 'glossary' : 'abbreviations'
+            if (this.lastTermBlock?.type !== type) {
+              this.lastTermBlock = { type, title: '' }
+              out.push({ k: 'block', block: this.lastTermBlock })
+            }
+            break
+          }
           const entries = this.paragraph(n, ctx, firstPara && !this.own)
           if (this.dropCap) {
             const first = entries[0]
@@ -1765,14 +1942,26 @@ class Importer {
           firstPara = false
           break
         }
-        case 'w:tbl':
+        case 'w:tbl': {
           if (this.suppressed) break
+          // Nos encadrés : un tableau d'une cellule au style « Folio callout … ».
+          const kind = calloutKindOfStyle(attr(path(n, 'w:tblPr', 'w:tblStyle')))
+          const cells = kind ? descendantsShallow(n, 'w:tc') : []
+          if (kind && cells.length === 1 && !ctx.cell) {
+            const blocks = this.assemble(this.walk(cells[0].children, ctx))
+            const head = blocks[0]
+            const title = head?.type === 'paragraph' ? ((head.content as Raw[] | undefined) ?? []).map((r) => (typeof r.text === 'string' ? r.text : '')).join('').trim() : ''
+            if (head?.type === 'paragraph') blocks.shift()
+            out.push({ k: 'block', block: { type: 'callout', kind, ...(title && !isDefaultCalloutTitle(kind, title) ? { title } : {}), blocks } })
+            break
+          }
           if (ctx.cell) {
             // Un tableau dans une cellule n'a pas d'équivalent : son contenu est gardé, à la suite.
             this.lose('nested-table')
             for (const tc of descendantsShallow(n, 'w:tc')) out.push(...this.walk(tc.children, ctx))
           } else out.push({ k: 'block', block: this.table(n, ctx) })
           break
+        }
         case 'w:sdt': {
           const gallery = attr(path(n, 'w:sdtPr', 'w:docPartObj', 'w:docPartGallery')) ?? ''
           if (/table of contents/i.test(gallery) && !ctx.note && !ctx.hf) out.push({ k: 'block', block: this.tocOfSdt(child(n, 'w:sdtContent')) })
@@ -1808,7 +1997,10 @@ class Importer {
       if (e.k === 'li') {
         const root = e.numId
         const lvl0 = this.level(root, 0)
-        const rootStyle = (this.level(root, e.level)?.fmt ?? 'decimal') === 'bullet' && e.level === 0 ? 'bullet' : lvl0?.fmt === 'bullet' ? 'bullet' : 'number'
+        // Une puce en forme de case (☐, ☒, ou ses équivalents Wingdings) : liste à cocher.
+        const box = (lv: { fmt: string; text: string } | null | undefined): 'empty' | 'checked' | null =>
+          lv?.fmt !== 'bullet' ? null : EMPTY_BOXES.has(lv.text) ? 'empty' : CHECKED_BOXES.has(lv.text) ? 'checked' : null
+        const rootStyle = box(lvl0) ? 'check' : (this.level(root, e.level)?.fmt ?? 'decimal') === 'bullet' && e.level === 0 ? 'bullet' : lvl0?.fmt === 'bullet' ? 'bullet' : 'number'
         const items: Raw[] = []
         let count0 = 0
         let baseIndent = 0
@@ -1816,10 +2008,13 @@ class Importer {
         while (i < entries.length) {
           const it = entries[i]
           if (it.k !== 'li') break
-          const fmt = this.level(it.numId, it.level)?.fmt ?? 'decimal'
-          const style = fmt === 'bullet' ? 'bullet' : 'number'
+          const lv = this.level(it.numId, it.level)
+          const fmt = lv?.fmt ?? 'decimal'
+          const ticked = box(lv)
+          const style = ticked ? 'check' : fmt === 'bullet' ? 'bullet' : 'number'
           let level = it.level
-          if (items.length && it.level === 0 && it.numId !== root) {
+          // Nos cases cochées ont leur propre numérotation : elles restent dans la même liste.
+          if (items.length && it.level === 0 && it.numId !== root && !(ticked && rootStyle === 'check')) {
             // Une autre liste, plus en retrait (styles « Liste à puces 2 », « 3 »…) : un niveau de la même liste.
             const deeper = Math.round((it.indent - baseIndent) / 16)
             if (deeper < 1) break
@@ -1827,7 +2022,7 @@ class Importer {
           } else if (!items.length) baseIndent = it.indent - 18 * it.level
           if (items.length && level === 0 && style !== rootStyle) break
           if (style === 'number' && level > 0) numbered.push(this.level(it.numId, it.level)!)
-          items.push({ content: it.content, level, style, ...it.props })
+          items.push({ content: it.content, level, style, ...it.props, ...(ticked === 'checked' ? { checked: true } : {}) })
           if (level === 0) count0++
           i++
         }
@@ -1841,7 +2036,7 @@ class Importer {
           lastNumbered = root
           const kind = this.numberingKind(root, numbered)
           if (kind !== 'default') list.numbering = kind
-        } else {
+        } else if (rootStyle === 'bullet') {
           const glyph = lvl0?.text ?? ''
           if (glyph && [...glyph].length === 1 && !STD_BULLETS.has(glyph) && !/[-]/.test(glyph)) list.bullet = glyph
         }
@@ -1876,7 +2071,7 @@ class Importer {
       }
       if (e.k === 'p' && e.role === 'tocHeading') {
         const next = entries[i + 1]
-        if (next && next.k === 'block' && ['toc', 'figures', 'index', 'authorities', 'bibliography'].includes(String(next.block.type)) && !next.block.title) {
+        if (next && next.k === 'block' && ['toc', 'figures', 'index', 'authorities', 'bibliography', 'glossary', 'abbreviations'].includes(String(next.block.type)) && !next.block.title) {
           next.block.title = (e.block.content as Raw[]).map((x) => (typeof x.text === 'string' ? x.text : '')).join('').trim().slice(0, 200)
         } else out.push(e.block)
         i++
@@ -1972,6 +2167,7 @@ class Importer {
       headers: refs('w:headerReference'),
       footers: refs('w:footerReference'),
       notes,
+      lineNumbers: lineNumbersOf(child(sp, 'w:lnNumType')),
     }
   }
 
@@ -2262,10 +2458,13 @@ class Importer {
     if (this.themeRaw) doc.theme = this.themeRaw
     if (child(settings, 'w:trackRevisions') && onOff(child(settings, 'w:trackRevisions')) !== false) doc.trackChanges = true
     if (child(settings, 'w:autoHyphenation') && onOff(child(settings, 'w:autoHyphenation')) !== false) doc.hyphenate = true
+    if (firstSect.lineNumbers) doc.lineNumbers = firstSect.lineNumbers
     if (this.watermark) doc.watermark = this.watermark
     const sources = this.sourceList()
     if (sources.length) doc.sources = sources
     if (this.ownRefs?.citationStyle) doc.citationStyle = this.ownRefs.citationStyle
+    if (this.terms.length) doc.terms = this.terms
+    if (path(settings, 'w:documentProtection')?.attrs['w:edit'] === 'forms' && ['1', 'true', 'on'].includes(path(settings, 'w:documentProtection')?.attrs['w:enforcement'] ?? '')) doc.formsOnly = true
     if (this.ownMailMerge) doc.mailMerge = this.ownMailMerge
     else {
       // Un document de fusion d'un autre traitement de texte : sa liste est un fichier à part, qu'on n'a pas.

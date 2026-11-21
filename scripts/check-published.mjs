@@ -6,11 +6,11 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { inflateRawSync } from 'node:zlib'
-import { decode } from './lib/b86.mjs'
+import { decode } from './lib/b122.mjs'
 
 const normalize = (html) =>
-  html.replace(/(<script id="[\w-]+" type="folio\/deflate-b86" data-len="\d+") data-hash="\w+">([^<]*)<\/script>/g, (_m, open, body) => {
-    const raw = inflateRawSync(Buffer.from(decode(body.trim())))
+  html.replace(/(<script id="[\w-]+" type="folio\/deflate-b122" data-len="\d+") data-hash="\w+">([^<]*)<\/script>/g, (_m, open, body) => {
+    const raw = inflateRawSync(Buffer.from(decode(body)))
     return `${open}>${createHash('sha256').update(raw).digest('hex')}</script>`
   })
 

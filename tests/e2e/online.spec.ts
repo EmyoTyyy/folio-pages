@@ -43,6 +43,7 @@ test('images en ligne : recherche sur Commons, insertion avec crédit, lien et t
   await dlg.locator('[data-field="pictures-query"]').fill('phare')
   await dlg.locator('[data-field="pictures-query"]').press('Enter')
   await expect(dlg.locator('[data-picture]')).toHaveCount(2)
+  await expect(dlg.locator('p[aria-live="polite"]').first()).toHaveText('2 résultats')
   expect(query).toBe('phare filetype:bitmap|drawing')
   await dlg.locator('[data-picture="1"]').click()
   await dlg.locator('[data-action="ok"]').click()

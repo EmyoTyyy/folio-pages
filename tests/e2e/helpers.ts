@@ -86,7 +86,28 @@ export const docText = (page: Page) =>
 /** Place le curseur à la fin du document. */
 export async function caretToEnd(page: Page): Promise<void> {
   await editor(page).click()
+  // L'éditeur remet sa propre sélection 20 ms après avoir reçu le focus : on attend avant Ctrl+Fin,
+  // et l'on vérifie que le curseur est bien à la fin (machine chargée).
+  await page.waitForTimeout(60)
   await page.keyboard.press('Control+End')
+  await expect
+    .poll(async () => {
+      const atEnd = await page.evaluate(() => {
+        const sel = getSelection()
+        const root = document.querySelector('.fp-prose')!
+        if (!sel || !sel.focusNode || !root.contains(sel.focusNode)) return false
+        const r = document.createRange()
+        r.selectNodeContents(root)
+        r.setStart(sel.focusNode, sel.focusOffset)
+        // Ce qui suit le curseur, sans les blocs générés (listes, table des matières : non modifiables).
+        const rest = r.cloneContents()
+        rest.querySelectorAll('[contenteditable="false"]').forEach((el) => el.remove())
+        return !(rest.textContent ?? '').trim()
+      })
+      if (!atEnd) await page.keyboard.press('Control+End')
+      return atEnd
+    })
+    .toBe(true)
 }
 
 export const mod = 'Control'
@@ -252,6 +273,43 @@ export function makePng(w: number, h: number, rgb: [number, number, number] = [2
   for (let x = 0; x < w; x++) row.set(rgb, 1 + x * 3)
   const raw = Buffer.concat(Array.from({ length: h }, () => row))
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
+/** Disque opaque sur fond transparent (PNG RVBA), pour l'habillage qui suit le contour. */
+export function circlePng(size: number, rgb: [number, number, number] = [30, 107, 85]): Buffer {
+  const solid = makePng(1, 1)
+  // On reprend l'en-tête de makePng (signature) et on refait IHDR / IDAT en RVBA.
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    return c >>> 0
+  })
+  const crc = (buf: Buffer) => {
+    let c = 0xffffffff
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+    return (c ^ 0xffffffff) >>> 0
+  }
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4)
+    len.writeUInt32BE(data.length)
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const c = Buffer.alloc(4)
+    c.writeUInt32BE(crc(td))
+    return Buffer.concat([len, td, c])
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(size, 0)
+  ihdr.writeUInt32BE(size, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6 // RVBA
+  const rows: Buffer[] = []
+  const r = size / 2
+  for (let y = 0; y < size; y++) {
+    const row = Buffer.alloc(1 + size * 4)
+    for (let x = 0; x < size; x++) if ((x + 0.5 - r) ** 2 + (y + 0.5 - r) ** 2 <= (r - 1) ** 2) row.set([...rgb, 255], 1 + x * 4)
+    rows.push(row)
+  }
+  return Buffer.concat([solid.subarray(0, 8), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))])
 }
 
 export function pngDataUri(w: number, h: number, rgb?: [number, number, number]): string {

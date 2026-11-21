@@ -1,9 +1,13 @@
 // Barre Rechercher et remplacer (Ctrl+F, Ctrl+H) : non modale, au-dessus de
 // la page. Options : respecter la casse, mot entier, expression régulière,
-// texte surligné seulement.
+// texte surligné seulement. Les notes de bas de page et de fin sont cherchées
+// avec le texte : un résultat dans une note l'ouvre, à sa place.
 
+import { closeHistory } from 'prosemirror-history'
+import { TextSelection, type Command } from 'prosemirror-state'
 import type { FolioApp } from '../app'
-import { findNext, findState, replaceAll, replaceCurrent, setQuery, type FindQuery } from '../editor/find'
+import { currentMatch, findKey, findNext, findState, replaceAll, replaceCurrent, setQuery, type FindQuery } from '../editor/find'
+import { getPageView } from './panels'
 import { t } from '../i18n/i18n'
 import { h, icon } from './dom'
 import { ICONS, RIBBON_ICONS as I } from './icons'
@@ -47,13 +51,13 @@ class FindBar {
       'div',
       { class: 'fp-find__row' },
       this.repl,
-      btn('replace', t('find.replace'), null, () => {
-        this.app.run(replaceCurrent(this.repl.value), false)
-        this.reveal()
-      }),
+      btn('replace', t('find.replace'), null, () => this.replaceOne()),
       btn('replace-all', t('find.replaceAll'), null, () => {
+        if (this.app.reading) return
+        getPageView()?.closeEditor()
         const before = findState(this.app.state)?.matches.length ?? 0
-        this.app.run(replaceAll(this.repl.value), false)
+        this.main(replaceAll(this.repl.value), true)
+        this.sync()
         toast(t('find.replacedAll', { n: before }), { kind: before ? 'success' : 'info' })
       }),
     )
@@ -88,8 +92,7 @@ class FindBar {
     this.repl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        this.app.run(replaceCurrent(this.repl.value), false)
-        this.reveal()
+        this.replaceOne()
       } else if (e.key === 'Escape') {
         e.preventDefault()
         this.close()
@@ -102,14 +105,50 @@ class FindBar {
     return { text: this.find.value, ...this.opts }
   }
 
+  /**
+   * Les commandes de recherche vont au texte du document, même quand une note ou un en-tête est ouvert.
+   * `step` : un remplacement est une étape d'annulation à lui seul (jamais fondue avec la précédente).
+   */
+  private main(cmd: Command, step = false): boolean {
+    const v = this.app.view
+    return cmd(v.state, (tr) => v.dispatch(step ? closeHistory(tr) : tr), v)
+  }
+
   search(): void {
-    this.app.run(setQuery(this.query()), false)
-    this.renderCount()
-    this.reveal()
+    this.main(setQuery(this.query()))
+    this.sync()
   }
 
   go(dir: 1 | -1): void {
-    this.app.run(findNext(dir), false)
+    this.main(findNext(dir))
+    this.sync()
+  }
+
+  private replaceOne(): void {
+    if (this.app.reading) return
+    // La note ouverte rend d'abord ce qu'on y a écrit : le remplacement se fait dans le document.
+    getPageView()?.closeEditor()
+    this.main(replaceCurrent(this.repl.value), true)
+    this.sync()
+  }
+
+  /**
+   * Montre le résultat courant : dans le texte, sélectionné ; dans une note, la note s'ouvre à sa place,
+   * le résultat y est sélectionné, et le champ de recherche garde le focus. Les autres notes dessinées
+   * montrent leurs résultats.
+   */
+  private sync(): void {
+    const pv = getPageView()
+    const m = currentMatch(this.app.state)
+    const query = findState(this.app.state)?.query ?? null
+    const focused = document.activeElement
+    if (m?.note !== undefined && pv && !this.app.reading) {
+      if (pv.openNotePos !== m.note) pv.openNote(m.note)
+      const nv = pv.editingNote?.view
+      if (nv && m.to <= nv.state.doc.content.size) nv.dispatch(nv.state.tr.setSelection(TextSelection.create(nv.state.doc, m.from, m.to)).setMeta(findKey, { query }))
+      if (focused instanceof HTMLInputElement && this.el.contains(focused)) focused.focus()
+    } else if (pv?.openNotePos != null) pv.closeEditor()
+    pv?.refreshFindHits()
     this.renderCount()
     this.reveal()
   }
@@ -120,7 +159,8 @@ class FindBar {
    * de recherche) : on défile nous-mêmes.
    */
   reveal(): void {
-    const hit = this.app.view.dom.querySelector('.fp-find-hit--current')
+    const note = getPageView()?.editingNote?.view.dom
+    const hit = (note?.querySelector('.fp-find-hit--current') ?? this.app.view.dom.querySelector('.fp-find-hit--current')) as HTMLElement | null
     hit?.scrollIntoView({ block: 'center', inline: 'nearest' })
   }
 
@@ -133,8 +173,10 @@ class FindBar {
       this.find.setAttribute('aria-invalid', 'true')
     } else if (!fs.matches.length) this.count.textContent = t('find.none')
     else {
+      // Position : le résultat courant s'il est sélectionné (ou dans une note, où va la recherche).
       const { from, to } = this.app.state.selection
-      const i = fs.matches.findIndex((m) => m.from === from && m.to === to)
+      const cur = fs.matches[fs.current]
+      const i = cur && (cur.note !== undefined || (cur.from === from && cur.to === to)) ? fs.current : -1
       this.count.textContent = i >= 0 ? t('find.position', { i: i + 1, n: fs.matches.length }) : t('find.count', { n: fs.matches.length })
       if (fs.truncated) this.count.textContent += '+'
     }
@@ -163,7 +205,10 @@ class FindBar {
   }
 
   close(): void {
-    this.app.run(setQuery(null), false)
+    this.main(setQuery(null))
+    const nv = getPageView()?.editingNote?.view
+    if (nv) nv.dispatch(nv.state.tr.setMeta(findKey, { query: null }))
+    getPageView()?.refreshFindHits()
     this.off()
     this.el.remove()
     bar = null

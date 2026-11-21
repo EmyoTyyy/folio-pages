@@ -31,7 +31,7 @@ export const UI_DICT = {
   'share.copy': { fr: 'Enregistrer une copie à envoyer…', en: 'Save a copy to send…' },
   'share.readonly': { fr: 'Envoyer en lecture seule…', en: 'Send read-only…' },
   'share.docx': { fr: 'Exporter en .docx…', en: 'Export as .docx…' },
-  'share.pdf': { fr: 'Imprimer ou PDF…', en: 'Print or PDF…' },
+  'share.pdf': { fr: 'Exporter en PDF', en: 'Export as PDF' },
   // Menu contextuel.
   'ctx.search': { fr: 'Rechercher dans les menus', en: 'Search the menus' },
   'ctx.cut': { fr: 'Couper', en: 'Cut' },
@@ -62,9 +62,13 @@ export const UI_DICT = {
   'ctx.wrap': { fr: 'Habillage', en: 'Wrap text' },
   'ctx.size': { fr: 'Taille et rognage…', en: 'Size and crop…' },
   'ctx.styles': { fr: 'Styles', en: 'Styles' },
-  'ctx.nativeHint': { fr: 'Maj+clic droit : menu du navigateur (suggestions d’orthographe)', en: 'Shift+right-click: the browser’s menu (spelling suggestions)' },
   'ctx.noMatch': { fr: 'Aucune commande', en: 'No command' },
   'ctx.label': { fr: 'Menu contextuel', en: 'Context menu' },
+  'ctx.help': { fr: 'Et le menu du navigateur ?', en: 'What about the browser’s menu?' },
+  'ctx.nativeHelp': {
+    fr: 'Le menu du navigateur (suggestions d’orthographe, copier le lien, inspecter…) s’ouvre avec Maj + clic droit. Dans une zone de saisie, un simple clic droit l’ouvre.',
+    en: 'The browser’s menu (spelling suggestions, copy link, inspect…) opens with Shift + right-click. In a text field, a plain right-click opens it.',
+  },
   'ctx.miniToolbar': { fr: 'Mise en forme rapide', en: 'Quick formatting' },
   'shortcuts.mathTyping': { fr: 'Formule dans la ligne · équation centrée', en: 'Formula in line · centred equation' },
   'shortcuts.click': { fr: 'clic', en: 'click' },

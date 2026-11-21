@@ -117,6 +117,16 @@ export function t(key: Key, params: Params = {}, l: string = current): string {
   return text.replace(/\{(\w+)\}/g, (m, name: string) => (name in params ? String(params[name]) : m))
 }
 
+/** Taille de fichier lisible (« 12 ko », « 3,4 Mo ») dans la langue de l'interface. */
+export function fileSize(bytes: number, l: string = current): string {
+  const [unit, v] = bytes >= 1_000_000 ? ['megabyte', bytes / 1_000_000] : bytes >= 1000 ? ['kilobyte', bytes / 1000] : ['byte', bytes]
+  try {
+    return new Intl.NumberFormat(l, { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: v < 10 && unit !== 'byte' ? 1 : 0 }).format(v)
+  } catch {
+    return `${Math.round(bytes / 1000)} kB`
+  }
+}
+
 /** Date et heure lisibles dans la langue de l'interface. */
 export function formatDate(at: number | string, l: string = current): string {
   const d = new Date(at)

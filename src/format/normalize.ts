@@ -6,14 +6,16 @@
 // nommés, les images et leurs ressources, le champ `markdown`, l'identité et
 // les dates.
 
+import { CHART_LIMITS, chartFromRows, parseNumber } from './chart'
+import { DIAGRAM_COLORS, DIAGRAM_KINDS, DIAGRAM_LIMITS, itemsFromText } from './diagram'
 import { parseColor, parseHighlight } from './color'
 import { cleanAdjust } from './picture'
 import { pathOf, Report } from './dsl'
 import { assetIdFor } from './hash'
 import { buildTree, flattenTree } from './lists'
 import { parseInlineField, parseMarkdown, type MdWarn } from './markdown'
-import { cleanMarks, mergeRuns, plainRuns, refInline, runsText } from './runs'
-import { dataUriType, isAssetRef } from './spec'
+import { cleanChange, cleanMarks, mergeRuns, plainRuns, refInline, runsText } from './runs'
+import { cleanFileName, cleanMime, dataUriType, isAssetRef } from './spec'
 import { cleanStyle, defaultTheme, isBuiltinStyle, presetOf, pruneStyles, THEME_PRESETS } from './theme'
 import { mathMarks,
   type AuthorityCategory,
@@ -50,6 +52,11 @@ import { mathMarks,
   type FontFace,
   type Inline,
   type ListItem,
+  type CalloutKind,
+  type InkStroke,
+  type FormInline,
+  type FormKind,
+  type Term,
   type ListStyle,
   type Marks,
   type Meta,
@@ -63,7 +70,17 @@ import { mathMarks,
   type StyleDef,
   type TableCell,
   type TableStyle,
-  type Theme, MERGE_OPTS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS, type MailMerge, type MergeType, type MergeFilter, type AddressField } from './types'
+  type LineNumbers,
+  LINE_NUMBER_RESTARTS,
+  type ChartBlock,
+  type ChartKind,
+  type ChartSeries,
+  CHART_KINDS,
+  type Theme, MERGE_OPTS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS, type MailMerge, type MergeType, type MergeFilter, type AddressField, INK_LIMITS,
+  type ParaBefore,
+  type DiagramBlock,
+  type DiagramItem,
+} from './types'
 
 type Raw = Record<string, unknown>
 
@@ -144,6 +161,32 @@ const mdWarn =
   (code, detail) =>
     ctx.report.ignore(path, code, detail)
 
+/** Champ de formulaire : seulement les réglages de son type ; la valeur d'une liste est l'un des choix. */
+export function formFrom(o: Raw): FormInline {
+  const kind = (o.kind as FormKind) ?? 'text'
+  const out: FormInline = { type: 'formfield', kind, ...cleanMarks(o) }
+  const s = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b-\u001f]/g, '').slice(0, max) : '')
+  const name = s(o.name, 64).trim()
+  if (name) out.name = name
+  const placeholder = s(o.placeholder, 200).trim()
+  if (placeholder && kind !== 'checkbox') out.placeholder = placeholder
+  if (kind === 'checkbox') {
+    if (o.checked === true) out.checked = true
+  } else if (kind === 'dropdown') {
+    const options = Array.isArray(o.options) ? [...new Set((o.options as unknown[]).map((x) => s(x, 200).trim()).filter(Boolean))].slice(0, 50) : []
+    out.options = options
+    const v = s(o.value, 200)
+    if (v && options.includes(v)) out.value = v
+  } else if (kind === 'date') {
+    const v = s(o.value, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v))) out.value = v
+  } else {
+    const v = s(o.value, 1000)
+    if (v) out.value = v
+  }
+  return out
+}
+
 /** Éléments validés (chaînes, morceaux, champs) → éléments canoniques. */
 export function runsFrom(content: unknown[], ctx: Ctx, path = ''): Inline[] {
   const items: Inline[] = []
@@ -192,6 +235,20 @@ export function runsFrom(content: unknown[], ctx: Ctx, path = ''): Inline[] {
           return false
         })
         if (ids.length) items.push({ type: 'cite', ids, ...(typeof o.locator === 'string' && o.locator.trim() ? { locator: o.locator.trim() } : {}), ...cleanMarks(o) })
+      } else if (o.type === 'formfield') {
+        items.push(formFrom(o))
+      } else if (o.type === 'attachment' && ctx.inNote) {
+        ctx.report.warn(path, 'note-flattened', 'attachment')
+      } else if (o.type === 'attachment') {
+        const name = cleanFileName(String(o.name ?? ''))
+        const src = String(o.src ?? '')
+        const ref = src.startsWith('data:') ? ctx.assets.add(src) : ctx.assets.use(src.slice(6))
+        if (ref === null) ctx.report.warn(path, 'asset-missing', src.slice(6))
+        if (!name) ctx.report.ignore(path, 'missing-field', 'name')
+        else if (ref !== null) {
+          const mime = cleanMime(String(o.mime ?? ''))
+          items.push({ type: 'attachment', src: `asset:${ref}`, name, ...(typeof o.size === 'number' ? { size: o.size } : {}), ...(mime ? { mime } : {}) })
+        }
       } else if (o.type === 'math') {
         const tex = String(o.tex ?? '').trim()
         if (tex) items.push({ type: 'math', tex, ...mathMarks(cleanMarks(o)) })
@@ -265,7 +322,7 @@ function flattenForNote(blocks: Block[], path: string, ctx: Ctx): Block[] {
     else if (blk.type === 'heading') {
       ctx.report.warn(path, 'note-flattened', 'heading')
       out.push({ type: 'paragraph', content: blk.content, ...paraFrom(blk as unknown as Raw) })
-    } else if (blk.type === 'quote' || blk.type === 'columns') {
+    } else if (blk.type === 'quote' || blk.type === 'columns' || blk.type === 'callout') {
       ctx.report.warn(path, 'note-flattened', blk.type)
       out.push(...flattenForNote(blk.blocks, path, ctx))
     } else if (blk.type === 'table') {
@@ -300,6 +357,7 @@ function stripNotesDeep(blocks: Block[], path: string, ctx: Ctx): Block[] {
         return b.items.some((it) => has(it.content)) ? { ...b, items: b.items.map((it) => ({ ...it, content: mergeRuns(fix(it.content)) })) } : b
       case 'quote':
       case 'columns':
+      case 'callout':
         return { ...b, blocks: stripNotesDeep(b.blocks, path, ctx) }
       case 'table':
         return { ...b, rows: b.rows.map((r) => r.map((c) => ({ ...c, blocks: stripNotesDeep(c.blocks, path, ctx) }))) }
@@ -369,7 +427,43 @@ export function paraFrom(o: Raw): ParaProps {
   const border = typeof o.border === 'string' ? parseColor(o.border) : null
   if (border) p.border = border
   if (typeof o.dropCap === 'number' && Number.isInteger(o.dropCap) && o.dropCap >= 2 && o.dropCap <= 10) p.dropCap = o.dropCap
+  const ink = cleanInk(o.ink)
+  if (ink.length) p.ink = ink
+  if (o.dir === 'rtl' || o.dir === 'ltr') p.dir = o.dir
+  if (o.noLineNumbers === true) p.noLineNumbers = true
+  const fc = o.formatChange
+  if (fc && typeof fc === 'object') {
+    const raw = ((fc as Raw).before ?? {}) as Raw
+    const { ink, formatChange, ...props } = paraFrom(typeof raw === 'object' ? { ...raw, formatChange: undefined } : {})
+    void ink, formatChange
+    const before: ParaBefore = { ...props }
+    if (raw.kind === 'paragraph' || raw.kind === 'heading') before.kind = raw.kind
+    if (typeof raw.level === 'number' && Number.isInteger(raw.level) && raw.level >= 1 && raw.level <= 6) before.level = raw.level
+    if (typeof raw.style === 'string' && /^[A-Za-z][\w-]{0,63}$/.test(raw.style)) before.style = raw.style
+    p.formatChange = { ...cleanChange(fc as Raw), before }
+  }
   return p
+}
+
+/** Traits de dessin : un nombre pair de points, au dixième de point, bornés. */
+export function cleanInk(raw: unknown): InkStroke[] {
+  if (!Array.isArray(raw)) return []
+  const out: InkStroke[] = []
+  for (const s of raw.slice(0, INK_LIMITS.strokes)) {
+    if (!s || typeof s !== 'object') continue
+    const o = s as Raw
+    const pts = (Array.isArray(o.points) ? o.points : []).filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).slice(0, INK_LIMITS.points * 2)
+    if (pts.length % 2) pts.pop()
+    if (pts.length < 2) continue
+    const color = typeof o.color === 'string' ? parseColor(o.color) : null
+    out.push({
+      tool: o.tool === 'highlighter' ? 'highlighter' : 'pen',
+      color: color ?? '#1f2937',
+      width: typeof o.width === 'number' ? Math.min(40, Math.max(0.25, o.width)) : 2,
+      points: pts.map((v) => Math.round(Math.max(-INK_LIMITS.coord, Math.min(INK_LIMITS.coord, v)) * 10) / 10),
+    })
+  }
+  return out
 }
 
 function normalizeBlocks(list: unknown[], path: string, ctx: Ctx): Block[] {
@@ -445,12 +539,42 @@ function normalizeBlock(b: Raw, path: string, ctx: Ctx): Block[] {
       }
       return [{ type: 'quote', blocks: blocks.length ? blocks : [{ type: 'paragraph', content: [] }] }]
     }
+    case 'callout': {
+      let blocks: Block[] = []
+      if (b.blocks !== undefined) {
+        if (hasInline(b)) ctx.report.warn(path, 'several-sources', 'blocks (text, md, content)')
+        blocks = normalizeBlocks(b.blocks as unknown[], `${path}.blocks`, { ...ctx, nested: true })
+      } else if (b.content === undefined && b.md !== undefined) {
+        blocks = parseMarkdown(String(b.md), mdWarn(ctx, `${path}.md`))
+      } else {
+        blocks = [{ type: 'paragraph', content: inlineFrom(b, path, ctx) }]
+      }
+      blocks = flattenForCallout(blocks, path, ctx)
+      const title = typeof b.title === 'string' ? b.title.replace(/\s+/g, ' ').trim() : ''
+      return [{ type: 'callout', kind: (b.kind as CalloutKind) ?? 'note', ...(title ? { title } : {}), blocks: blocks.length ? blocks : [{ type: 'paragraph', content: [] }] }]
+    }
     case 'code':
       return [{ type: 'code', language: String(b.language ?? ''), text: String(b.text ?? '') }]
     case 'table':
       return normalizeTable(b, path, ctx)
     case 'divider':
       return [{ type: 'divider' }]
+    case 'diagram': {
+      const d = diagramFrom(b)
+      if (!d) {
+        ctx.report.ignore(path, 'chart-empty', 'items')
+        return []
+      }
+      return [d]
+    }
+    case 'chart': {
+      const c = chartFrom(b)
+      if (!c) {
+        ctx.report.ignore(path, 'chart-empty', 'labels/series')
+        return []
+      }
+      return [c]
+    }
     case 'equation': {
       const tex = String(b.tex ?? '').trim()
       if (!tex) {
@@ -492,6 +616,8 @@ function normalizeBlock(b: Raw, path: string, ctx: Ctx): Block[] {
     case 'figures':
     case 'index':
     case 'authorities':
+    case 'glossary':
+    case 'abbreviations':
     case 'bibliography': {
       if (ctx.nested && !ctx.inColumns) {
         ctx.report.ignore(path, 'block-converted', b.type)
@@ -501,6 +627,7 @@ function normalizeBlock(b: Raw, path: string, ctx: Ctx): Block[] {
       if (b.type === 'figures') return [{ type: 'figures', label: String(b.label ?? 'figure').trim() || 'figure', title }]
       if (b.type === 'index') return [{ type: 'index', columns: Number(b.columns ?? 2), title }]
       if (b.type === 'authorities') return [{ type: 'authorities', category: (b.category as AuthorityCategory | 'all') ?? 'all', title }]
+      if (b.type === 'glossary' || b.type === 'abbreviations') return [{ type: b.type, title, ...(b.all === true ? { all: true as const } : {}) }]
       return [{ type: 'bibliography', title, ...(b.all === true ? { all: true as const } : {}) }]
     }
     case 'columnbreak':
@@ -538,6 +665,8 @@ function imageFromParts(src: string, b: Partial<BlockOf<'image'>> & Raw, path: s
     wrap: (b.wrap as BlockOf<'image'>['wrap']) ?? 'none',
     caption: Array.isArray(b.caption) ? (b.caption as Inline[]) : [],
   }
+  // Rapproché, au travers : l'image flotte à gauche ou à droite ; « centré » veut dire à gauche.
+  if ((img.wrap === 'tight' || img.wrap === 'through') && img.align === 'center') img.align = 'left'
   const crop = normalizeCrop(b.crop)
   if (crop) img.crop = crop
   if (typeof b.rotate === 'number') {
@@ -585,14 +714,23 @@ function normalizeList(b: Raw, path: string, ctx: Ctx): Block[] {
   const style = (b.style as ListStyle) ?? 'bullet'
   const start = Number(b.start ?? 1)
   const raw = (b.items as unknown[]) ?? []
+  // « [ ] » ou « [x] » en tête d'un élément de liste à cocher : la case (écriture Markdown).
+  const task = (s: string): { text: string; checked?: boolean } => {
+    const m = /^\[([ xX])\]\s+/.exec(s)
+    return m ? { text: s.slice(m[0].length), checked: m[1] !== ' ' } : { text: s }
+  }
   const flat = raw.map((it, i) => {
-    if (typeof it === 'string') return { content: plainRuns(it), level: 0 }
+    if (typeof it === 'string') {
+      const tk = style === 'check' ? task(it) : { text: it }
+      return { content: plainRuns(tk.text), level: 0, checked: !!tk.checked }
+    }
     const o = it as Raw
     return {
       content: inlineFrom(o, pathOf(o, `${path}.items[${i}]`), ctx),
       level: Number(o.level ?? 0),
       style: o.style as ListStyle | undefined,
       props: paraFrom(o),
+      checked: o.checked === true,
     }
   })
   if (!flat.length) {
@@ -626,6 +764,19 @@ function flattenForColumns(blocks: Block[], path: string, ctx: Ctx): Block[] {
   return out
 }
 
+/** Dans un encadré : ni encadré (son contenu est gardé), ni colonnes, ni saut de section. */
+function flattenForCallout(blocks: Block[], path: string, ctx: Ctx): Block[] {
+  const out: Block[] = []
+  for (const blk of blocks) {
+    if (blk.type === 'callout' || blk.type === 'columns') {
+      ctx.report.warn(path, 'callout-flattened', blk.type)
+      out.push(...flattenForCallout(blk.blocks, path, ctx))
+    } else if (blk.type === 'section' || blk.type === 'columnbreak') ctx.report.warn(path, 'callout-flattened', blk.type)
+    else out.push(blk)
+  }
+  return out
+}
+
 /** Types de blocs admis dans une cellule ; le reste est aplati sans perdre de texte. */
 const CELL_TYPES = new Set(['paragraph', 'heading', 'list', 'code', 'image', 'equation'])
 
@@ -633,8 +784,8 @@ function flattenForCell(blocks: Block[], path: string, ctx: Ctx): Block[] {
   const out: Block[] = []
   for (const blk of blocks) {
     if (CELL_TYPES.has(blk.type)) out.push(blk)
-    else if (blk.type === 'quote') {
-      ctx.report.warn(path, 'cell-flattened', 'quote')
+    else if (blk.type === 'quote' || blk.type === 'callout') {
+      ctx.report.warn(path, 'cell-flattened', blk.type)
       out.push(...flattenForCell(blk.blocks, path, ctx))
     } else if (blk.type === 'table') {
       ctx.report.warn(path, 'cell-flattened', 'table')
@@ -664,6 +815,7 @@ function normalizeCell(c: unknown, path: string, ctx: Ctx): TableCell {
   const bg = typeof o.bg === 'string' ? parseColor(o.bg) : null
   if (bg) cell.bg = bg
   if (o.valign === 'middle' || o.valign === 'bottom') cell.valign = o.valign
+  if (o.textDir === 'tbrl' || o.textDir === 'btlr') cell.textDir = o.textDir
   return cell
 }
 
@@ -842,6 +994,31 @@ function normalizeSectionPage(raw: Raw): SectionPage {
 }
 
 /** Sources : identifiants uniques, champs vides retirés. */
+/** Termes du glossaire et abréviations : identifiants uniques, textes nettoyés, doublons écartés. */
+export function normalizeTerms(raw: unknown[] | undefined, report: Report): Term[] {
+  const out: Term[] = []
+  const ids = new Set<string>()
+  const keys = new Set<string>()
+  for (const [i, v] of (raw ?? []).entries()) {
+    const o = v as Raw
+    const term = String(o.term ?? '').replace(/\s+/g, ' ').trim()
+    if (!term) continue
+    const kind = o.kind === 'abbreviation' ? 'abbreviation' : 'glossary'
+    const key = `${kind}\u0000${kind === 'abbreviation' ? term : term.toLocaleLowerCase()}`
+    if (keys.has(key)) {
+      report.ignore(`terms[${i}]`, 'term-duplicate', term.slice(0, 60))
+      continue
+    }
+    keys.add(key)
+    let id = typeof o.id === 'string' && /^[\w-]{1,64}$/.test(o.id) && !ids.has(o.id) ? o.id : ''
+    for (let k = out.length + 1; !id; k++) if (!ids.has(`t${k}`)) id = `t${k}`
+    ids.add(id)
+    const plural = typeof o.plural === 'string' ? o.plural.trim() : ''
+    out.push({ id, term, definition: String(o.definition ?? '').trim(), kind, ...(plural && plural !== term ? { plural } : {}) })
+  }
+  return out
+}
+
 export function normalizeSources(raw: unknown[] | undefined, report: Report): Source[] {
   const out: Source[] = []
   const seen = new Set<string>()
@@ -869,6 +1046,78 @@ export function normalizeSources(raw: unknown[] | undefined, report: Report): So
 }
 
 /** Filigrane : un texte ou une image (sinon, rien). */
+/**
+ * Graphique (déjà validé) : données depuis labels et series, ou depuis rows (comme un tableau).
+ * Chaque série a une valeur par étiquette (complétée par null, coupée au-delà).
+ */
+/** Diagramme validé → forme canonique (éléments bornés, niveaux sans saut) ; null s'il est vide. */
+export function diagramFrom(b: Raw): DiagramBlock | null {
+  const raw: DiagramItem[] = Array.isArray(b.items)
+    ? (b.items as unknown[]).map((x) => (typeof x === 'string' ? { text: x, level: 0 } : { text: String((x as Raw)?.text ?? ''), level: Number((x as Raw)?.level ?? 0) || 0 }))
+    : typeof b.text === 'string'
+      ? itemsFromText(b.text)
+      : []
+  const items: DiagramItem[] = []
+  for (const it of raw) {
+    const text = it.text.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, DIAGRAM_LIMITS.text)
+    if (!text) continue
+    const level = Math.max(0, Math.min(DIAGRAM_LIMITS.level, Math.round(it.level), items.length ? items[items.length - 1].level + 1 : 0))
+    items.push({ text, level })
+    if (items.length >= DIAGRAM_LIMITS.items) break
+  }
+  if (!items.length) return null
+  const kind = (DIAGRAM_KINDS as readonly string[]).includes(b.kind as string) ? (b.kind as DiagramBlock['kind']) : 'list'
+  const out: DiagramBlock = { type: 'diagram', kind, items }
+  if (typeof b.title === 'string' && b.title.trim()) out.title = b.title.trim().slice(0, DIAGRAM_LIMITS.text)
+  if (typeof b.color === 'string' && b.color !== 'colorful' && (DIAGRAM_COLORS as readonly string[]).includes(b.color)) out.color = b.color as DiagramBlock['color']
+  return out
+}
+
+export function chartFrom(b: Raw): ChartBlock | null {
+  const clip = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, CHART_LIMITS.text)
+  const value = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' ? parseNumber(v) : null)
+  let labels: string[] = Array.isArray(b.labels) ? (b.labels as unknown[]).map(clip) : []
+  let series: ChartSeries[] = Array.isArray(b.series)
+    ? (b.series as Raw[]).map((s) => ({ name: clip(s.name), values: Array.isArray(s.values) ? (s.values as unknown[]).map(value) : [] }))
+    : []
+  if (!series.length && Array.isArray(b.rows)) {
+    const d = chartFromRows((b.rows as unknown[][]).map((r) => (Array.isArray(r) ? r.map((x) => (x === null || x === undefined ? '' : String(x))) : [])))
+    if (d) ({ labels, series } = d)
+  }
+  series = series.slice(0, CHART_LIMITS.series)
+  // Sans étiquettes : 1, 2, 3… pour la plus longue série.
+  if (!labels.length) labels = Array.from({ length: Math.max(0, ...series.map((s) => s.values.length)) }, (_, i) => String(i + 1))
+  labels = labels.slice(0, CHART_LIMITS.labels)
+  if (!labels.length || !series.length) return null
+  series = series.map((s, k) => ({ name: s.name || String(k + 1), values: labels.map((_, i) => s.values[i] ?? null) }))
+  const kind = (CHART_KINDS as readonly string[]).includes(b.kind as string) ? (b.kind as ChartKind) : 'bar'
+  const title = clip(b.title)
+  return {
+    type: 'chart',
+    kind,
+    ...(title ? { title } : {}),
+    labels,
+    series,
+    ...(b.legend === false ? { legend: false as const } : {}),
+    ...(b.horizontal === true && kind === 'bar' ? { horizontal: true as const } : {}),
+  }
+}
+
+/** Numéros de ligne (déjà validés par la table) : valeurs bornées, distance facultative. */
+export function lineNumbersFrom(raw: unknown): LineNumbers | null {
+  if (raw === true) return { restart: 'continuous', start: 1, countBy: 1 }
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Raw
+  const restart = (LINE_NUMBER_RESTARTS as readonly string[]).includes(o.restart as string) ? (o.restart as LineNumbers['restart']) : 'continuous'
+  const int = (v: unknown, min: number, max: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : d)
+  return {
+    restart,
+    start: int(o.start, 1, 32_767, 1),
+    countBy: int(o.countBy, 1, 100, 1),
+    ...(typeof o.distance === 'number' && Number.isFinite(o.distance) ? { distance: Math.max(0, Math.min(144, o.distance)) } : {}),
+  }
+}
+
 function normalizeWatermark(raw: Raw | undefined, ctx: Ctx): Watermark | null {
   if (!raw || typeof raw !== 'object') return null
   const w = defaultWatermark()
@@ -900,6 +1149,7 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
   const styles = normalizeStyles(raw.styles as Raw | undefined, report)
   const comments = normalizeComments(raw.comments as unknown[] | undefined, report)
   const sources = normalizeSources(raw.sources as unknown[] | undefined, report)
+  const terms = normalizeTerms(raw.terms as unknown[] | undefined, report)
   const ctx: Ctx = { report, assets, styles, done: new WeakSet(), comments: new Set(comments.map((c) => c.id)), sources: new Set(sources.map((x) => x.id)), bookmarks: new Set() }
   if (raw.format === undefined) report.warn('format', 'format-missing', FORMAT)
   else if (raw.format !== FORMAT) report.warn('format', 'format-unknown', String(raw.format).slice(0, 40))
@@ -929,6 +1179,9 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
   }
   blocks = fixImagesDeep(blocks, 'blocks', ctx)
   const watermark = normalizeWatermark(raw.watermark as Raw | undefined, ctx)
+  const lineNumbers = lineNumbersFrom(raw.lineNumbers)
+  const goalRaw = raw.goal as Raw | undefined
+  const goal = goalRaw && typeof goalRaw.words === 'number' ? { words: goalRaw.words, ...(typeof goalRaw.deadline === 'string' && !Number.isNaN(Date.parse(goalRaw.deadline)) ? { deadline: goalRaw.deadline } : {}) } : null
 
   const id = typeof raw.id === 'string' && ID_PATTERN.test(raw.id) ? raw.id : mintId()
   return {
@@ -943,6 +1196,7 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
     math,
     ...(mailMerge ? { mailMerge } : {}),
     ...(sources.length ? { sources } : {}),
+    ...(terms.length ? { terms } : {}),
     ...(typeof raw.citationStyle === 'string' && raw.citationStyle !== 'apa' ? { citationStyle: raw.citationStyle as CitationStyle } : {}),
     theme,
     styles,
@@ -951,7 +1205,10 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
     comments,
     trackChanges: raw.trackChanges === true,
     ...(raw.hyphenate === true ? { hyphenate: true as const } : {}),
+    ...(lineNumbers ? { lineNumbers } : {}),
     ...(watermark ? { watermark } : {}),
+    ...(goal ? { goal } : {}),
+    ...(raw.formsOnly === true ? { formsOnly: true as const } : {}),
     template: raw.template === true,
     readOnly: raw.readOnly === true,
     assets: assets.result(),
@@ -962,7 +1219,7 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
 function fixImagesDeep(blocks: Block[], path: string, ctx: Ctx): Block[] {
   return blocks.map((b) => {
     if (b.type === 'image' && !ctx.done.has(b)) return imageFromParts(b.src, b, path, ctx)
-    if (b.type === 'quote') return { ...b, blocks: fixImagesDeep(b.blocks, path, ctx) }
+    if (b.type === 'quote' || b.type === 'callout') return { ...b, blocks: fixImagesDeep(b.blocks, path, ctx) }
     if (b.type === 'table') return { ...b, rows: b.rows.map((r) => r.map((c) => ({ ...c, blocks: fixImagesDeep(c.blocks, path, ctx) }))) }
     return b
   })

@@ -4,6 +4,9 @@
 // barré, formules. Le reste (images, notes, champs) est laissé de côté ou réduit
 // à son texte.
 
+import { chartRows } from './chart'
+import { diagramBullets } from './diagram'
+import type { ChartBlock } from './types'
 import type { Block, Inline } from './types'
 import { isRun } from './types'
 
@@ -15,6 +18,7 @@ export function inlineMarkdown(items: Inline[]): string {
     if (!isRun(x)) {
       if (x.type === 'math') out += `$${x.tex}$`
       else if (x.type === 'field') out += `{{${x.name}${x.format ? ':' + x.format : ''}}}`
+      else if (x.type === 'attachment') out += escapeMd(`[${x.name}]`)
       continue
     }
     if (x.deleted) continue
@@ -53,7 +57,7 @@ export function blocksToMarkdown(blocks: Block[]): string {
             .map((it) => {
               counters.length = it.level + 1
               counters[it.level] = (counters[it.level] ?? (it.level === 0 ? b.start - 1 : 0)) + 1
-              const mark = it.style === 'number' ? `${counters[it.level]}.` : '-'
+              const mark = it.style === 'number' ? `${counters[it.level]}.` : it.style === 'check' ? (it.checked ? '- [x]' : '- [ ]') : '-'
               return `${'   '.repeat(it.level)}${mark} ${inlineMarkdown(it.content)}`
             })
             .join('\n'),
@@ -64,6 +68,13 @@ export function blocksToMarkdown(blocks: Block[]): string {
         out.push(
           blocksToMarkdown(b.blocks)
             .split('\n')
+            .map((l) => `> ${l}`.trimEnd())
+            .join('\n'),
+        )
+        break
+      case 'callout':
+        out.push(
+          [`[!${b.kind.toUpperCase()}]${b.title ? ` ${b.title}` : ''}`, ...blocksToMarkdown(b.blocks).split('\n')]
             .map((l) => `> ${l}`.trimEnd())
             .join('\n'),
         )
@@ -86,9 +97,22 @@ export function blocksToMarkdown(blocks: Block[]): string {
         out.push(rows.join('\n'))
         break
       }
+      case 'chart':
+        out.push(chartMarkdown(b))
+        break
+      case 'diagram':
+        out.push([b.title ? `**${b.title}**` : '', ...diagramBullets(b)].filter(Boolean).join('\n'))
+        break
       default:
         break
     }
   }
   return out.filter((x) => x !== '').join('\n\n')
+}
+
+/** Graphique en Markdown : son titre en gras, puis ses données en tableau (le dessin ne s'écrit pas). */
+export function chartMarkdown(b: ChartBlock, lang = 'fr'): string {
+  const rows = chartRows(b, lang).map((r) => `| ${r.map((c) => c.replace(/\|/g, '\\|') || ' ').join(' | ')} |`)
+  rows.splice(1, 0, `| ${chartRows(b, lang)[0].map(() => '---').join(' | ')} |`)
+  return [b.title ? `**${b.title}**` : '', rows.join('\n')].filter(Boolean).join('\n\n')
 }

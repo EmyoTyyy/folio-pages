@@ -209,8 +209,107 @@ test.describe('mises à jour', () => {
     await download.saveAs(out)
     const html = readFileSync(out, 'utf8')
     expect(JSON.stringify(docOfFile(html).blocks[0])).toContain('Budget 2027')
-    expect(html).toContain('folio/deflate-b86')
+    expect(html).toContain('folio/deflate-b122')
     errors.check()
+  })
+})
+
+test.describe('recherche de mise à jour à l’ouverture', () => {
+  /** Un vrai navigateur : la recherche à l'ouverture est sautée quand il est piloté par un programme. */
+  const asUser = (page: Page) => page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false }))
+  const watchManifest = async (page: Page, body: () => string) => {
+    const hits: string[] = []
+    await page.route(MANIFEST_URL, (r) => {
+      hits.push(r.request().url())
+      return r.fulfill({ status: 200, body: body(), headers: CORS })
+    })
+    return hits
+  }
+
+  test('version plus récente : bouton « Mettre à jour » et bulle (une fois par version) ; le bouton propose la mise à jour', async ({ page }, info) => {
+    test.skip(!existsSync(KEY_FILE), 'pas de clé de signature locale')
+    const errors = watchErrors(page)
+    await asUser(page)
+    const manifest = await signed({ app: 'folio-pages', version: '99.0.0', sha256: '0'.repeat(64), url: 'https://exemple.org/folio-pages-99.html', notes: { fr: ['Une nouveauté.'] } })
+    const hits = await watchManifest(page, () => manifest)
+    await openEditor(page, makeFile(info, 'doc.html', DOC).url)
+    const btn = page.locator('#fp-update')
+    await expect(btn).toBeVisible()
+    await expect(btn).toHaveText('Mettre à jour')
+    await expect(btn).toHaveAttribute('title', /99\.0\.0.*ce fichier : \d+\.\d+\.\d+/)
+    await expect(toast(page, /99\.0\.0 est disponible/)).toBeVisible()
+    expect(hits).toHaveLength(1)
+    await btn.click()
+    const dlg = page.locator('[data-dialog="update"]')
+    await expect(dlg).toContainText('99.0.0')
+    await expect(dlg).toContainText('Une nouveauté.')
+    await dlg.locator('[data-action="cancel"]').click()
+    // rouvert : nouvelle recherche, le bouton revient, la bulle ne se répète pas
+    await page.reload()
+    await page.waitForFunction(() => !!(window as any).folio?.doc)
+    await expect(btn).toBeVisible()
+    expect(hits).toHaveLength(2)
+    await page.waitForTimeout(300)
+    await expect(page.locator('.fp-toast').filter({ hasText: /est disponible/ })).toHaveCount(0)
+    errors.check()
+  })
+
+  test('déjà à jour, ou manifeste refusé : ni bouton ni bulle', async ({ page }, info) => {
+    test.skip(!existsSync(KEY_FILE), 'pas de clé de signature locale')
+    await asUser(page)
+    let body = await signed({ app: 'folio-pages', version: '0.0.1', sha256: '0'.repeat(64), url: 'https://exemple.org/x.html' })
+    const hits = await watchManifest(page, () => body)
+    await openEditor(page, makeFile(info, 'doc.html', DOC).url)
+    await expect.poll(() => hits.length).toBe(1)
+    await page.waitForTimeout(300)
+    await expect(page.locator('#fp-update')).toBeHidden()
+    await expect(page.locator('.fp-toast')).toHaveCount(0)
+    // signature fausse : silencieux à l'ouverture (rien n'est proposé)
+    body = JSON.stringify({ payload: JSON.stringify({ app: 'folio-pages', version: '99.0.0', sha256: 'a'.repeat(64), url: 'https://exemple.org/x.html' }), sig: Buffer.from('faux').toString('base64') })
+    await page.reload()
+    await expect.poll(() => hits.length).toBe(2)
+    await page.waitForTimeout(300)
+    await expect(page.locator('#fp-update')).toBeHidden()
+    await expect(page.locator('.fp-toast')).toHaveCount(0)
+  })
+
+  test('réglage coupé ou mode hors ligne : aucune requête ; le réactiver cherche aussitôt', async ({ page }, info) => {
+    test.skip(!existsSync(KEY_FILE), 'pas de clé de signature locale')
+    await asUser(page)
+    const manifest = await signed({ app: 'folio-pages', version: '99.0.0', sha256: '0'.repeat(64), url: 'https://exemple.org/x.html' })
+    const hits = await watchManifest(page, () => manifest)
+    await openEditor(page, makeFile(info, 'doc.html', DOC).url)
+    await expect(page.locator('#fp-update')).toBeVisible()
+    await tab(page, 'help')
+    const box = page.locator('.fp-ribbon [data-cmd="auto-update"]')
+    await expect(box).toBeChecked()
+    await box.click()
+    await expect(box).not.toBeChecked()
+    // mémorisé : à la réouverture, rien ne part
+    await page.reload()
+    await page.waitForFunction(() => !!(window as any).folio?.doc)
+    await page.waitForTimeout(2000)
+    expect(hits).toHaveLength(1)
+    await expect(page.locator('#fp-update')).toBeHidden()
+    // le réactiver : une recherche tout de suite
+    await tab(page, 'help')
+    await box.click()
+    await expect(page.locator('#fp-update')).toBeVisible()
+    expect(hits).toHaveLength(2)
+    // mode hors ligne : le bouton s'efface, et rien ne part à l'ouverture
+    await rb(page, 'offline')
+    await expect(page.locator('#fp-update')).toBeHidden()
+    await page.reload()
+    await page.waitForFunction(() => !!(window as any).folio?.doc)
+    await page.waitForTimeout(2000)
+    expect(hits).toHaveLength(2)
+  })
+
+  test('navigateur piloté par un programme : aucune recherche à l’ouverture', async ({ page }, info) => {
+    const net = watchNetwork(page)
+    await openEditor(page, makeFile(info, 'doc.html', DOC).url)
+    await page.waitForTimeout(2000)
+    net.check()
   })
 })
 

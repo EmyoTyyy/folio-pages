@@ -3,6 +3,7 @@
 // droite) et bords des marges, à faire glisser à la souris ou au clavier.
 
 import type { FolioApp } from '../app'
+import { displayScale } from '../layout/scale'
 import { setParaAttrs, styleIdAt } from '../editor/commands'
 import { resolveStyle } from '../format/theme'
 import type { PageSetup } from '../format/types'
@@ -69,7 +70,7 @@ export class Ruler {
   /** Échelle et position de la page (zoom), marges en px non mis à l'échelle. */
   private geometry() {
     const r = this.page.getBoundingClientRect()
-    const scale = this.page.offsetWidth ? r.width / this.page.offsetWidth : 1
+    const scale = displayScale(this.page)
     const cs = getComputedStyle(this.page)
     const left = parseFloat(cs.paddingLeft) || 0
     const right = parseFloat(cs.paddingRight) || 0

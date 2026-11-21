@@ -16,7 +16,9 @@ export default defineConfig({
     outDir: 'build/docx',
     emptyOutDir: true,
     sourcemap: false,
-    minify: 'esbuild',
+    // Terser : 1,5 % de moins qu'esbuild une fois compressé (deux passes).
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 }, format: { comments: false } },
     lib: {
       entry: 'src/docx/entry.ts',
       formats: ['iife'],

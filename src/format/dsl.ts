@@ -32,16 +32,20 @@ export type IssueCode =
   | 'id-minted'
   | 'cell-flattened'
   | 'note-flattened'
+  | 'callout-flattened'
+  | 'term-duplicate'
   | 'note-misplaced'
   | 'comment-unknown'
   | 'comment-duplicate'
   | 'comment-misplaced'
   | 'json-repaired'
   | 'unsafe-image'
+  | 'unsafe-attachment'
   | 'asset-missing'
   | 'style-unknown'
   | 'import-loss'
   | 'math-empty'
+  | 'chart-empty'
   | 'math-invalid'
   | 'source-unknown'
   | 'source-duplicate'
@@ -84,6 +88,8 @@ export class Report {
 interface Common {
   /** Description reprise dans le JSON Schema. */
   doc?: string
+  /** null est une valeur acceptée, gardée telle quelle (une valeur manquante d'un graphique). */
+  nullable?: boolean
 }
 
 export interface StringDesc extends Common {
@@ -253,6 +259,7 @@ const describeType = (v: unknown): string =>
 const join = (path: string, key: string) => (path ? `${path}.${key}` : key)
 
 export function check(d: Desc, v: unknown, path: string, ctx: Ctx): Checked {
+  if (v === null && d.nullable) return null
   switch (d.k) {
     case 'string':
       return checkString(d, v, path, ctx)
@@ -593,6 +600,7 @@ function checkTagged(d: TaggedDesc, v: unknown, path: string, ctx: Ctx): Checked
 type Json = Record<string, unknown>
 
 export function toJsonSchema(d: Desc, defs: Record<string, Desc>, out: Record<string, Json>): Json {
+  if (d.nullable) return { anyOf: [toJsonSchema({ ...d, nullable: false } as Desc, defs, out), { type: 'null' }] }
   const withDoc = (s: Json): Json => (d.doc ? { description: d.doc, ...s } : s)
   switch (d.k) {
     case 'string': {

@@ -6,16 +6,22 @@
 //   - supprimer du texte encore « inséré » le retire vraiment.
 // Le complément est ajouté à la même étape d'annulation (appendTransaction).
 //
-// Ce qui n'est pas suivi (et se fait donc directement) : la mise en forme, les
-// changements de structure (titres, listes, sauts de paragraphe), et la
-// suppression d'objets (images, tableaux entiers, sauts, notes, code).
+//   - une mise en forme changée (caractères ou paragraphe) garde celle d'avant :
+//     marque « formatchange » sur le texte, attribut `fmtChange` sur le paragraphe ;
+//     accepter garde la nouvelle, refuser remet l'ancienne.
+//
+// Ce qui n'est pas suivi (et se fait donc directement) : les changements de
+// structure (listes, sauts de paragraphe), et la suppression d'objets (images,
+// tableaux entiers, sauts, notes, code).
 
 import { isHistoryTransaction } from 'prosemirror-history'
 import { undoInputRule } from 'prosemirror-inputrules'
 import { Fragment, Slice, type Mark, type Node as PMNode } from 'prosemirror-model'
 import { Plugin, PluginKey, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state'
-import { ReplaceStep, type StepMap } from 'prosemirror-transform'
-import { schema } from './schema'
+import { AddMarkStep, AttrStep, RemoveMarkStep, ReplaceAroundStep, ReplaceStep, type Step, type StepMap } from 'prosemirror-transform'
+import { FLAG_MARKS, VALUE_MARKS, schema } from './schema'
+import { paraFromAttrs, paraToAttrs } from './convert'
+import type { ParaBefore } from '../format/types'
 
 export interface Change {
   author: string
@@ -27,6 +33,119 @@ export const TRACK_SKIP = 'folio-track-skip'
 
 const ins = () => schema.marks.insertion
 const del = () => schema.marks.deletion
+const fmt = () => schema.marks.formatchange
+
+// --- mise en forme ----------------------------------------------------------------
+
+/** Marques qui ne sont pas de la mise en forme (le suivi ne les compte pas). */
+const NOT_FORMAT = new Set(['link', 'comment', 'insertion', 'deletion', 'formatchange'])
+
+/** Mise en forme de caractères d'un nœud, au format Folio (clés triées). */
+export function formatOf(marks: readonly Mark[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const m of marks) {
+    if (NOT_FORMAT.has(m.type.name)) continue
+    if ((FLAG_MARKS as readonly string[]).includes(m.type.name)) out[m.type.name] = true
+    else for (const [key, [mark, attr]] of Object.entries(VALUE_MARKS)) if (mark === m.type.name && key !== 'link') out[key] = m.attrs[attr]
+  }
+  return sorted(out)
+}
+
+/** Les marques de l'éditeur d'une mise en forme au format Folio. */
+export function formatMarks(f: Record<string, unknown>): Mark[] {
+  const out: Mark[] = []
+  for (const [k, v] of Object.entries(f)) {
+    if ((FLAG_MARKS as readonly string[]).includes(k) && v === true) out.push(schema.marks[k].create())
+    else if (k in VALUE_MARKS && k !== 'link' && v !== undefined && v !== null && v !== '') {
+      const [mark, attr] = VALUE_MARKS[k as keyof typeof VALUE_MARKS]
+      out.push(schema.marks[mark].create({ [attr]: v }))
+    }
+  }
+  return out
+}
+
+const sorted = (o: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : 1)))
+const same = (a: unknown, b: unknown) => JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b))
+function sortDeep(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortDeep)
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => x !== undefined).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, sortDeep(x)]))
+  return v
+}
+
+const TRACKED_BLOCKS = new Set(['paragraph', 'heading'])
+
+/** Mise en forme d'un paragraphe ou d'un titre, au format Folio (type, niveau, style compris). */
+export function paraState(n: PMNode): ParaBefore {
+  const { ink, formatChange, ...props } = paraFromAttrs(n.attrs)
+  void ink, formatChange
+  const out: ParaBefore = { kind: n.type.name === 'heading' ? 'heading' : 'paragraph', ...props }
+  if (n.type.name === 'heading') out.level = n.attrs.level as number
+  if (n.attrs.style) out.style = n.attrs.style as string
+  return out
+}
+
+/** Une étape qui ne change que la mise en forme (marques, attributs, type de bloc) ? */
+const formattingStep = (s: Step) => s instanceof AddMarkStep || s instanceof RemoveMarkStep || s instanceof AttrStep || (s instanceof ReplaceAroundStep && (s as unknown as { structure: boolean }).structure)
+
+/** Complète une transaction de mise en forme : ce qui change garde sa mise en forme d'avant. */
+function trackFormatting(trs: readonly Transaction[], oldDoc: PMNode, out: Transaction, author: string, date: string): void {
+  const newDoc = out.doc
+  if (oldDoc.content.size !== newDoc.content.size) return
+  const steps = trs.flatMap((tr) => tr.steps)
+  if (!steps.length || !steps.every(formattingStep)) return
+  // 1. Caractères : les plages touchées par une marque de mise en forme.
+  for (const s of steps) {
+    if (!(s instanceof AddMarkStep || s instanceof RemoveMarkStep) || NOT_FORMAT.has(s.mark.type.name)) continue
+    newDoc.nodesBetween(s.from, s.to, (node, pos) => {
+      if (!node.isInline) return true
+      if (ins().isInSet(node.marks) || del().isInSet(node.marks)) return false
+      const a = Math.max(pos, s.from)
+      const b = Math.min(pos + node.nodeSize, s.to)
+      const after = formatOf(node.marks)
+      oldDoc.nodesBetween(a, b, (old, opos) => {
+        if (!old.isInline) return true
+        const x = Math.max(opos, a)
+        const y = Math.min(opos + old.nodeSize, b)
+        if (x >= y) return false
+        const prior = fmt().isInSet(old.marks)
+        const before = prior ? (prior.attrs.before as Record<string, unknown>) : formatOf(old.marks)
+        if (same(before, after)) out.removeMark(x, y, fmt())
+        else if (!prior || !same(prior.attrs.before, before) || prior.attrs.author !== author) out.addMark(x, y, fmt().create({ author, date, before }))
+        else out.addMark(x, y, prior)
+        return false
+      })
+      return false
+    })
+  }
+  // 2. Paragraphes et titres : type, niveau, style, alignement, retraits, espacements…
+  if (!steps.some((s) => s instanceof AttrStep || s instanceof ReplaceAroundStep)) return
+  newDoc.descendants((node, pos) => {
+    if (!node.isTextblock) return true
+    if (!TRACKED_BLOCKS.has(node.type.name)) return false
+    const old = oldDoc.nodeAt(pos)
+    if (!old || !TRACKED_BLOCKS.has(old.type.name)) return false
+    const now = paraState(node)
+    const was = paraState(old)
+    const prior = old.attrs.fmtChange as { author: string; date: string; before: ParaBefore } | null
+    if (same(now, was) && same(node.attrs.fmtChange, prior)) return false
+    const before = prior?.before ?? was
+    const fmtChange = same(before, now) ? null : prior && prior.author === author && same(prior.before, before) ? prior : { author, date, before }
+    if (!same(fmtChange, node.attrs.fmtChange)) out.setNodeMarkup(pos, undefined, { ...node.attrs, fmtChange })
+    return false
+  })
+}
+
+/** Remet un paragraphe dans sa mise en forme d'avant (refuser). */
+function restorePara(tr: Transaction, pos: number, node: PMNode, before: ParaBefore): void {
+  const heading = before.kind === 'heading'
+  const type = heading ? schema.nodes.heading : schema.nodes.paragraph
+  const { kind, level, style, ...props } = before
+  void kind
+  const attrs: Record<string, unknown> = { ...paraToAttrs(props), ink: node.attrs.ink, fmtChange: null }
+  if (heading) attrs.level = level ?? 1
+  else attrs.style = style ?? null
+  tr.setNodeMarkup(pos, type, attrs)
+}
 
 /** Ce qu'une suppression suivie ne garde pas : objets entiers, structure de tableau, code, notes. */
 const UNTRACKED = new Set(['figure', 'page_break', 'horizontal_rule', 'toc', 'columns', 'column_break', 'section_break', 'code_block', 'note', 'table', 'table_row', 'table_cell', 'table_header'])
@@ -115,7 +234,8 @@ export function trackPlugin(ctx: TrackContext): Plugin<{ lastKey: string; at: nu
     },
     appendTransaction: (trs, oldState, newState) => {
       if (!isTracking(oldState) || !isTracking(newState)) return null
-      const relevant = trs.filter((tr) => tr.docChanged && !tr.getMeta(TRACK_SKIP) && !isHistoryTransaction(tr))
+      // Les modifications venues d'une autre vue du document y ont déjà été suivies.
+      const relevant = trs.filter((tr) => tr.docChanged && !tr.getMeta(TRACK_SKIP) && !isHistoryTransaction(tr) && !tr.getMeta('collab$'))
       if (!relevant.length) return null
       const author = ctx.author()
       const date = new Date().toISOString()
@@ -165,6 +285,7 @@ export function trackPlugin(ctx: TrackContext): Plugin<{ lastKey: string; at: nu
           }
         }
       }
+      trackFormatting(relevant, oldState.doc, out, author, date)
       if (!out.docChanged) return null
       if (backspaceAt !== null) out.setSelection(TextSelection.create(out.doc, Math.min(backspaceAt, out.doc.content.size)))
       return out.setMeta(TRACK_SKIP, true)
@@ -221,25 +342,33 @@ export function keyRange(state: EditorState, back: boolean, word: boolean): { fr
 // --- les modifications du document ------------------------------------------------
 
 export interface TrackedChange {
-  kind: 'insert' | 'delete'
+  kind: 'insert' | 'delete' | 'format'
   from: number
   to: number
   author: string
   date: string
+  /** Mise en forme d'un paragraphe entier (from : sa position). */
+  block?: true
 }
 
 /** Les modifications suivies, dans l'ordre (morceaux voisins de même marque réunis). */
 export function changesOf(doc: PMNode): TrackedChange[] {
   const out: TrackedChange[] = []
   doc.descendants((n, pos) => {
+    if (n.isTextblock && n.attrs.fmtChange) {
+      const fc = n.attrs.fmtChange as { author: string; date: string }
+      out.push({ kind: 'format', from: pos, to: pos + n.nodeSize, author: fc.author, date: fc.date, block: true })
+    }
     if (!n.isInline) return true
     for (const [kind, type] of [
       ['insert', ins()],
       ['delete', del()],
+      ['format', fmt()],
     ] as const) {
       const m = type.isInSet(n.marks)
       if (!m) continue
-      const last = out[out.length - 1]
+      let last: TrackedChange | undefined
+      for (let i = out.length - 1; i >= 0 && !last; i--) if (!out[i].block) last = out[i]
       if (last && last.kind === kind && last.to === pos && last.author === m.attrs.author && last.date === m.attrs.date) last.to = pos + n.nodeSize
       else out.push({ kind, from: pos, to: pos + n.nodeSize, author: m.attrs.author, date: m.attrs.date })
     }
@@ -266,6 +395,10 @@ export function resolveChanges(accept: boolean, changes: TrackedChange[] | 'all'
       const tr = state.tr.setMeta(TRACK_SKIP, true)
       // De la fin vers le début : les positions restent justes.
       for (const c of [...list].sort((a, b) => b.from - a.from)) {
+        if (c.kind === 'format') {
+          resolveFormat(tr, c, accept)
+          continue
+        }
         const keep = (c.kind === 'insert') === accept
         const type = c.kind === 'insert' ? ins() : del()
         if (keep) {
@@ -275,11 +408,42 @@ export function resolveChanges(accept: boolean, changes: TrackedChange[] | 'all'
             if (m && m.attrs.author === c.author && m.attrs.date === c.date) tr.removeMark(Math.max(pos, c.from), Math.min(pos + n.nodeSize, c.to), m)
             return false
           })
-        } else tr.delete(c.from, c.to)
+        } else {
+          // Tout le texte d'un paragraphe : le paragraphe part avec lui (pas de paragraphe vide qui reste).
+          const $a = tr.doc.resolve(c.from)
+          const whole = $a.parent.isTextblock && c.from === $a.start() && c.to === $a.end() && $a.depth > 0 && $a.node($a.depth - 1).childCount > 1
+          if (whole) tr.delete($a.before(), $a.after())
+          else tr.delete(c.from, c.to)
+        }
       }
       dispatch(tr.scrollIntoView())
     }
     return true
+  }
+}
+
+/** Accepte (garde la nouvelle mise en forme) ou refuse (remet l'ancienne) une modification de mise en forme. */
+function resolveFormat(tr: Transaction, c: TrackedChange, accept: boolean): void {
+  if (c.block) {
+    const node = tr.doc.nodeAt(c.from)
+    const fc = node?.attrs.fmtChange as { before: ParaBefore } | null | undefined
+    if (!node || !fc) return
+    if (accept) tr.setNodeMarkup(c.from, undefined, { ...node.attrs, fmtChange: null })
+    else restorePara(tr, c.from, node, fc.before)
+    return
+  }
+  const parts: { from: number; to: number; mark: Mark }[] = []
+  tr.doc.nodesBetween(c.from, c.to, (n, pos) => {
+    if (!n.isInline) return true
+    const m = fmt().isInSet(n.marks)
+    if (m && m.attrs.author === c.author && m.attrs.date === c.date) parts.push({ from: Math.max(pos, c.from), to: Math.min(pos + n.nodeSize, c.to), mark: m })
+    return false
+  })
+  for (const p of parts) {
+    tr.removeMark(p.from, p.to, fmt())
+    if (accept) continue
+    for (const type of Object.values(schema.marks)) if (!NOT_FORMAT.has(type.name)) tr.removeMark(p.from, p.to, type)
+    for (const m of formatMarks(p.mark.attrs.before as Record<string, unknown>)) tr.addMark(p.from, p.to, m)
   }
 }
 

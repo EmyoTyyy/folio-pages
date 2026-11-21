@@ -2,6 +2,8 @@
 // commande, état, Enregistrer), ruban, bandeau de démonstration, page, barre
 // d'état (statistiques, zoom).
 
+import { installWindows } from './windows'
+import * as CHART from './chart'
 import type { FolioApp } from '../app'
 import {
   applyStyle,
@@ -19,7 +21,7 @@ import { stats } from '../editor/stats'
 import type { Key } from '../i18n/dict'
 import { availableLanguages, lang, onLangChange, setLang, t } from '../i18n/i18n'
 import { addLanguageUi, languagesDialog } from './packs'
-import { checkUpdatesUi, toggleOffline, whatsNewDialog } from './updates'
+import { availableUpdate, checkUpdatesUi, openAvailableUpdate, toggleAutoUpdate, toggleOffline, whatsNewDialog } from './updates'
 import { isOffline } from '../net'
 import { onSettings, settings, updateSettings } from '../settings'
 import { aboutDialog, aiHelpDialog, copyJson, replaceFromJsonDialog, reportDialog, reportSummary } from './actions'
@@ -28,6 +30,15 @@ import { h, icon, shortcut } from './dom'
 import { ICONS, MARK, RIBBON_ICONS as I } from './icons'
 import { MenuBar, type MenuDef, type MenuEntry } from './menu'
 import * as P from './panels'
+import * as WT from './writetools'
+import * as SN from './snippets'
+import * as GL from './glossary'
+import * as PR from './privacy'
+import { installTypewriter } from './typewriter'
+import { autoSaveOn, installAutoSave, toggleAutoSave } from './autosave'
+import { installLongSentences, statusWords } from './stats'
+import { printDialog } from './print'
+import { exportPdfUi } from './pdf'
 import * as R from './refs'
 import * as O from './online'
 import { Popover, closePopovers, popItem, popoverOpen } from './popover'
@@ -35,11 +46,14 @@ import { Ribbon, painterActive, painterApply, painterCopy, painterStop } from '.
 import { PageView } from '../layout/pageview'
 import { Ruler } from './ruler'
 import { NavPane } from './navpane'
+import { ReviewPane } from './reviewpane'
+import * as DIAG from './diagram'
 import { isTracking } from '../editor/track'
 import { readOpened } from '../file/open'
 import { CommentsPane } from './comments'
 import { editMathAt, newEquation } from './equation'
 import { installContextMenu } from './contextmenu'
+import { installTooltips } from './tooltip'
 import { protectDialog } from './protect'
 import { sendDocumentDialog } from './mailings'
 import { autoCorrectDialog } from './autocorrect'
@@ -90,7 +104,11 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   const statusText = h('span', { class: 'fp-status__text' })
   const status = h('div', { class: 'fp-status', id: 'fp-status', role: 'status', 'aria-live': 'polite' }, h('span', { class: 'fp-status__dot' }), statusText)
   const saveLabel = h('span', {})
+  const autoSave = installAutoSave(app)
   const saveBtn = h('button', { type: 'button', class: 'fp-btn fp-btn--primary fp-save', id: 'fp-save', onclick: () => void app.save() }, icon(ICONS.save), saveLabel)
+  // Une version plus récente a été trouvée (recherche à l'ouverture ou sur demande).
+  const updateLabel = h('span', { class: 'fp-updatebtn__label' })
+  const updateBtn = h('button', { type: 'button', class: 'fp-btn fp-updatebtn', id: 'fp-update', hidden: true, onclick: () => openAvailableUpdate(app) }, icon(ICONS.update), updateLabel)
 
   const toggleRuler = () => {
     updateSettings({ ruler: !settings().ruler })
@@ -114,16 +132,18 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
         { id: 'open-recent', label: t('open.recent'), run: () => void P.recentFilesDialog(app) },
         { separator: true },
         { id: 'save', label: t('menu.save'), shortcut: shortcut('S'), run: () => void app.save() },
+        { id: 'autosave', label: t('autosave.menu'), checked: autoSaveOn(app), run: () => void toggleAutoSave(app) },
         { id: 'save-copy', label: t('saveAs.copy'), run: () => void app.saveVariant('copy') },
         { id: 'save-new', label: t('saveAs.new'), run: () => void app.saveVariant('new') },
         { id: 'save-template', label: t('saveAs.template'), run: () => void app.saveVariant('template') },
         { id: 'save-readonly', label: t('saveAs.readonly'), run: () => void app.saveVariant('readonly') },
         { id: 'versions', label: t('versions.menu'), run: () => void P.versionsDialog(app) },
         { id: 'protect', label: t('protect.menu'), run: () => protectDialog(app) },
+        { id: 'inspect', label: t('inspect.button'), run: () => void PR.inspectDialog(app) },
         { separator: true },
         { id: 'export-docx', label: t('docx.export.menu'), run: () => void P.exportDocxUi(app) },
         { id: 'export', label: t('exp.menu'), run: () => exportDialog(app) },
-        { id: 'print', label: t('menu.print'), shortcut: shortcut('P'), run: () => window.print() },
+        { id: 'print', label: t('menu.print'), shortcut: shortcut('P'), run: () => printDialog(app) },
         { separator: true },
         { id: 'properties', label: t('menu.properties'), run: () => P.propertiesDialog(app) },
       ],
@@ -241,6 +261,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
         { id: 'manage-languages', label: t('pack.manage'), run: () => languagesDialog() },
         { separator: true },
         { id: 'check-update', label: t('update.check'), run: () => void checkUpdatesUi(app) },
+        { id: 'auto-update', label: t('update.auto'), checked: settings().autoUpdate, run: () => toggleAutoUpdate(app) },
         { id: 'offline', label: t('offline.label'), checked: isOffline(), run: () => toggleOffline(app) },
         { id: 'whats-new', label: t('update.whatsNew'), run: () => whatsNewDialog() },
         { separator: true },
@@ -313,7 +334,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     { class: 'fp-titlebar' },
     h('div', { class: 'fp-brand', title: 'Folio Pages' }, icon(MARK)),
     h('div', { class: 'fp-titlebar__main' }, h('div', { class: 'fp-titlebar__row' }, title, qat), h('div', { class: 'fp-titlebar__search' }, search)),
-    h('div', { class: 'fp-titlebar__side' }, status, saveBtn),
+    h('div', { class: 'fp-titlebar__side' }, updateBtn, autoSave, status, saveBtn),
   )
 
   const ribbon = new Ribbon(app)
@@ -363,9 +384,11 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
       popItem(t('share.readonly'), () => void app.saveVariant('readonly'), { 'data-share': 'readonly' }),
       h('hr', { class: 'fp-pop__sep' }),
       popItem(t('share.docx'), () => void P.exportDocxUi(app), { 'data-share': 'docx' }),
-      popItem(t('share.pdf'), () => window.print(), { 'data-share': 'pdf' }),
+      popItem(t('share.pdf'), () => void exportPdfUi(app), { 'data-share': 'pdf' }),
       popItem(t('exp.share'), () => exportDialog(app), { 'data-share': 'export' }),
       popItem(t('mail.sendDoc'), () => sendDocumentDialog(app), { 'data-share': 'email' }),
+      h('hr', { class: 'fp-pop__sep' }),
+      popItem(t('inspect.title'), () => void PR.inspectDialog(app), { 'data-share': 'inspect' }),
     )
     new Popover({ anchor: b, content: list, name: 'share' })
   }, 'fp-barbtn--accent has-caret')
@@ -418,13 +441,22 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   // Volet « Rechercher » (synonymes, Wikipédia), à droite, ouvert à la demande.
   const lookup = new O.LookupPane(app)
   O.setLookupPane(lookup)
-  workspace.append(nav.el, canvas, comments.el, lookup.el)
+  // Le texte et, fractionné, son second volet.
+  const splitBox = h('div', { class: 'fp-splitbox' })
+  workspace.append(nav.el, splitBox, comments.el, lookup.el)
+  splitBox.append(canvas)
+  // Volet Vérifications : à gauche du texte, ou dessous.
+  const review = new ReviewPane(app, (side, el) => (side === 'vertical' ? nav.el.after(el) : splitBox.append(el)))
+  P.setReviewPane(review)
+  installWindows(app, splitBox, canvas)
 
   const findHost = h('div', { class: 'fp-findhost', id: 'fp-findhost' })
   canvas.prepend(findHost)
   P.setFindHost(findHost)
 
   const ruler = new Ruler(app, page, canvas)
+  installTypewriter(app, canvas)
+  installLongSentences(app)
   root.prepend(titlebar, ribbon.el, banner, readBar, ruler.el)
   root.append(statusbar)
 
@@ -516,7 +548,14 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     countTimer = null
     const all = stats(app.state.doc).words
     const { from, to, empty } = app.state.selection
-    words.textContent = empty ? t('stats.status', { n: all }) : t('stats.statusSelection', { s: stats(app.state.doc, from, to).words, n: all })
+    const shown = statusWords(app, all, empty ? null : stats(app.state.doc, from, to).words)
+    words.textContent = shown.text
+    // Objectif d'écriture : une jauge sous le nombre de mots.
+    words.classList.toggle('has-goal', shown.pct !== null)
+    words.classList.toggle('is-done', shown.pct === 100)
+    words.style.setProperty('--goal', String((shown.pct ?? 0) / 100))
+    if (shown.pct !== null) words.title = `${shown.pct} %`
+    else words.removeAttribute('title')
   }
   const scheduleCount = () => {
     if (!countTimer) countTimer = setTimeout(renderCount, 300)
@@ -576,9 +615,16 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     scheduleCount()
     const n = pageView.pageCount
     const cur = pageView.mode === 'page' ? pageView.currentPageIndex() + 1 : 1
-    pageCount.textContent = pageView.mode === 'page' ? t('pages.status', { page: Math.min(cur, n), n }) : t('pages.web')
+    pageCount.textContent = pageView.mode === 'page' ? t('pages.status', { page: Math.min(cur, n), n }) : pageView.mode === 'outline' ? t('ol.tab') : t('pages.web')
     lockChip.hidden = !app.isProtected
     offlineChip.hidden = !isOffline()
+    const release = availableUpdate()
+    updateBtn.hidden = !release
+    if (release) {
+      updateLabel.textContent = t('update.button')
+      updateBtn.setAttribute('aria-label', t('update.button'))
+      updateBtn.title = t('update.buttonHint', { version: release.version, current: __FOLIO_VERSION__ })
+    }
     ;(offlineChip.lastChild as HTMLElement).textContent = t('offline.chip')
     ;(lockChip.lastChild as HTMLElement).textContent = t('protect.chip')
     trackChip.hidden = !isTracking(app.state)
@@ -663,12 +709,22 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
       case 'equation':
         newEquation(app, false)
         return true
+      case 'snippet':
+        return SN.expandAtCursor(app)
+      case 'define-term':
+        GL.defineTermDialog(app)
+        return true
     }
     return false
   }
   app.editMath = (view, pos) => editMathAt(app, view, pos)
   app.editLink = () => P.linkDialog(app)
+  app.calloutMenu = (pos, anchor) => WT.calloutMenu(app, pos, anchor)
+  app.editChart = (pos) => CHART.editChartAt(app, pos)
+  app.editDiagram = (pos) => DIAG.editDiagramAt(app, pos)
+  void SN.loadSnippets()
   installContextMenu(app)
+  installTooltips()
   // Le pinceau s'applique à la sélection faite à la souris ; double-clic : il reste actif.
   app.view.dom.addEventListener('mouseup', () => {
     if (painterActive()) setTimeout(() => painterApply(app), 0)
@@ -696,7 +752,7 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     if (isDialogOpen()) return
     if (mod && !e.altKey && !e.shiftKey && k === 'p') {
       e.preventDefault()
-      window.print()
+      printDialog(app)
     } else if (e.key === 'F1' || (e.key === '?' && !mod && !editingText(document.activeElement))) {
       e.preventDefault()
       P.shortcutsDialog()
@@ -740,7 +796,8 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
     if (e.target === canvas || e.target === zoomBox) {
       e.preventDefault()
       if (popoverOpen()) closePopovers()
-      app.focus()
+      // Un en-tête ouvert se ferme : on revient au texte.
+      pageView.leaveEditor()
     }
   })
 }

@@ -6,7 +6,7 @@ const shell = (body: string) =>
   `<!DOCTYPE html><html><head><meta name="generator" content="folio-pages 0.1.0">
 <!-- guide : le bloc s'écrit <script type="application/folio+json" id="folio-doc"> … -->
 <script type="application/folio+json" id="folio-doc">${body}</script>
-<script id="folio-rt" type="folio/deflate-b86">abc</script></head><body></body></html>`
+<script id="folio-rt" type="folio/deflate-b122">abc</script></head><body></body></html>`
 
 describe('bloc de document dans le texte du fichier', () => {
   it('trouve le vrai bloc, pas une mention dans un commentaire', () => {

@@ -20,7 +20,8 @@ the document at once. The document is plain JSON in a single block:
 ```
 
 You change **that block only**. Everything else (the compressed application in
-`folio/deflate-b86` blocks) stays byte for byte.
+`folio/deflate-b122` blocks, which hold non-ASCII and control characters) stays
+byte for byte: read and write the file as UTF-8.
 
 ## 1. Get a file
 

@@ -5,11 +5,19 @@
 // (ses suggestions d'orthographe ne sont accessibles que par lui).
 // Clavier : touche Menu ou Maj+F10 ; flèches, Entrée, Échap.
 
+import { chartAt } from '../editor/chart'
+import { saveAttachment, selectedAttachment } from '../editor/attachment'
+import { diagramAt, listItemsAt } from '../editor/diagram'
+import { diagramDialog, editDiagramAt } from './diagram'
+import { editChartAt } from './chart'
 import { NodeSelection, TextSelection } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, deleteColumn, deleteRow, deleteTable, isInTable, mergeCells, splitCell } from 'prosemirror-tables'
 import type { FolioApp } from '../app'
-import { setLink } from '../editor/commands'
+import { listAt, setLink, toggleChecked } from '../editor/commands'
+import * as SN from './snippets'
+import * as GL from './glossary'
+import * as PR from './privacy'
 import { linkAt, followLink } from '../editor/links'
 import { hasTexText, selectedMath } from '../editor/math'
 import { schema } from '../editor/schema'
@@ -19,7 +27,7 @@ import { t } from '../i18n/i18n'
 import { writeClipboard } from './actions'
 import { toast } from './dialog'
 import { h, icon, shortcut } from './dom'
-import { RIBBON_ICONS as I } from './icons'
+import { ICONS, RIBBON_ICONS as I } from './icons'
 import type { MenuEntry } from './menu'
 import * as P from './panels'
 import * as O from './online'
@@ -29,6 +37,8 @@ import { miniToolbar } from './ribbon'
 import { convertTex, editMathAt } from './equation'
 import { localVoice, readAloud } from './speech'
 import { settings, updateSettings } from '../settings'
+import { WRAP_MENU, wrapAttrs } from '../format/picture'
+import { toggleTip } from './tooltip'
 
 interface Item {
   id: string
@@ -80,9 +90,12 @@ class ContextMenu {
     open = this
     this.search = h('input', { type: 'search', class: 'fp-ctx__search', placeholder: t('ctx.search'), 'aria-label': t('ctx.search'), spellcheck: 'false', autocomplete: 'off' }) as HTMLInputElement
     this.list = h('div', { class: 'fp-ctx__list', role: 'none' })
-    this.el = h('div', { class: 'fp-ctx', role: 'menu', 'aria-label': t('ctx.label'), 'data-context-menu': '' }, this.search, this.list)
-    // Maj+clic droit garde le menu du navigateur (suggestions d'orthographe) : dit dans la bulle du menu.
-    this.el.title = t('ctx.nativeHint')
+    // « ? » : comment avoir le menu du navigateur (Maj+clic droit), dans une info-bulle
+    // (au survol, au clavier, ou d'un clic).
+    const help = h('button', { type: 'button', class: 'fp-ctx__help', 'data-ctx-help': '', 'data-tip-click': '', title: t('ctx.nativeHelp'), 'aria-label': t('ctx.help') }, icon(I.help)) as HTMLButtonElement
+    help.addEventListener('click', () => toggleTip(help))
+    const head = h('div', { class: 'fp-ctx__head' }, this.search, help)
+    this.el = h('div', { class: 'fp-ctx', role: 'menu', 'aria-label': t('ctx.label'), 'data-context-menu': '' }, head, this.list)
     // Une image sélectionnée : sa propre barre (Style, Rogner).
     const pic = app.state.selection instanceof NodeSelection && app.state.selection.node.type === schema.nodes.figure
     this.mini = withMini ? miniToolbar(app, pic ? 'image' : 'text') : { el: h('div', { hidden: true }), update: () => undefined }
@@ -317,6 +330,19 @@ function entriesFor(app: FolioApp, view: EditorView): Entry[] {
     },
   )
 
+  // Fichier joint sélectionné : l'enregistrer sur l'ordinateur.
+  const attached = selectedAttachment(s)
+  if (attached) out.push('sep', { id: 'save-attachment', label: t('obj.save'), icon: ICONS.save, keys: '↵', run: () => void saveAttachment(attached.attrs as { src: string; name: string }) })
+
+  // Diagramme sélectionné ; liste du curseur : la changer en diagramme.
+  const diagram = diagramAt(s)
+  if (diagram) out.push('sep', { id: 'edit-diagram', label: t('dg.edit'), icon: I.diagram, keys: '↵', disabled: !editable, run: () => editDiagramAt(app, diagram.pos) })
+  else if (main && editable && listItemsAt(s)) out.push('sep', { id: 'list-to-diagram', label: t('dg.convert'), icon: I.diagram, run: () => diagramDialog(app) })
+
+  // Graphique sélectionné.
+  const chart = chartAt(s)
+  if (chart) out.push('sep', { id: 'edit-chart', label: t('ctx.editChart'), icon: I.chart, keys: '↵', disabled: !editable, run: () => editChartAt(app, chart.pos) })
+
   // Formule sous le curseur.
   const m = selectedMath(s)
   if (m) {
@@ -369,7 +395,7 @@ function entriesFor(app: FolioApp, view: EditorView): Entry[] {
         label: t('ctx.wrap'),
         icon: I.wrapRight,
         disabled: !editable,
-        sub: (['none', 'left', 'right'] as const).map((w) => ({ id: `wrap-${w}`, label: t(`image.wrap.${w}` as Key), icon: I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone'], run: () => set({ wrap: w, ...(w !== 'none' ? { align: w } : {}) }) })),
+        sub: WRAP_MENU.map((w) => ({ id: `wrap-${w}`, label: t(`image.wrap.${w}` as Key), icon: I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone'], run: () => set(wrapAttrs(w, fig.node.attrs.align as string)) })),
       },
       'sep',
       { id: 'alt-text', label: t('ctx.viewAlt'), icon: I.alt, disabled: !editable, run: () => P.altTextDialog(app) },
@@ -408,6 +434,18 @@ function entriesFor(app: FolioApp, view: EditorView): Entry[] {
       { id: 'merge-cells', label: t('table.merge'), icon: I.merge, disabled: !app.can(mergeCells), run: cmd(mergeCells) },
       { id: 'split-cell', label: t('table.split'), icon: I.split, disabled: !app.can(splitCell), run: cmd(splitCell) },
     )
+  }
+
+  // Garder la sélection comme extrait réutilisable.
+  if (main && !s.selection.empty) {
+    out.push('sep', { id: 'save-snippet', label: t('snip.saveSelection'), icon: I.quickParts, run: () => void SN.saveSelectionDialog(app) })
+    if (editable) out.push({ id: 'redact-mark', label: t('redact.mark'), icon: I.redact, run: () => PR.markSelectionForRedaction(app) })
+    if (editable && s.doc.textBetween(s.selection.from, s.selection.to).length <= 200) out.push({ id: 'define-term', label: `${t('gl.define')}…`, icon: I.markEntry, keys: 'Alt+Shift+G', run: () => GL.defineTermDialog(app) })
+  }
+
+  // Liste à cocher : cocher ou décocher l'élément (ou ceux de la sélection) au clavier.
+  if (main && editable && listAt(s)?.node.type === schema.nodes.check_list) {
+    out.push('sep', { id: 'toggle-check', label: t('check.toggle'), icon: I.checklist, run: () => void app.run(toggleChecked) })
   }
 
   // Texte : lien vers l'emplacement, police, paragraphe, synonymes, lecture, lien, commentaire.
@@ -463,13 +501,13 @@ function chromeEntries(app: FolioApp): Entry[] {
 /** Place le curseur là où l'on a cliqué (sauf dans la sélection), ou sélectionne l'objet cliqué. */
 function selectAt(view: EditorView, e: MouseEvent): void {
   const target = e.target as Element
-  const atom = target.closest('.fp-math, .fp-equation, .fp-figure')
+  const atom = target.closest('.fp-math, .fp-equation, .fp-figure, .fp-chart, .fp-diagram, .fp-attach')
   if (atom && view.dom.contains(atom)) {
     const pos = view.posAtDOM(atom, 0)
     // posAtDOM donne une position dans ou juste avant l'atome : on cherche le nœud autour.
     for (const p of [pos - 1, pos, pos - 2]) {
       const node = p >= 0 ? view.state.doc.nodeAt(p) : null
-      if (node && (node.type === schema.nodes.math || node.type === schema.nodes.equation || node.type === schema.nodes.figure)) {
+      if (node && (node.type === schema.nodes.math || node.type === schema.nodes.equation || node.type === schema.nodes.figure || node.type === schema.nodes.chart || node.type === schema.nodes.diagram || node.type === schema.nodes.attachment)) {
         view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, p)))
         return
       }

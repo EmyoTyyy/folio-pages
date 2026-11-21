@@ -14,6 +14,7 @@ import { blocksToPM, pmToBlocks } from '../editor/convert'
 import { markdownInputRules } from '../editor/inputrules'
 import { schema } from '../editor/schema'
 import { FigureView, fieldsPlugin } from '../editor/views'
+import { findPlugin } from '../editor/find'
 import { mathContextOf, mathPlugin } from '../editor/math'
 import type { Block } from '../format/types'
 import { t } from '../i18n/i18n'
@@ -79,6 +80,8 @@ export class HeaderFooterEditor {
         }),
         keymap(baseKeymap),
         mathPlugin({ ...app.mathHooks, context: () => mathContextOf(app.state) }),
+        // Rechercher : les résultats d'une note ouverte par la barre de recherche.
+        findPlugin(),
         fieldsPlugin(() => ({
           ...app.fieldContext(),
           pageAt: () => 1,

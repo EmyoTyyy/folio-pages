@@ -57,9 +57,21 @@ export const DOCX_DICT = {
     fr: { one: 'Dans {n} citation, ce qui n’est pas un simple paragraphe (titre, liste, tableau…) sort de la citation.', other: 'Dans {n} citations, ce qui n’est pas un simple paragraphe (titre, liste, tableau…) sort de la citation.' },
     en: { one: 'In {n} quote, anything that is not a plain paragraph (heading, list, table…) leaves the quote.', other: 'In {n} quotes, anything that is not a plain paragraph (heading, list, table…) leaves the quote.' },
   },
+  'docx.out.chart-hf': {
+    fr: { one: '{n} graphique d’en-tête ou de pied de page n’est pas exporté.', other: '{n} graphiques d’en-tête ou de pied de page ne sont pas exportés.' },
+    en: { one: '{n} chart in a header or footer is not exported.', other: '{n} charts in headers or footers are not exported.' },
+  },
+  'docx.out.attachment': {
+    fr: { one: '{n} fichier joint n’est pas dans le .docx : seul son nom reste.', other: '{n} fichiers joints ne sont pas dans le .docx : seuls leurs noms restent.' },
+    en: { one: '{n} attached file is not in the .docx: only its name remains.', other: '{n} attached files are not in the .docx: only their names remain.' },
+  },
+  'docx.out.ink': {
+    fr: { one: '{n} dessin à main levée n’a pas pu être converti en image.', other: '{n} dessins à main levée n’ont pas pu être convertis en image.' },
+    en: { one: '{n} ink drawing could not be turned into a picture.', other: '{n} ink drawings could not be turned into pictures.' },
+  },
   'docx.out.picture-effects': {
-    fr: { one: '{n} image garde ses couleurs retouchées, mais pas son ombre ni son halo.', other: '{n} images gardent leurs couleurs retouchées, mais pas leur ombre ni leur halo.' },
-    en: { one: '{n} picture keeps its colour corrections, but not its shadow or glow.', other: '{n} pictures keep their colour corrections, but not their shadow or glow.' },
+    fr: { one: '{n} image n’a pas pu garder ses retouches de couleur ni ses bords adoucis.', other: '{n} images n’ont pas pu garder leurs retouches de couleur ni leurs bords adoucis.' },
+    en: { one: '{n} picture could not keep its colour corrections or soft edges.', other: '{n} pictures could not keep their colour corrections or soft edges.' },
   },
   'docx.out.equation-error': {
     fr: { one: '{n} formule illisible est écrite telle quelle, en LaTeX, dans son équation.', other: '{n} formules illisibles sont écrites telles quelles, en LaTeX, dans leur équation.' },
@@ -77,6 +89,18 @@ export const DOCX_DICT = {
     fr: { one: 'Document de publipostage : sa liste de destinataires est un fichier à part, à sélectionner de nouveau (Publipostage → Sélectionner les destinataires).', other: 'Documents de publipostage : leur liste de destinataires est un fichier à part, à sélectionner de nouveau.' },
     en: { one: 'Mail merge document: its recipient list is a separate file, to select again (Mailings → Select Recipients).', other: 'Mail merge documents: their recipient list is a separate file, to select again.' },
   },
+  'docx.in.changes': {
+    fr: { one: 'Les modifications suivies ont été acceptées à l’ouverture (le texte actuel est gardé).', other: 'Les modifications suivies ont été acceptées à l’ouverture (le texte actuel est gardé).' },
+    en: { one: 'Tracked changes were accepted on opening (the current text is kept).', other: 'Tracked changes were accepted on opening (the current text is kept).' },
+  },
+  'docx.in.image': {
+    fr: { one: '{n} image n’a pas pu être reprise (format non pris en charge ou absente du fichier).', other: '{n} images n’ont pas pu être reprises (format non pris en charge ou absentes du fichier).' },
+    en: { one: '{n} picture could not be kept (unsupported format or missing from the file).', other: '{n} pictures could not be kept (unsupported format or missing from the file).' },
+  },
+  'docx.in.other': {
+    fr: { one: '{n} élément inconnu : seul son texte est gardé.', other: '{n} éléments inconnus : seul leur texte est gardé.' },
+    en: { one: '{n} unknown element: only its text is kept.', other: '{n} unknown elements: only their text is kept.' },
+  },
   'docx.in.drawing': {
     fr: { one: '{n} dessin ou forme n’est pas importé.', other: '{n} dessins ou formes ne sont pas importés.' },
     en: { one: '{n} drawing or shape is not imported.', other: '{n} drawings or shapes are not imported.' },
@@ -88,6 +112,10 @@ export const DOCX_DICT = {
   'docx.in.chart': {
     fr: { one: '{n} graphique n’est pas importé.', other: '{n} graphiques ne sont pas importés.' },
     en: { one: '{n} chart is not imported.', other: '{n} charts are not imported.' },
+  },
+  'docx.in.chart-type': {
+    fr: { one: '{n} graphique d’un type que Folio Pages ne dessine pas (aires, nuage de points, radar…) devient un graphique en courbes ou en barres.', other: '{n} graphiques d’un type que Folio Pages ne dessine pas (aires, nuage de points, radar…) deviennent des graphiques en courbes ou en barres.' },
+    en: { one: '{n} chart of a type Folio Pages does not draw (area, scatter, radar…) becomes a line or bar chart.', other: '{n} charts of a type Folio Pages does not draw (area, scatter, radar…) become line or bar charts.' },
   },
   'docx.in.object': {
     fr: { one: '{n} objet incorporé (feuille de calcul, etc.) : seul son aperçu, s’il existe, est gardé.', other: '{n} objets incorporés (feuilles de calcul, etc.) : seul leur aperçu, s’il existe, est gardé.' },

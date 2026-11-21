@@ -28,7 +28,7 @@ import { brokenScreen, fatalScreen, refusedScreen, unlockScreen } from './ui/scr
 import { decryptEnvelope, parseEnvelope } from './file/crypto'
 import { publishLocked } from './api'
 import { loadPacks } from './ui/packs'
-import { announceUpdate } from './ui/updates'
+import { announceUpdate, autoCheckUpdates } from './ui/updates'
 
 function dismissSplash(): void {
   const s = document.getElementById('folio-splash')
@@ -53,6 +53,13 @@ function start(init: AppInit): FolioApp {
   if (summary) toast(summary, { kind: 'warning', action: { label: t('action.details'), run: () => reportDialog(app) } })
   if (init.boot !== 'recovered-text') void app.checkRecovery()
   announceUpdate()
+  autoCheckUpdates(app)
+  // Le curseur est prêt dès l'ouverture (au début du document), sauf si une fenêtre a pris la main.
+  requestAnimationFrame(() => {
+    const active = document.activeElement
+    if (app.reading || (active && active !== document.body) || document.querySelector('[data-dialog]')) return
+    app.focus()
+  })
   // Document fusionné ouvert pour être imprimé (Publipostage → Imprimer des documents).
   if (location.hash === '#print') setTimeout(() => window.print(), 1500)
   return app

@@ -204,6 +204,7 @@ export function mapBlocks(blocks: Block[], ctx: MergeContext): Block[] {
       case 'list':
         return { ...b, items: b.items.map((it) => ({ ...it, content: mapInlines(it.content, ctx) })) }
       case 'quote':
+      case 'callout':
       case 'columns':
         return { ...b, blocks: mapBlocks(b.blocks, ctx) }
       case 'table':
@@ -229,7 +230,7 @@ export function mergeFields(blocks: Block[]): MergeInline[] {
     for (const b of bs) {
       if (b.type === 'paragraph' || b.type === 'heading') inl(b.content)
       else if (b.type === 'list') for (const it of b.items) inl(it.content)
-      else if (b.type === 'quote' || b.type === 'columns') walk(b.blocks)
+      else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') walk(b.blocks)
       else if (b.type === 'table') for (const row of b.rows) for (const c of row) walk(c.blocks)
       else if (b.type === 'image') inl(b.caption)
     }
@@ -369,7 +370,7 @@ export function plainText(blocks: Block[]): string {
   for (const b of blocks) {
     if (b.type === 'paragraph' || b.type === 'heading') lines.push(inl(b.content))
     else if (b.type === 'list') for (const it of b.items) lines.push(`${'  '.repeat(it.level)}${it.style === 'number' ? '–' : '•'} ${inl(it.content)}`)
-    else if (b.type === 'quote' || b.type === 'columns') lines.push(plainText(b.blocks))
+    else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') lines.push(plainText(b.blocks))
     else if (b.type === 'table') for (const row of b.rows) lines.push(row.map((c) => plainText(c.blocks)).join('\t'))
     else if (b.type === 'code') lines.push(b.text)
   }

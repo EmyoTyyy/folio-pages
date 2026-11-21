@@ -17,7 +17,7 @@
 import { parseFieldToken } from './fields'
 import { isImageSrc, isSafeLink } from './spec'
 import { makeRun, mergeRuns, type Marks } from './runs'
-import { mathMarks, type Align, type Block, type Inline, type ListItem, type ListStyle, type TableCell } from './types'
+import { mathMarks, type Align, type Block, type CalloutKind, type Inline, type ListItem, type ListStyle, type TableCell } from './types'
 
 /** Signalement facultatif des liens refusés. */
 export type MdWarn = (code: 'unsafe-link', detail: string) => void
@@ -46,7 +46,7 @@ function noteBlocks(blocks: Block[]): Block[] {
   for (const b of blocks) {
     if (b.type === 'paragraph' || b.type === 'list' || b.type === 'code' || b.type === 'equation') out.push(b)
     else if (b.type === 'heading') out.push({ type: 'paragraph', content: b.content })
-    else if (b.type === 'quote') out.push(...noteBlocks(b.blocks))
+    else if (b.type === 'quote' || b.type === 'callout') out.push(...noteBlocks(b.blocks))
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) out.push(...noteBlocks(c.blocks))
     else if (b.type === 'image' && b.caption.length) out.push({ type: 'paragraph', content: b.caption })
   }
@@ -644,8 +644,16 @@ function parseBlocks(lines: string[], warn: MdWarn | undefined, depth: number): 
         inner.push(RE.quote.exec(lines[i])![1])
         i++
       }
+      // Alerte GitHub ou encadré Obsidian : « > [!NOTE] », « > [!tip] Titre ».
+      const alert = /^\s*\[!([A-Za-z]+)\][+-]?[ \t]*(.*)$/.exec(inner[0] ?? '')
+      const kind = alert ? CALLOUT_ALIASES[alert[1].toLowerCase()] : undefined
+      if (alert && kind) inner.shift()
       const quoted = depth < 8 ? parseMarkdown(inner.join('\n'), warn, depth + 1) : [paragraph(joinLines(inner), warn)]
-      blocks.push({ type: 'quote', blocks: quoted.length ? quoted : [{ type: 'paragraph', content: [] }] })
+      const body = quoted.length ? quoted : [{ type: 'paragraph', content: [] } as Block]
+      if (alert && kind) {
+        const title = alert[2].trim().slice(0, 200)
+        blocks.push({ type: 'callout', kind, ...(title ? { title } : {}), blocks: body.flatMap((x) => (x.type === 'callout' ? x.blocks : [x])) })
+      } else blocks.push({ type: 'quote', blocks: body })
       continue
     }
 
@@ -709,14 +717,25 @@ function parseBlocks(lines: string[], warn: MdWarn | undefined, depth: number): 
   return blocks
 }
 
+/** Types d'alerte Markdown (GitHub, Obsidian) → type d'encadré. */
+const CALLOUT_ALIASES: Record<string, CalloutKind> = {
+  note: 'note', info: 'note', abstract: 'note', summary: 'note', todo: 'note', example: 'note',
+  tip: 'tip', hint: 'tip', success: 'tip', check: 'tip', done: 'tip',
+  important: 'important', question: 'important', help: 'important',
+  warning: 'warning', attention: 'warning',
+  caution: 'caution', danger: 'caution', error: 'caution', failure: 'caution', bug: 'caution',
+}
+
 /** Liste à partir de la ligne `start` ; ajoute un ou plusieurs blocs et renvoie la ligne suivante. */
 function parseList(lines: string[], start: number, blocks: Block[], warn?: MdWarn): number {
-  const styleOf = (marker: string): ListStyle => (/\d/.test(marker) ? 'number' : 'bullet')
+  // « - [ ] tâche » / « - [x] faite » : liste à cocher (GitHub).
+  const TASK = /^\[([ xX])\]\s+/
+  const styleOf = (marker: string, text = ''): ListStyle => (/\d/.test(marker) ? 'number' : TASK.test(text) ? 'check' : 'bullet')
   const first = RE.item.exec(lines[start])!
-  const rootStyle = styleOf(first[2])
+  const rootStyle = styleOf(first[2], first[3] ?? '')
   const listStart = rootStyle === 'number' ? Math.max(1, parseInt(first[2], 10) || 1) : 1
   const indents: number[] = [indentOf(lines[start])]
-  const items: { lines: string[]; level: number; style: ListStyle }[] = []
+  const items: { lines: string[]; level: number; style: ListStyle; checked?: boolean }[] = []
   let i = start
   while (i < lines.length) {
     const line = lines[i]
@@ -727,9 +746,10 @@ function parseList(lines: string[], start: number, blocks: Block[], warn?: MdWar
       while (indents.length > 1 && indent < indents[indents.length - 1]) indents.pop()
       if (indent > indents[indents.length - 1] && items.length > 0 && indents.length < 9) indents.push(indent)
       const level = indent < indents[0] ? 0 : indents.length - 1
-      const style = styleOf(m[2])
+      const style = styleOf(m[2], m[3] ?? '')
       if (level === 0 && style !== rootStyle) break // une liste d'un autre type commence
-      items.push({ lines: [m[3] ?? ''], level, style })
+      const task = style === 'check' ? TASK.exec(m[3] ?? '') : null
+      items.push({ lines: [task ? (m[3] ?? '').slice(task[0].length) : (m[3] ?? '')], level, style, ...(task && task[1] !== ' ' ? { checked: true } : {}) })
       i++
       continue
     }
@@ -740,7 +760,7 @@ function parseList(lines: string[], start: number, blocks: Block[], warn?: MdWar
       const next = lines[j]
       if (next !== undefined && RE.item.test(next) && indentOf(next) >= indents[0]) {
         const nm = RE.item.exec(next)!
-        if (indentOf(next) > indents[0] || styleOf(nm[2]) === rootStyle) {
+        if (indentOf(next) > indents[0] || styleOf(nm[2], nm[3] ?? '') === rootStyle) {
           i = j
           continue
         }
@@ -762,6 +782,7 @@ function parseList(lines: string[], start: number, blocks: Block[], warn?: MdWar
     content: parseInline(joinLines(it.lines), warn),
     level: it.level,
     style: it.style,
+    ...(it.checked ? { checked: true as const } : {}),
   }))
   blocks.push({ type: 'list', style: rootStyle, start: listStart, items: listItems })
   return i

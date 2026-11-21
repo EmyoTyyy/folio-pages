@@ -17,9 +17,10 @@ import { prepareFile, prepareImage, dataUriBytes } from '../editor/images'
 import { insertImageFiles, plainSlice } from '../editor/paste'
 import { schema } from '../editor/schema'
 import { refsOf } from '../editor/refs'
-import { countWords, stats } from '../editor/stats'
+import { stats } from '../editor/stats'
+import { statsDialog } from './stats'
 import { figureAt, setFigureAttrs, tableAt } from '../editor/tables'
-import { collectNotes, insertNote, noteText, type NoteKind } from '../editor/notes'
+import { collectNotes, insertNote, type NoteKind } from '../editor/notes'
 import { changesAt, changesOf, isTracking, resolveChanges, setTracking } from '../editor/track'
 import { withAuthor } from './comments'
 import { deleteVersions, versionsBackend } from '../file/versions'
@@ -137,7 +138,7 @@ export async function pasteFromClipboard(app: FolioApp, plain: boolean): Promise
         }
         if (img) {
           const blob = await it.getType(img)
-          await insertImageFiles(app.view, [new File([blob], 'image', { type: img })], { reduceImages: () => settings().reduceImages, onImageError: () => toast(t('image.unreadable'), { kind: 'error' }) })
+          await insertImageFiles(app.view, [new File([blob], 'image', { type: img })], { ...imageHooks(), onImageError: () => toast(t('image.unreadable'), { kind: 'error' }) })
           return
         }
         if (it.types.includes('text/plain')) {
@@ -315,6 +316,7 @@ export function paragraphDialog(app: FolioApp): void {
   const keepNext = check(t('dialog.keepNext'), a.keepNext, { 'data-field': 'keep-next' })
   const keepLines = check(t('dialog.keepLines'), a.keepLines, { 'data-field': 'keep-lines' })
   const breakBefore = check(t('dialog.pageBreakBefore'), a.pageBreakBefore, { 'data-field': 'break-before' })
+  const noLines = check(t('ln.noLineNumbers'), !!a.noLineNumbers, { 'data-field': 'no-line-numbers' })
   const shading = colorInput(app, a.shading, 'shading')
   const border = colorInput(app, a.border, 'border')
   const error = h('p', { class: 'fp-field-error', role: 'alert' })
@@ -330,7 +332,7 @@ export function paragraphDialog(app: FolioApp): void {
       h('h3', { class: 'fp-form__title' }, t('dialog.spacing')),
       h('div', { class: 'fp-form fp-form--grid' }, field(t('dialog.before'), before, t('dialog.inPoints')), field(t('dialog.after'), after, t('dialog.inPoints')), field(t('dialog.lineSpacing'), line, t('dialog.lineHint'))),
       h('h3', { class: 'fp-form__title' }, t('dialog.pagination')),
-      h('div', { class: 'fp-checks' }, keepNext.el, keepLines.el, breakBefore.el),
+      h('div', { class: 'fp-checks' }, keepNext.el, keepLines.el, breakBefore.el, noLines.el),
       h('h3', { class: 'fp-form__title' }, t('dialog.borders')),
       h('div', { class: 'fp-form fp-form--grid' }, field(t('ribbon.shading'), shading.el), field(t('ribbon.paraBorder'), border.el)),
       error,
@@ -365,6 +367,7 @@ export function paragraphDialog(app: FolioApp): void {
               keepNext: keepNext.box.checked,
               keepLines: keepLines.box.checked,
               pageBreakBefore: breakBefore.box.checked,
+              noLineNumbers: noLines.box.checked,
               shading: shading.value(),
               border: border.value(),
             }
@@ -998,8 +1001,15 @@ export function symbolsDialog(app: FolioApp): void {
   const tabs = h('div', { class: 'fp-symbols__tabs', role: 'tablist' })
   const grid = h('div', { class: 'fp-symbols__grid fp-symbols__grid--large' })
   const insert = (c: string) => app.run(insertText(c), false)
+  // Un caractère choisi : il est inséré, la fenêtre se ferme et l'on reprend l'écriture.
+  let dialog: { close: () => void } | null = null
+  const pick = (c: string) => {
+    insert(c)
+    dialog?.close()
+    app.focus()
+  }
   const show = (group: string) => {
-    grid.replaceChildren(...SYMBOL_GROUPS[group].split(' ').filter(Boolean).map((c) => symbolButton(c, insert)))
+    grid.replaceChildren(...SYMBOL_GROUPS[group].split(' ').filter(Boolean).map((c) => symbolButton(c, pick)))
     for (const b of tabs.children) b.setAttribute('aria-selected', String((b as HTMLElement).dataset.group === group))
   }
   for (const g of Object.keys(SYMBOL_GROUPS)) {
@@ -1010,7 +1020,7 @@ export function symbolsDialog(app: FolioApp): void {
   const code = input('text', '', { 'data-field': 'codepoint', placeholder: 'U+00E9, 233…', spellcheck: 'false' })
   const error = h('p', { class: 'fp-field-error', role: 'alert' })
   show('punctuation')
-  openDialog({
+  dialog = openDialog({
     name: 'symbols',
     title: t('symbol.title'),
     wide: true,
@@ -1164,7 +1174,7 @@ export function distributeColumns(app: FolioApp): void {
 
 // --- images ---------------------------------------------------------------------------
 
-function pickFile(accept: string): Promise<File | null> {
+export function pickFile(accept: string): Promise<File | null> {
   return new Promise((resolve) => {
     const el = h('input', { type: 'file', accept, class: 'fp-offscreen', 'data-folio-transient': '' }) as HTMLInputElement
     el.addEventListener('change', () => {
@@ -1180,7 +1190,7 @@ function pickFile(accept: string): Promise<File | null> {
   })
 }
 
-export const imageHooks = () => ({ reduceImages: () => settings().reduceImages, onImageError: (r: string) => toast(t(r === 'too-large' ? 'image.tooLarge' : 'image.unreadable'), { kind: 'error' }) })
+export const imageHooks = () => ({ reduceImages: () => settings().reduceImages, layout: () => ({ wrap: settings().imageWrap, align: settings().imageAlign }), onImageError: (r: string) => toast(t(r === 'too-large' ? 'image.tooLarge' : 'image.unreadable'), { kind: 'error' }) })
 
 export async function pickImage(app: FolioApp, replace = false): Promise<void> {
   const fig = replace ? figureAt(app.state) : null
@@ -1347,24 +1357,9 @@ export async function compressImages(app: FolioApp): Promise<void> {
 
 // --- statistiques, raccourcis -----------------------------------------------------------
 
+/** Statistiques : voir stats.ts (comptage, lecture, lisibilité, objectif). */
 export function wordCountDialog(app: FolioApp): void {
-  const all = stats(app.state.doc)
-  const { from, to, empty } = app.state.selection
-  const sel = empty ? null : stats(app.state.doc, from, to)
-  const row = (label: string, v: number, s?: number) => h('tr', {}, h('th', { scope: 'row' }, label), h('td', { 'data-stat': label }, String(v)), sel ? h('td', {}, String(s ?? 0)) : null)
-  const table = h(
-    'table',
-    { class: 'fp-stats' },
-    h('thead', {}, h('tr', {}, h('td'), h('th', { scope: 'col' }, t('stats.document')), sel ? h('th', { scope: 'col' }, t('stats.selection')) : null)),
-    h('tbody', {}, row(t('stats.words'), all.words, sel?.words), row(t('stats.chars'), all.chars, sel?.chars), row(t('stats.charsNoSpaces'), all.charsNoSpaces, sel?.charsNoSpaces), row(t('stats.paragraphs'), all.paragraphs, sel?.paragraphs)),
-  )
-  // Les notes ne comptent pas dans le texte ; leurs mots à part.
-  const notes = collectNotes(app.state.doc)
-  if (notes.length) {
-    const inNotes = notes.reduce((s, r) => s + countWords(noteText(r.node.attrs.blocks as Block[])), 0)
-    table.querySelector('tbody')!.append(h('tr', {}, h('th', { scope: 'row' }, t('stats.noteWords')), h('td', { 'data-stat': 'notes' }, String(inNotes)), sel ? h('td') : null))
-  }
-  openDialog({ name: 'word-count', title: t('ribbon.wordCount'), body: [table], actions: [{ label: t('action.close'), value: 'close', primary: true }] })
+  statsDialog(app)
 }
 
 export function shortcutsDialog(): void {
@@ -1430,6 +1425,12 @@ export const fitWidth = () => setZoom(fitter())
 export const fitPage = () => setZoom(Math.min(fitter(), pageFitter()))
 
 // --- mise en page ---------------------------------------------------------------
+
+let reviewPane: import('./reviewpane').ReviewPane | null = null
+export function setReviewPane(v: import('./reviewpane').ReviewPane): void {
+  reviewPane = v
+}
+export const getReviewPane = () => reviewPane
 
 let navPane: import('./navpane').NavPane | null = null
 export function setNavPane(v: import('./navpane').NavPane): void {

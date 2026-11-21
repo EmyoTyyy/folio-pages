@@ -7,6 +7,10 @@
 // champs, table des matières. Ce qui n'a pas d'équivalent est compté dans
 // `losses` pour être signalé ; le texte lui-même n'est jamais perdu.
 
+import { chartRunXml, withCharts, type DocxChart } from './chart'
+import { chartLookOf } from '../format/chart'
+import { diagramsAsImages } from '../format/diagram'
+import { blockDir } from '../format/bidi'
 import {
   ColumnBreak,
   CommentRangeEnd,
@@ -42,8 +46,12 @@ import {
 } from 'docx'
 import { fieldValue, type FieldContext } from '../format/fields'
 import { runsText } from '../format/runs'
+import { CHECKED_BOX, EMPTY_BOX } from '../format/lists'
+import { CALLOUT_COLORS, calloutLabel, calloutStyleId } from '../format/callout'
+import { termsToList } from '../format/terms'
+import { INK_ALT, inkBounds, inkSvg } from '../format/ink'
 import { BUILTIN_STYLE_IDS, isBuiltinStyle, resolveStyle, styleDef } from '../format/theme'
-import { hasColorAdjust } from '../format/picture'
+import { hasColorAdjust, floatSide, overText } from '../format/picture'
 import {
   PAPER_SIZES,
   THEME_COLORS,
@@ -61,6 +69,8 @@ import {
   type StyleDef,
   AUTHORITY_CATEGORIES,
   CAPTION_LABELS,
+  CALLOUT_KINDS,
+  type InkStroke,
 } from '../format/types'
 import {
   INLINE_CODE_STYLE,
@@ -85,7 +95,7 @@ import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate'
 import type { MathContext } from '../math'
 import { MATH_PART_NS, mathKitInUse, ommlPrint, treeToOmml, type X } from './omml'
 import { formatRefs, type FormatRefs } from '../refs/values'
-import { bibliographyEntry, bibliographyOrder, entryLabel } from '../refs/cite'
+import { bibliographyEntry, bibliographyOrder, citePieces, citePlain, entryLabel } from '../refs/cite'
 
 /** Ce que l'export n'a pas pu rendre tel quel. */
 export type ExportLossCode =
@@ -100,6 +110,9 @@ export type ExportLossCode =
   | 'columns-nested'
   | 'equation-error'
   | 'picture-effects'
+  | 'ink'
+  | 'chart-hf'
+  | 'attachment'
 
 export interface Loss<C extends string = string> {
   code: C
@@ -205,6 +218,8 @@ class Exporter {
   /** Numéro de chaque équation numérotée, dans l'ordre du texte. */
   private eqNumbers = new Map<Block, number>()
   /** Source LaTeX de chaque équation écrite, avec son empreinte (pour nos propres fichiers). */
+  /** Graphiques du corps, ajoutés au paquet après coup. */
+  private charts: DocxChart[] = []
   private mathSources: { print: string; tex: string }[] = []
   /** Références : numéros de légende, textes des renvois et des citations. */
   private refs: FormatRefs
@@ -246,7 +261,7 @@ class Exporter {
           this.eqNumbers.set(b, ++k)
           const l = mathKitInUse()?.labelOf(b.tex) ?? null
           if (l && !labels.has(l)) labels.set(l, k)
-        } else if (b.type === 'quote' || b.type === 'columns') walk(b.blocks)
+        } else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') walk(b.blocks)
         else if (b.type === 'table') for (const row of b.rows) for (const c of row) walk(c.blocks)
       }
     }
@@ -340,12 +355,18 @@ class Exporter {
     if (marks.code) o.style = INLINE_CODE_STYLE
     if (ctx?.bold && o.bold === undefined) o.bold = true
     if (ctx?.color && o.color === undefined) o.color = this.color(ctx.color)
+    // Mise en forme changée pendant le suivi : w:rPrChange, avec la mise en forme d'avant.
+    if (mk.formatChange) o.revision = { ...this.changeAttrs(mk.formatChange), ...this.runProps(mk.formatChange.before) }
     return o
   }
 
   private paraProps(p: ParaProps | StyleDef): Record<string, unknown> {
     const o: Record<string, unknown> = {}
-    if (p.align) o.alignment = ALIGN[p.align]
+    // De droite à gauche (w:bidi). Notre alignement est logique (gauche = début), comme w:jc ; le module docx,
+    // lui, attend un alignement visuel et l'inverse : on le lui donne donc déjà inversé.
+    const rtl = 'content' in p && blockDir(p as { dir?: 'rtl' | 'ltr'; content?: Inline[] }) === 'rtl'
+    if (rtl) o.bidirectional = true
+    if (p.align) o.alignment = ALIGN[rtl && p.align === 'left' ? 'right' : rtl && p.align === 'right' ? 'left' : p.align]
     if (p.indent) {
       const ind: Record<string, number> = {}
       if (typeof p.indent.left === 'number') ind.left = twips(p.indent.left)
@@ -367,10 +388,18 @@ class Exporter {
     if (p.keepNext !== undefined) o.keepNext = !!p.keepNext
     if (p.keepLines !== undefined) o.keepLines = !!p.keepLines
     if (p.pageBreakBefore) o.pageBreakBefore = true
+    if ((p as ParaProps).noLineNumbers) o.suppressLineNumbers = true
     if (p.shading) o.shading = { type: 'clear', color: 'auto', fill: this.color(p.shading) }
     if (p.border) {
       const side = { style: 'single', size: 6, space: 4, color: this.color(p.border) }
       o.border = { top: side, bottom: side, left: side, right: side }
+    }
+    // Mise en forme de paragraphe changée pendant le suivi : w:pPrChange (style de titre compris).
+    const fc = (p as ParaProps).formatChange
+    if (fc) {
+      const { kind, level, style, ...before } = fc.before
+      void style
+      o.revision = { ...this.changeAttrs(fc), ...this.paraProps(before), ...(kind === 'heading' ? { style: `Heading${Math.min(6, Math.max(1, level ?? 1))}` } : {}) }
     }
     return o
   }
@@ -491,7 +520,16 @@ class Exporter {
       }
       case 'cite': {
         const more = x.ids.slice(1).map((id) => ` \\m ${id}`).join('')
-        return run(`CITATION ${x.ids[0]}${x.locator ? ` \\p ${q(x.locator)}` : ''} \\l ${this.lcid}${more}`, this.refs.text.get(x) ?? '')
+        const code = `CITATION ${x.ids[0]}${x.locator ? ` \\p ${q(x.locator)}` : ''} \\l ${this.lcid}${more}`
+        const pieces = citePieces(this.refs.text.get(x) ?? '')
+        if (!pieces.some((p) => p.italic)) return run(code, citePlain(this.refs.text.get(x) ?? ''))
+        // Titres en italique (notes Chicago) : le résultat du champ en plusieurs morceaux.
+        const [begin, instr, sep, , end] = this.fieldChildren(code, '')
+        return [
+          make({ ...props, children: [begin, instr, sep] } as IRunOptions),
+          ...pieces.map((p) => make({ ...props, text: p.text, ...(p.italic ? { italics: true } : {}) } as IRunOptions)),
+          make({ ...props, children: [end] } as IRunOptions),
+        ]
       }
       case 'xe': {
         const esc = (v: string) => v.replace(/:/g, '\\:').replace(/"/g, "'")
@@ -592,6 +630,12 @@ class Exporter {
           : (o: IRunOptions) => new TextRun(o)
       if (!isRun(x) && x.type === 'math') made = [this.omml(x.tex, false) as unknown as ParagraphChild]
       else if (!isRun(x) && x.type === 'mergefield') made = this.mergeRun(x, ctx, make)
+      else if (!isRun(x) && x.type === 'formfield') made = [this.formControl(x)]
+      else if (!isRun(x) && x.type === 'attachment') {
+        // Word n'a pas de fichier joint simple : son nom reste dans le texte.
+        this.lose('attachment')
+        made = this.textRuns(`[${x.name}]`, {}, make)
+      }
       else if (!isRun(x) && x.type === 'bookmark') {
         // Le signet couvre la suite du paragraphe : un renvoi (REF) mis à jour dans Word retrouve ce texte.
         flush()
@@ -629,6 +673,30 @@ class Exporter {
     return out
   }
 
+  /** Champ de formulaire : un contrôle de contenu Word (texte, liste, date, case à cocher). */
+  private formControl(f: Extract<Inline, { type: 'formfield' }>): ParagraphChild {
+    const esc = escapeXml
+    const empty = f.kind !== 'checkbox' && !f.value
+    let type = ''
+    let shown = f.value ?? ''
+    let font = ''
+    if (f.kind === 'text') type = '<w:text/>'
+    else if (f.kind === 'dropdown') type = `<w:dropDownList>${(f.options ?? []).map((o) => `<w:listItem w:displayText="${esc(o)}" w:value="${esc(o)}"/>`).join('')}</w:dropDownList>`
+    else if (f.kind === 'date') {
+      const [y, m, d] = (f.value ?? '').split('-')
+      shown = f.value ? `${d}/${m}/${y}` : ''
+      type = `<w:date${f.value ? ` w:fullDate="${f.value}T00:00:00Z"` : ''}><w:dateFormat w:val="dd/MM/yyyy"/><w:lid w:val="${(this.doc.meta.lang || 'fr-FR').replace(/^fr$/, 'fr-FR')}"/><w:storeMappedDataAs w:val="dateTime"/><w:calendar w:val="gregorian"/></w:date>`
+    } else {
+      shown = f.checked ? '☒' : '☐'
+      font = '<w:rPr><w:rFonts w:ascii="MS Gothic" w:eastAsia="MS Gothic" w:hAnsi="MS Gothic" w:hint="eastAsia"/></w:rPr>'
+      type = `<w14:checkbox><w14:checked w14:val="${f.checked ? 1 : 0}"/><w14:checkedState w14:val="2612" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox>`
+    }
+    if (empty) shown = f.placeholder || (f.kind === 'dropdown' ? '…' : '          ')
+    const props = `${f.name ? `<w:alias w:val="${esc(f.name)}"/>` : ''}<w:tag w:val="folio-form:${f.kind}"/>${empty ? '<w:showingPlcHdr/>' : ''}${type}`
+    const xml = `<w:sdt xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:sdtPr>${props}</w:sdtPr><w:sdtContent><w:r>${font}<w:t xml:space="preserve">${esc(shown)}</w:t></w:r></w:sdtContent></w:sdt>`
+    return ImportedXmlComponent.fromXmlString(xml) as unknown as ParagraphChild
+  }
+
   // --- listes ---------------------------------------------------------------------
 
   /** Définition de numérotation pour ces styles par niveau (créée une fois, puis réutilisée). */
@@ -644,6 +712,11 @@ class Exporter {
       const paragraph = { indent: { left: twips(18 * (l + 1)), hanging: twips(18) } }
       if (styles[l] === 'bullet') {
         levels.push({ level: l, format: 'bullet', text: l === 0 && list.bullet ? list.bullet : BULLETS[l % 3], alignment: 'left', style: { paragraph } })
+        continue
+      }
+      // Liste à cocher : une case vide ou cochée en guise de puce (relue comme liste à cocher).
+      if (styles[l] === 'check' || styles[l] === 'checked') {
+        levels.push({ level: l, format: 'bullet', text: styles[l] === 'checked' ? CHECKED_BOX : EMPTY_BOX, alignment: 'left', style: { paragraph, run: { font: 'Segoe UI Symbol' } } })
         continue
       }
       const cycle = ['decimal', 'lowerLetter', 'lowerRoman'] as const
@@ -677,11 +750,13 @@ class Exporter {
       const level = Math.min(8, it.level)
       for (let l = level + 1; l <= 8; l++) alt[l] = null
       let num = main
-      if (level > 0 && it.style !== styles[level]) {
-        if (!alt[level] || alt[level]!.style !== it.style) {
+      // Une case cochée est une « puce » à part (même au premier niveau : les puces ne comptent pas).
+      const style: string = it.style === 'check' && it.checked ? 'checked' : it.style
+      if ((level > 0 || style === 'checked') && style !== styles[level]) {
+        if (!alt[level] || alt[level]!.style !== style) {
           const own = [...styles]
-          own[level] = it.style
-          alt[level] = { reference: this.numberingRef(list, own), instance: ++this.instance, style: it.style }
+          own[level] = style
+          alt[level] = { reference: this.numberingRef(list, own), instance: ++this.instance, style }
         }
         num = alt[level]!
       } else alt[level] = null
@@ -689,12 +764,40 @@ class Exporter {
         style: 'ListParagraph',
         ...this.paraProps(it),
         numbering: { reference: num.reference, level, instance: num.instance },
-        children: this.inlines(it.content, ctx),
+        children: [...this.inkRuns(it.ink), ...this.inlines(it.content, ctx)],
       } as IParagraphOptions)
     })
   }
 
   // --- tableaux -------------------------------------------------------------------
+
+  /** Encadré : un tableau d'une cellule au style « Folio callout … » (relu comme encadré), barre et fond de couleur. */
+  private callout(b: BlockOf<'callout'>, ctx: Ctx): Table {
+    const col = CALLOUT_COLORS[b.kind]
+    const inner: Ctx = { width: ctx.width - 16, body: ctx.body, hf: ctx.hf }
+    const title = new Paragraph({ keepNext: true, spacing: { before: 0, after: twips(2) }, children: [new TextRun({ text: b.title || calloutLabel(b.kind, this.doc.meta.lang), bold: true, color: hexOf(col.bar) })] })
+    const kids = this.blocks(b.blocks, inner).filter((k): k is Paragraph | Table => !(k instanceof TableOfContents))
+    const none = { style: 'none', size: 0, color: 'auto' }
+    return new Table({
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [title, ...kids],
+              shading: { type: 'clear', color: 'auto', fill: hexOf(col.fill) },
+              borders: { left: { style: 'single', size: 24, color: hexOf(col.bar) }, top: none, right: none, bottom: none },
+              margins: { top: twips(4), bottom: twips(3), left: twips(8), right: twips(6) },
+            } as ConstructorParameters<typeof TableCell>[0]),
+          ],
+        }),
+      ],
+      style: calloutStyleId(b.kind),
+      width: { size: twips(ctx.width), type: 'dxa' },
+      columnWidths: [twips(ctx.width)],
+      layout: 'fixed',
+      borders: { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none },
+    } as ConstructorParameters<typeof Table>[0])
+  }
 
   private table(t: BlockOf<'table'>, ctx: Ctx): Table {
     const look = tableLook(t.style, this.doc.theme, t.border ? this.hex(t.border) : undefined)
@@ -725,6 +828,7 @@ class Exporter {
           columnSpan: cell.colspan > 1 ? cell.colspan : undefined,
           rowSpan: cell.rowspan > 1 ? cell.rowspan : undefined,
           verticalAlign: cell.valign === 'middle' ? 'center' : cell.valign === 'bottom' ? 'bottom' : undefined,
+          textDirection: cell.textDir === 'tbrl' ? 'tbRl' : cell.textDir === 'btlr' ? 'btLr' : undefined,
           shading: cell.bg ? { type: 'clear', color: 'auto', fill: this.color(cell.bg) } : fill ? { type: 'clear', color: 'auto', fill: hexOf(fill) } : undefined,
           borders: head && look.headerRule ? { bottom: side(look.headerRule, look.color) } : undefined,
           margins: { top: twips(3), bottom: twips(3), left: twips(6), right: twips(6) },
@@ -766,9 +870,25 @@ class Exporter {
     const adjusted = new Map<string, BlockOf<'image'>>()
     walkBlocks(allBlocks(this.doc), (b) => {
       if (b.type !== 'image' || !b.adjust) return
-      if (b.adjust.shadow || b.adjust.glow) this.lose('picture-effects')
       if (hasColorAdjust(b.adjust)) adjusted.set(pictureKey(b), b)
     })
+    // Dessin à main levée : une image PNG par paragraphe dessiné (les traits relus depuis son texte de remplacement).
+    const inks: InkStroke[][] = []
+    walkBlocks(allBlocks(this.doc), (b) => {
+      if ((b.type === 'paragraph' || b.type === 'heading') && b.ink?.length) inks.push(b.ink)
+      if (b.type === 'list') for (const it of b.items) if (it.ink?.length) inks.push(it.ink)
+    })
+    for (const ink of inks) {
+      const key = JSON.stringify(ink)
+      if (this.inkPictures.has(key)) continue
+      const box = inkBounds(ink)
+      const svg = inkSvg(ink, (c) => `#${this.color(c)}`).replace(/style="[^"]*"/, '')
+      const uri = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`
+      // Deux fois la taille à l'écran : net à l'impression.
+      const png = this.opts.rasterize ? await this.opts.rasterize(uri, Math.ceil(pxOfPt(box.width) * 2), Math.ceil(pxOfPt(box.height) * 2)).catch(() => null) : null
+      if (png) this.inkPictures.set(key, { png, box })
+      else this.lose('ink')
+    }
     for (const [key, b] of adjusted) {
       const uri = b.src.startsWith('asset:') ? this.doc.assets[b.src.slice(6)] : b.src
       const png = uri && this.opts.bake ? await this.opts.bake(uri, b.adjust!).catch(() => null) : null
@@ -776,6 +896,30 @@ class Exporter {
       if (png && size) this.pictures.set(key, { type: 'png', data: png, width: size.width, height: size.height })
       else this.lose('picture-effects')
     }
+  }
+
+  private inkPictures = new Map<string, { png: Uint8Array; box: { x: number; y: number; width: number; height: number } }>()
+
+  /** Le dessin d'un paragraphe : une image flottante devant le texte, placée depuis le coin du paragraphe. */
+  private inkRuns(ink: InkStroke[] | undefined): ParagraphChild[] {
+    if (!ink?.length) return []
+    const pic = this.inkPictures.get(JSON.stringify(ink))
+    if (!pic) return []
+    const emu = (v: number) => Math.round(v * 12700)
+    const options = {
+      type: 'png',
+      data: pic.png,
+      transformation: { width: Math.max(1, pxOfPt(pic.box.width)), height: Math.max(1, pxOfPt(pic.box.height)) },
+      altText: { name: 'Folio ink', title: 'Folio ink', description: `${INK_ALT}${JSON.stringify(ink)}` },
+      floating: {
+        horizontalPosition: { relative: 'column', offset: emu(pic.box.x) },
+        verticalPosition: { relative: 'paragraph', offset: emu(pic.box.y) },
+        wrap: { type: 0 },
+        allowOverlap: true,
+        behindDocument: false,
+      },
+    } as unknown as IImageOptions
+    return [new ImageRun(options)]
   }
 
   private async loadPicture(src: string): Promise<Picture | null> {
@@ -825,6 +969,8 @@ class Exporter {
       height = (height * ctx.width) / width
       width = ctx.width
     }
+    const side = floatSide(b.wrap, b.align)
+    const over = overText(b.wrap)
     const base = {
       transformation: {
         // En pixels pour la bibliothèque, au 1/9525 près : la taille en points est gardée exacte.
@@ -833,16 +979,19 @@ class Exporter {
         ...(b.rotate ? { rotation: b.rotate } : {}),
         ...(b.flip ? { flip: { horizontal: b.flip.includes('h'), vertical: b.flip.includes('v') } } : {}),
       },
-      altText: { name: b.alt.slice(0, 80) || 'image', description: b.alt, title: '' },
+      // Ombre, halo, reflet : une marque dans le titre, remplacée après coup par les effets de Word (withPictureEffects).
+      altText: { name: b.alt.slice(0, 80) || 'image', description: b.alt, title: pictureFxMark(b.adjust, (c) => hexOf(this.hex(c))) },
       ...(b.crop ? { crop: { left: crop.left, top: crop.top, right: crop.right, bottom: crop.bottom } } : {}),
       ...(b.border ? { outline: { type: 'solidFill', solidFillType: 'rgb', value: hexOf(this.hex(b.border)), width: 9525 } } : {}),
-      ...(b.wrap !== 'none'
+      ...(side || over
         ? {
             floating: {
-              horizontalPosition: { relative: 'column', align: b.wrap },
+              horizontalPosition: { relative: 'column', align: side ?? b.align },
               verticalPosition: { relative: 'paragraph', offset: 0 },
-              wrap: { type: 1, side: 'bothSides' },
-              margins: { top: 0, bottom: 91440, left: b.wrap === 'right' ? 152400 : 0, right: b.wrap === 'left' ? 152400 : 0 },
+              // 0 : aucun (derrière, devant) ; 1 : carré ; 2 : rapproché ; 4 : au travers.
+              wrap: { type: over ? 0 : b.wrap === 'tight' ? 2 : b.wrap === 'through' ? 4 : 1, side: 'bothSides' },
+              ...(over ? { behindDocument: b.wrap === 'behind', allowOverlap: true } : {}),
+              margins: over ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 0, bottom: 91440, left: side === 'right' ? 152400 : 0, right: side === 'left' ? 152400 : 0 },
             },
           }
         : {}),
@@ -902,12 +1051,12 @@ class Exporter {
           // Lettrine : Word la range dans un paragraphe encadré à part, avant le texte.
           const drop = b.dropCap ? this.dropCap(b, ctx) : null
           if (drop) out.push(drop.letter)
-          out.push(new Paragraph({ style: this.paragraphStyle(b.style, ctx), ...this.paraProps(b), children: this.inlines(drop ? drop.rest : b.content, ctx) } as IParagraphOptions))
+          out.push(new Paragraph({ style: this.paragraphStyle(b.style, ctx), ...this.paraProps(b), children: [...this.inkRuns(b.ink), ...this.inlines(drop ? drop.rest : b.content, ctx)] } as IParagraphOptions))
           break
         }
         case 'heading':
           if (ctx.body) this.headingIndex++
-          out.push(new Paragraph({ style: `Heading${Math.min(6, Math.max(1, b.level))}`, ...this.paraProps(b), children: this.inlines(b.content, ctx) } as IParagraphOptions))
+          out.push(new Paragraph({ style: `Heading${Math.min(6, Math.max(1, b.level))}`, ...this.paraProps(b), children: [...this.inkRuns(b.ink), ...this.inlines(b.content, ctx)] } as IParagraphOptions))
           break
         case 'list':
           out.push(...this.list(b, ctx))
@@ -917,6 +1066,9 @@ class Exporter {
           if (b.blocks.some((q) => q.type !== 'paragraph' || (q.style && q.style !== 'normal'))) this.lose('quote-content')
           out.push(...this.blocks(b.blocks, { ...ctx, quote: true, width: ctx.width - 14 }))
           break
+        case 'callout':
+          out.push(this.callout(b, ctx))
+          break
         case 'code': {
           if (b.language) this.lose('code-colors')
           out.push(new Paragraph({ style: STYLE_IDS.code.id, children: this.textRuns(b.text, {}, (o) => new TextRun(o)) }))
@@ -925,6 +1077,17 @@ class Exporter {
         case 'table':
           out.push(this.table(b, ctx))
           break
+        case 'chart': {
+          // Un vrai graphique (ses parties s'ajoutent au paquet après coup) ; pas dans un en-tête (autres liens).
+          if (ctx.hf) {
+            this.lose('chart-hf')
+            break
+          }
+          const look = chartLookOf(this.doc)
+          this.charts.push({ chart: b, colors: look.colors.map((c) => this.hex(c)), font: this.family('body'), lang: this.doc.meta.lang || 'fr-FR' })
+          out.push(new Paragraph({ alignment: ALIGN.center, spacing: { before: twips(4), after: twips(8) }, children: [ImportedXmlComponent.fromXmlString(chartRunXml(this.charts.length, ctx.width, b.title ?? '')) as unknown as ParagraphChild] }))
+          break
+        }
         case 'equation': {
           const n = this.eqNumbers.get(b)
           if (n) {
@@ -971,6 +1134,10 @@ class Exporter {
         case 'authorities':
         case 'bibliography':
           out.push(...this.generated(b, ctx))
+          break
+        case 'glossary':
+        case 'abbreviations':
+          out.push(...this.termList(b))
           break
         case 'image':
           out.push(...this.image(b, ctx))
@@ -1093,6 +1260,19 @@ class Exporter {
     return out
   }
 
+  /** Glossaire, abréviations : terme en gras, tabulation, définition ; un style par liste (relu à l'import). */
+  private termList(b: BlockOf<'glossary' | 'abbreviations'>): Paragraph[] {
+    const glossary = b.type === 'glossary'
+    const fr = (this.doc.meta.lang || this.fieldCtx.locale || 'fr').startsWith('fr')
+    const list = termsToList(this.doc, glossary ? 'glossary' : 'abbreviation', !!b.all, this.fieldCtx.locale)
+    const style = glossary ? 'FolioGlossary' : 'FolioAbbreviations'
+    const out: Paragraph[] = []
+    if (b.title) out.push(new Paragraph({ style: 'TOCHeading', children: [new TextRun(b.title)] }))
+    if (!list.length) out.push(new Paragraph({ style, children: [new TextRun(glossary ? (fr ? 'Aucun terme du glossaire dans le texte.' : 'No glossary term in the text.') : fr ? 'Aucune abréviation dans le texte.' : 'No abbreviation in the text.')] }))
+    for (const x of list) out.push(new Paragraph({ style, children: [new TextRun({ text: x.term, bold: true }), new TextRun({ children: [new Tab(), x.definition] } as IRunOptions)] }))
+    return out
+  }
+
   // --- commentaires ---------------------------------------------------------------
 
   private prepareComments(): void {
@@ -1180,6 +1360,11 @@ class Exporter {
       { id: 'ListParagraph', name: 'List Paragraph', basedOn: 'Normal', quickFormat: true, paragraph: { spacing: { after: twips(2.2) }, contextualSpacing: true } },
       { id: 'TOCHeading', name: 'TOC Heading', basedOn: 'Normal', next: 'Normal', run: this.runProps({ font: h2.font, size: h2.size, bold: h2.bold, color: h2.color }), paragraph: { keepNext: true, spacing: { before: twips(12), after: twips(6) } } } as IParagraphStyleOptions,
     )
+    // Glossaire et abréviations : retrait suspendu, la définition après une tabulation.
+    paragraphStyles.push(
+      { id: 'FolioGlossary', name: 'Glossary', basedOn: 'Normal', paragraph: { indent: { left: twips(90), hanging: twips(90) }, tabStops: [{ type: 'left', position: twips(90) }], spacing: { after: twips(4) } } } as IParagraphStyleOptions,
+      { id: 'FolioAbbreviations', name: 'Abbreviations', basedOn: 'Normal', paragraph: { indent: { left: twips(60), hanging: twips(60) }, tabStops: [{ type: 'left', position: twips(60) }], spacing: { after: twips(2) } } } as IParagraphStyleOptions,
+    )
     for (let l = 1; l <= 6; l++) {
       paragraphStyles.push({ id: `TOC${l}`, name: `toc ${l}`, basedOn: 'Normal', next: 'Normal', paragraph: { indent: { left: twips(14 * (l - 1)) }, spacing: { after: twips(3) } } })
     }
@@ -1189,6 +1374,10 @@ class Exporter {
         `<w:style xmlns:w="${W_NS}" w:type="table" w:customStyle="1" w:styleId="${tableStyleId(s)}"><w:name w:val="${escapeXml(`Folio ${s}`)}"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="59"/><w:tblPr><w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="120" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>`,
       ),
     )
+    // Encadrés : un style de tableau par type, seulement pour que l'import les reconnaisse.
+    for (const k of CALLOUT_KINDS) {
+      tableStyles.push(ImportedXmlComponent.fromXmlString(`<w:style xmlns:w="${W_NS}" w:type="table" w:customStyle="1" w:styleId="${calloutStyleId(k)}"><w:name w:val="Folio callout ${k}"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="59"/></w:style>`))
+    }
     return {
       paragraphStyles,
       characterStyles: [
@@ -1257,10 +1446,15 @@ class Exporter {
     let children: Kids = []
     /** Un saut de section vient d'être posé : sa section existe même si rien ne le suit. */
     let pending = false
+    // Numéros de ligne : les mêmes dans chaque section (w:start compte à partir de 0).
+    const ln = d.lineNumbers
+    const lineNumbers = ln
+      ? { countBy: ln.countBy, ...(ln.start > 1 ? { start: ln.start - 1 } : {}), restart: ln.restart === 'page' ? 'newPage' : ln.restart === 'section' ? 'newSection' : 'continuous', ...(ln.distance !== undefined ? { distance: twips(ln.distance) } : {}) }
+      : undefined
     const push = () => {
       pending = false
       if (!children.length && out.length) return
-      out.push({ properties: props, headers, footers, children } as ISectionOptions)
+      out.push({ properties: lineNumbers ? { ...props, lineNumbers } : props, headers, footers, children } as ISectionOptions)
       children = []
       headers = undefined
       footers = undefined
@@ -1376,9 +1570,57 @@ class Exporter {
     if (this.mathSources.length || d.mailMerge || refs) bytes = withMathSources(bytes, this.mathSources, d.mailMerge, refs)
     if (d.sources?.length) bytes = withWordSources(bytes, d.sources, d.citationStyle ?? 'apa')
     bytes = withTextEffects(bytes)
+    bytes = withPictureEffects(bytes)
+    if (d.formsOnly) bytes = withFormProtection(bytes)
+    bytes = withCharts(bytes, this.charts)
     if (d.watermark) bytes = withWatermark(bytes, d.watermark, hexOf(this.hex(d.watermark.color)), d.watermark.image ? d.assets[d.watermark.image.slice(6)] : undefined, this.family('heading'))
     return { bytes, losses: [...this.losses].map(([code, count]) => ({ code, count })) }
   }
+}
+
+/** Marque des effets d'une image (ombre S, halo G + couleur, reflet R + pourcentage), ou '' sans effet. */
+export function pictureFxMark(a: import('../format/types').PictureAdjust | null | undefined, hex: (c: string) => string): string {
+  if (!a || !(a.shadow || a.glow || a.reflection)) return ''
+  return `FolioFx${a.shadow ? 'S' : ''}${a.glow ? `G${hex(a.glow)}` : ''}${a.reflection ? `R${a.reflection}` : ''}`
+}
+
+/**
+ * Effets des images, tels que Word les écrit (a:effectLst dans pic:spPr) : la
+ * bibliothèque ne les connaît pas. Chaque image marquée par pictureFxMark les reçoit,
+ * et la marque est effacée.
+ */
+export function withPictureEffects(bytes: Uint8Array): Uint8Array {
+  const files = unzipSync(bytes)
+  let changed = false
+  for (const name of Object.keys(files)) {
+    if (!/^word\/(document|header\d*|footer\d*|footnotes|endnotes)\.xml$/.test(name)) continue
+    let xml = strFromU8(files[name])
+    if (!xml.includes('title="FolioFx')) continue
+    xml = xml.replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, (drawing) => {
+      const m = /title="FolioFx(S?)(?:G([0-9A-Fa-f]{6}))?(?:R(\d{1,3}))?"/.exec(drawing)
+      if (!m) return drawing
+      const [, shadow, glow, reflection] = m
+      // Ordre imposé par le schéma : glow, outerShdw, reflection.
+      const fx =
+        (glow ? `<a:glow rad="63500"><a:srgbClr val="${glow.toUpperCase()}"><a:alpha val="60000"/></a:srgbClr></a:glow>` : '') +
+        (shadow ? '<a:outerShdw blurRad="76200" dist="63500" dir="3060000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="38000"/></a:prstClr></a:outerShdw>' : '') +
+        (reflection ? `<a:reflection blurRad="6350" stA="45000" endA="300" endPos="${Math.min(100, Math.max(10, Number(reflection))) * 1000}" dist="25400" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/>` : '')
+      return drawing.replace(m[0], 'title=""').replace(/<\/pic:spPr>/, () => `<a:effectLst>${fx}</a:effectLst></pic:spPr>`)
+    })
+    files[name] = strToU8(xml)
+    changed = true
+  }
+  return changed ? zipSync(files, { level: 6 }) : bytes
+}
+
+/** Formulaire protégé : Word ne laisse remplir que les champs (protection « formulaires », sans mot de passe). */
+export function withFormProtection(bytes: Uint8Array): Uint8Array {
+  const files = unzipSync(bytes)
+  const xml = files['word/settings.xml'] ? strFromU8(files['word/settings.xml']) : ''
+  if (!xml || xml.includes('<w:documentProtection')) return bytes
+  // Après w:zoom… : on la place en tête des réglages, où Word l'attend (avant w:defaultTabStop).
+  files['word/settings.xml'] = strToU8(xml.replace(/(<w:settings[^>]*>)/, '$1<w:documentProtection w:edit="forms" w:enforcement="1"/>'))
+  return zipSync(files)
 }
 
 /**
@@ -1601,7 +1843,7 @@ function allBlocks(d: FolioDoc): Block[] {
 export function walkBlocks(blocks: Block[], fn: (b: Block) => void): void {
   for (const b of blocks) {
     fn(b)
-    if (b.type === 'quote' || b.type === 'columns') walkBlocks(b.blocks, fn)
+    if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') walkBlocks(b.blocks, fn)
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) walkBlocks(c.blocks, fn)
     else if (b.type === 'paragraph' || b.type === 'heading') {
       for (const x of b.content) if (!isRun(x) && x.type === 'note') walkBlocks(x.blocks, fn)
@@ -1616,7 +1858,7 @@ export function walkInlines(blocks: Block[], fn: (x: Inline) => void): void {
   for (const b of blocks) {
     if (b.type === 'paragraph' || b.type === 'heading') b.content.forEach(fn)
     else if (b.type === 'list') for (const it of b.items) it.content.forEach(fn)
-    else if (b.type === 'quote' || b.type === 'columns') walkInlines(b.blocks, fn)
+    else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') walkInlines(b.blocks, fn)
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) walkInlines(c.blocks, fn)
     else if (b.type === 'image') b.caption.forEach(fn)
   }
@@ -1624,7 +1866,8 @@ export function walkInlines(blocks: Block[], fn: (x: Inline) => void): void {
 
 /** Document Folio Pages (forme complète) → fichier .docx. */
 export async function exportDocx(doc: FolioDoc, opts: ExportOptions = {}): Promise<ExportResult> {
-  return new Exporter(doc, opts).run()
+  // Les diagrammes : des images SVG (avec une image PNG de repli), relues comme diagrammes à l'import.
+  return new Exporter(diagramsAsImages(doc, chartLookOf(doc)), opts).run()
 }
 
 export { PAPER_SIZES }

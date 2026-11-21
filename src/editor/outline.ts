@@ -17,7 +17,7 @@ export function outline(doc: PMNode, maxLevel = 6): OutlineItem[] {
       return false
     }
     // Pas de titres dans les tableaux, les listes ou les légendes pour le plan.
-    return ['doc', 'blockquote', 'columns'].includes(node.type.name)
+    return ['doc', 'blockquote', 'callout', 'columns'].includes(node.type.name)
   })
   return out
 }

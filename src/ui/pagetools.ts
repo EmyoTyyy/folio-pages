@@ -3,7 +3,8 @@
 // nouveaux documents).
 
 import type { FolioApp } from '../app'
-import { defaultWatermark, type Watermark } from '../format/types'
+import { defaultWatermark, type LineNumbers, type Watermark } from '../format/types'
+import { paraAttr, setParaAttrs } from '../editor/commands'
 import type { Key } from '../i18n/dict'
 import { lang, t } from '../i18n/i18n'
 import { settings, updateSettings } from '../settings'
@@ -47,6 +48,104 @@ export function hyphenation(app: FolioApp): Ctl {
 export function insertSoftHyphen(app: FolioApp): void {
   app.view.dispatch(app.state.tr.insertText('­').scrollIntoView())
   app.focus()
+}
+
+// --- numéros de ligne -------------------------------------------------------------
+
+const lineNumbersOf = (app: FolioApp) => app.state.doc.attrs.lineNumbers as LineNumbers | null
+
+/** Numéros de ligne : aucun, continus, par page, par section ; sans numéros pour le paragraphe ; options. */
+export function lineNumbers(app: FolioApp): Ctl {
+  return dropdown({
+    id: 'line-numbers',
+    label: t('rb.lineNumbers'),
+    icon: I.lineNumbers,
+    text: () => t('rb.lineNumbers'),
+    menu: () => {
+      const cur = lineNumbersOf(app)
+      const set = (restart: LineNumbers['restart'] | null) => {
+        setDocAttr(app, 'lineNumbers', restart ? { ...(cur ?? { start: 1, countBy: 1 }), restart } : null)
+        // La vue web n'a pas de pages : les numéros se voient en vue page.
+        if (restart && P.getPageView()?.mode !== 'page') toast(t('ln.pageViewHint'), { kind: 'info' })
+      }
+      const radio = (v: LineNumbers['restart'] | 'none') => popItem(t(`ln.${v}` as Key), () => set(v === 'none' ? null : v), { 'data-line-numbers': v, role: 'menuitemradio', 'aria-checked': String(v === 'none' ? !cur : cur?.restart === v) })
+      const suppressed = paraAttr(app.state, 'noLineNumbers') === true
+      return h(
+        'div',
+        { class: 'fp-pop__list', role: 'menu' },
+        radio('none'),
+        radio('continuous'),
+        radio('page'),
+        radio('section'),
+        h('hr', { class: 'fp-pop__sep' }),
+        popItem(t('ln.suppress'), () => app.run(setParaAttrs({ noLineNumbers: !suppressed })), { 'data-line-numbers': 'suppress', role: 'menuitemcheckbox', 'aria-checked': String(suppressed) }),
+        popItem(t('ln.options'), () => lineNumbersDialog(app), { 'data-line-numbers': 'options' }),
+      )
+    },
+  })
+}
+
+/** Options : premier numéro, distance au texte, pas, recommencer. */
+export function lineNumbersDialog(app: FolioApp): void {
+  const cur = lineNumbersOf(app) ?? { restart: 'continuous' as const, start: 1, countBy: 1 }
+  const on = h('input', { type: 'checkbox', 'data-field': 'ln-on' }) as HTMLInputElement
+  on.checked = !!lineNumbersOf(app)
+  const start = h('input', { type: 'number', class: 'fp-input', min: '1', max: '32767', step: '1', value: String(cur.start), 'data-field': 'ln-start' }) as HTMLInputElement
+  const cm = cur.distance === undefined ? '' : String(Math.round((cur.distance / (72 / 2.54)) * 100) / 100)
+  const distance = h('input', { type: 'text', class: 'fp-input', inputmode: 'decimal', placeholder: t('ln.auto'), value: cm, 'data-field': 'ln-distance' }) as HTMLInputElement
+  const countBy = h('input', { type: 'number', class: 'fp-input', min: '1', max: '100', step: '1', value: String(cur.countBy), 'data-field': 'ln-count-by' }) as HTMLInputElement
+  const restart = h('div', { class: 'fp-wm-kinds', role: 'radiogroup', 'aria-label': t('ln.restart') })
+  const radios = (['page', 'section', 'continuous'] as const).map((v) => {
+    const r = h('input', { type: 'radio', name: 'ln-restart', value: v, 'data-field': `ln-restart-${v}` }) as HTMLInputElement
+    r.checked = cur.restart === v
+    restart.append(h('label', { class: 'fp-check' }, r, h('span', {}, t(`ln.restart.${v}` as Key))))
+    return r
+  })
+  const fields = h(
+    'fieldset',
+    { class: 'fp-wm-part' },
+    h('label', { class: 'fp-form__row' }, h('span', { class: 'fp-label' }, t('ln.start')), start),
+    h('label', { class: 'fp-form__row' }, h('span', { class: 'fp-label' }, t('ln.distance')), distance),
+    h('label', { class: 'fp-form__row' }, h('span', { class: 'fp-label' }, t('ln.countBy')), countBy),
+    h('div', { class: 'fp-form__row' }, h('span', { class: 'fp-label' }, t('ln.restart')), restart),
+  )
+  const sync = () => (fields.disabled = !on.checked)
+  on.addEventListener('change', sync)
+  sync()
+  openDialog({
+    name: 'line-numbers',
+    title: t('ln.title'),
+    body: [h('label', { class: 'fp-check' }, on, h('span', {}, t('ln.add'))), fields, h('p', { class: 'fp-hint' }, t('ln.hint'))],
+    actions: [
+      { label: t('action.cancel'), value: 'cancel' },
+      {
+        label: t('action.ok'),
+        value: 'ok',
+        primary: true,
+        run: () => {
+          if (!on.checked) return void setDocAttr(app, 'lineNumbers', null)
+          const n = (el: HTMLInputElement, min: number, max: number, d: number) => {
+            const v = Math.round(Number(el.value))
+            return Number.isFinite(v) && el.value.trim() ? Math.max(min, Math.min(max, v)) : d
+          }
+          const raw = distance.value.trim().replace(',', '.')
+          const dcm = raw ? Number(raw) : NaN
+          if (raw && !(dcm >= 0 && dcm <= 5)) {
+            distance.setAttribute('aria-invalid', 'true')
+            toast(t('ln.badDistance'), { kind: 'error' })
+            return false
+          }
+          const value: LineNumbers = {
+            restart: radios.find((r) => r.checked)?.value as LineNumbers['restart'],
+            start: n(start, 1, 32_767, 1),
+            countBy: n(countBy, 1, 100, 1),
+            ...(raw ? { distance: Math.round(dcm * (72 / 2.54) * 2) / 2 } : {}),
+          }
+          setDocAttr(app, 'lineNumbers', value)
+        },
+      },
+    ],
+  })
 }
 
 // --- filigrane ---------------------------------------------------------------------

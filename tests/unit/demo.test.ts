@@ -22,7 +22,7 @@ describe('document de démonstration', () => {
       const types = new Set(d.blocks.map((b) => b.type))
       for (const t of ['heading', 'paragraph', 'list', 'table', 'quote', 'code', 'divider', 'image', 'equation']) expect(types).toContain(t)
       const json = JSON.stringify(d.blocks)
-      for (const needle of ['"style":"title"', '"style":"subtitle"', '"style":"caption"', '"style":"tip"', '"numbering":"outline"', '"bullet":"✓"', '"style":"zebra"', '"type":"field"', '"highlight"', '"smallcaps"', '"wrap":"right"']) {
+      for (const needle of ['"style":"title"', '"style":"subtitle"', '"style":"caption"', '"style":"tip"', '"numbering":"outline"', '"style":"check"', '"type":"callout"', '"type":"chart"', '"style":"zebra"', '"type":"field"', '"highlight"', '"smallcaps"', '"wrap":"right"']) {
         expect(json, needle).toContain(needle)
       }
       expect(Object.keys(d.assets)).toEqual(['page'])

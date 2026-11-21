@@ -10,7 +10,9 @@ import { Fragment, type Node as PMNode } from 'prosemirror-model'
 import { NodeSelection, Plugin, PluginKey, TextSelection, type Command, type EditorState } from 'prosemirror-state'
 import { Decoration, DecorationSet, type EditorView, type NodeView } from 'prosemirror-view'
 import { AUTHORITY_CATEGORIES, type AuthorityCategory, type CitationStyle, type Source, type XrefShow } from '../format/types'
-import { bibliographyEntry, bibliographyOrder, citationText, citeContext, entryLabel, type CiteContext, type Piece } from '../refs/cite'
+import { sortedTerms, termMatcher } from '../format/terms'
+import type { Block, Inline, Term } from '../format/types'
+import { bibliographyEntry, bibliographyOrder, citationText, citeContext, citePieces, entryLabel, type CiteContext, type Piece } from '../refs/cite'
 import { schema } from './schema'
 import { applyInnerBreaks } from '../layout/pages'
 
@@ -40,6 +42,8 @@ export interface RefsLabels {
   emptyIndex: string
   emptyAuthorities: string
   emptyBibliography: string
+  emptyGlossary: string
+  emptyAbbreviations: string
   see: string
   passim: string
   category: (c: AuthorityCategory) => string
@@ -86,6 +90,67 @@ export interface RefsData {
   /** Sources citées, dans l'ordre de première citation. */
   cited: string[]
   cite: CiteContext
+  /** Texte des citations de chaque note (position de la note → dans l'ordre de la note). */
+  noteCites: Map<number, string[]>
+  /** Glossaire et abréviations : triés, avec ceux qu'emploie le texte et chaque occurrence. */
+  terms: { glossary: Term[]; abbreviations: Term[]; used: Set<string>; hits: { from: number; to: number; id: string }[] }
+}
+
+/** Le texte d'une citation dans un élément (les titres des notes Chicago en italique). */
+export function setCiteText(el: HTMLElement, text: string): void {
+  if (!/[\u0001\u0002]/.test(text)) {
+    el.textContent = text
+    return
+  }
+  el.replaceChildren(
+    ...citePieces(text).map((p) => {
+      if (!p.italic) return document.createTextNode(p.text)
+      const i = document.createElement('i')
+      i.textContent = p.text
+      return i
+    }),
+  )
+}
+
+/** Remplit les citations d'une note dessinée (pied de page), dans l'ordre. */
+export function fillNoteCites(root: ParentNode, texts: string[]): void {
+  root.querySelectorAll<HTMLElement>('.fp-cite').forEach((el, i) => setCiteText(el, texts[i] ?? '?'))
+}
+
+/** Citations d'une note (format Folio), dans l'ordre. */
+export function noteCiteList(blocks: Block[], out: { ids: string[]; locator?: string }[] = []): { ids: string[]; locator?: string }[] {
+  const inl = (items: Inline[]) => {
+    for (const x of items) if ('type' in x && x.type === 'cite') out.push(x)
+  }
+  for (const b of blocks) {
+    if (b.type === 'paragraph' || b.type === 'heading') inl(b.content)
+    else if (b.type === 'list') for (const it of b.items) inl(it.content)
+  }
+  return out
+}
+
+/** Texte de chaque paragraphe, une position par caractère (objets en ligne : un caractère). */
+export function textSegments(doc: PMNode): { text: string; base: number }[] {
+  const out: { text: string; base: number }[] = []
+  doc.descendants((node, pos) => {
+    if (!node.isTextblock) return !node.isAtom
+    if (node.type === n.code_block) return false
+    let text = ''
+    node.forEach((child) => (text += child.isText ? child.text : child.type === n.hard_break ? '\n' : '\ufffc'))
+    out.push({ text, base: pos + 1 })
+    return false
+  })
+  return out
+}
+
+/** Termes du document, et leurs occurrences dans le texte. */
+export function scanTerms(doc: PMNode, lang: string): RefsData['terms'] {
+  const all = (doc.attrs.terms as Term[] | undefined) ?? []
+  if (!all.length) return { glossary: [], abbreviations: [], used: new Set(), hits: [] }
+  const m = termMatcher(all)
+  const hits: { from: number; to: number; id: string }[] = []
+  for (const s of textSegments(doc)) for (const x of m.scan(s.text)) hits.push({ from: s.base + x.index, to: s.base + x.index + x.length, id: x.id })
+  return { glossary: sortedTerms(all, 'glossary', lang), abbreviations: sortedTerms(all, 'abbreviation', lang), used: new Set(hits.map((x) => x.id)), hits }
 }
 
 /** Blocs dont on parcourt l'intérieur (les légendes peuvent être dans un tableau, une citation…). */
@@ -112,7 +177,7 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
   /** Paragraphe qui contient chaque signet. */
   const bookmarkBlock = new Map<string, { node: PMNode; pos: number }>()
   const xrefs: { pos: number; target: string; show: XrefShow }[] = []
-  const cites: { pos: number; ids: string[]; locator: string }[] = []
+  const cites: { pos: number; ids: string[]; locator: string; inNote?: number }[] = []
   const captions: Caption[] = []
   const xes: { pos: number; attrs: Record<string, unknown> }[] = []
   const blocks: { node: PMNode; pos: number; firstSeq: number | null; label: string | null }[] = []
@@ -141,6 +206,10 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
       } else if (child.type === n.xref) xrefs.push({ pos: p, target: child.attrs.target, show: child.attrs.show })
       else if (child.type === n.cite) cites.push({ pos: p, ids: child.attrs.ids as string[], locator: child.attrs.locator as string })
       else if (child.type === n.xe) xes.push({ pos: p, attrs: child.attrs })
+      else if (child.type === n.note) {
+        // Citations dans une note (notes Chicago) : à la place de la note, dans l'ordre.
+        noteCiteList(child.attrs.blocks as Block[]).forEach((c, i) => cites.push({ pos: p, ids: c.ids, locator: c.locator ?? '', inNote: i }))
+      }
     })
     blocks.push({ node, pos, firstSeq, label })
     return false
@@ -189,7 +258,12 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
   for (const c of cites) for (const id of c.ids) cited.push(id)
   const sources = (doc.attrs.sources as Source[] | undefined) ?? []
   const cite = citeContext(sources, cited, (doc.attrs.citationStyle as CitationStyle) ?? 'apa', (doc.attrs.lang as string) || hooks.lang())
-  for (const c of cites) texts.set(c.pos, citationText(cite, c.ids, c.locator))
+  const noteCites = new Map<number, string[]>()
+  for (const c of cites) {
+    const text = citationText(cite, c.ids, c.locator)
+    if (c.inNote === undefined) texts.set(c.pos, text)
+    else noteCites.set(c.pos, [...(noteCites.get(c.pos) ?? []), text])
+  }
 
   // Index et table des références.
   const coll = new Intl.Collator((doc.attrs.lang as string) || hooks.lang(), { sensitivity: 'base', numeric: true })
@@ -224,7 +298,7 @@ export function scanRefs(doc: PMNode, hooks: Pick<RefsHooks, 'pageOf' | 'lang' |
   for (const e of index) e.subs.sort((a, b) => coll.compare(a.sub, b.sub))
   const authorities = [...auth.values()].sort((a, b) => AUTHORITY_CATEGORIES.indexOf(a.category) - AUTHORITY_CATEGORIES.indexOf(b.category) || coll.compare(a.term, b.term))
 
-  return { seq, texts, captions, bookmarks, index, authorities, cited, cite }
+  return { seq, texts, captions, bookmarks, index, authorities, cited, cite, noteCites, terms: scanTerms(doc, (doc.attrs.lang as string) || hooks.lang()) }
 }
 
 /** Numéros de page d'une entrée, sans doublon, dans l'ordre : « 3, 7, 12 ». */
@@ -258,12 +332,16 @@ function hasRefs(doc: PMNode): boolean {
   doc.descendants((node) => {
     if (found) return false
     if (node.type === n.seq || node.type === n.xref || node.type === n.cite || node.type === n.xe || node.type === n.refblock || node.type === n.bookmark) found = true
+    else if (node.type === n.note && noteCiteList(node.attrs.blocks as Block[]).length) found = true
     return !found && !node.isAtom
   })
-  return found
+  return found || ((doc.attrs.terms as Term[] | undefined)?.length ?? 0) > 0
 }
 
-const EMPTY = (): RefsData => ({ seq: new Map(), texts: new Map(), captions: [], bookmarks: new Map(), index: [], authorities: [], cited: [], cite: citeContext([], [], 'apa', 'en') })
+const EMPTY = (): RefsData => ({ seq: new Map(), texts: new Map(), captions: [], bookmarks: new Map(), index: [], authorities: [], cited: [], cite: citeContext([], [], 'apa', 'en'), noteCites: new Map(), terms: { glossary: [], abbreviations: [], used: new Set(), hits: [] } })
+
+/** Au-delà, les termes du texte ne portent plus d'infobulle (document très long). */
+const MAX_TERM_HINTS = 5_000
 
 export function refsPlugin(hooks: RefsHooks, refreshKeys: PluginKey[] = []): Plugin {
   const build = (state: EditorState) => {
@@ -276,6 +354,12 @@ export function refsPlugin(hooks: RefsHooks, refreshKeys: PluginKey[] = []): Plu
       else if (node.type === n.refblock) decos.push(Decoration.node(pos, pos + node.nodeSize, {}, { refData: data }))
       return !node.isAtom
     })
+    // Termes définis : soulignés en pointillé, la définition au survol.
+    const defs = new Map(((state.doc.attrs.terms as Term[] | undefined) ?? []).map((x) => [x.id, x]))
+    for (const hit of data.terms.hits.slice(0, MAX_TERM_HINTS)) {
+      const x = defs.get(hit.id)
+      if (x?.definition) decos.push(Decoration.inline(hit.from, hit.to, { class: 'fp-term', title: x.definition, 'data-term': x.kind }))
+    }
     return { data, decos: DecorationSet.create(state.doc, decos) }
   }
   return new Plugin({
@@ -327,7 +411,7 @@ class ValueView implements NodeView {
   private render(decorations: readonly Decoration[]): void {
     const d = decorations.find((x) => (x.spec as { refValue?: string }).refValue !== undefined)
     const v = d ? (d.spec as { refValue: string }).refValue : ''
-    this.dom.textContent = v || '?'
+    setCiteText(this.dom, v || '?')
     const a = this.node.attrs
     if (this.node.type === n.seq) this.dom.dataset.seq = a.label
     if (this.node.type === n.xref) {
@@ -517,6 +601,28 @@ class RefBlockView implements NodeView {
         else row.append(this.pages(x.pages))
         this.dom.append(row)
       }
+      applyInnerBreaks(this.dom, decorations)
+      return
+    }
+    if (a.kind === 'glossary' || a.kind === 'abbreviations') {
+      const pool = a.kind === 'glossary' ? data.terms.glossary : data.terms.abbreviations
+      const list = a.all ? pool : pool.filter((x) => data.terms.used.has(x.id))
+      if (!list.length) return void this.dom.append(this.empty(a.kind === 'glossary' ? L.emptyGlossary : L.emptyAbbreviations))
+      const dl = document.createElement('dl')
+      dl.className = a.kind === 'glossary' ? 'fp-glossary' : 'fp-abbr'
+      for (const x of list) {
+        const row = document.createElement('div')
+        row.className = 'fp-glossary__row'
+        row.dataset.row = ''
+        row.dataset.term = x.term
+        const dt = document.createElement('dt')
+        dt.textContent = x.term
+        const dd = document.createElement('dd')
+        dd.textContent = x.definition
+        row.append(dt, dd)
+        dl.append(row)
+      }
+      this.dom.append(dl)
       applyInnerBreaks(this.dom, decorations)
       return
     }
@@ -739,4 +845,62 @@ export function referenceables(state: EditorState): { headings: { text: string; 
     return isContainer(node)
   })
   return { headings, captions: refsOf(state)?.captions ?? [] }
+}
+
+// --- notes Chicago : citations en notes de bas de page ------------------------------------
+
+/** Une note qui ne contient qu'une citation (et une ponctuation) : la citation, sinon null. */
+export function citeOnlyNote(blocks: Block[]): { ids: string[]; locator?: string } | null {
+  if (blocks.length !== 1 || blocks[0].type !== 'paragraph') return null
+  const content = blocks[0].content
+  const cites = content.filter((x) => 'type' in x && x.type === 'cite') as { ids: string[]; locator?: string }[]
+  const rest = content.filter((x) => !('type' in x) && x.text.replace(/[\s.]/g, ''))
+  const others = content.filter((x) => 'type' in x && x.type !== 'cite')
+  return cites.length === 1 && !rest.length && !others.length ? cites[0] : null
+}
+
+const citeBlocks = (ids: string[], locator: string): Block[] => [{ type: 'paragraph', content: [{ type: 'cite', ids: [...ids], ...(locator ? { locator } : {}) }] }]
+
+/**
+ * Change le style des citations. Vers les notes Chicago, chaque citation du
+ * texte devient une note de bas de page ; en sortant, une note qui ne contient
+ * qu'une citation redevient une citation dans le texte. Une seule étape d'annulation.
+ */
+export function setCitationStyleCmd(style: string): Command {
+  return (state, dispatch) => {
+    const before = state.doc.attrs.citationStyle as string
+    if (dispatch) {
+      const tr = state.tr.setDocAttribute('citationStyle', style)
+      if (style === 'chicago-notes' && before !== 'chicago-notes') {
+        const found: { pos: number; node: PMNode }[] = []
+        state.doc.descendants((node, pos) => {
+          if (node.type === n.cite) found.push({ pos, node })
+          return !node.isAtom
+        })
+        for (const { pos, node } of found.reverse()) tr.replaceWith(pos, pos + 1, n.note.create({ kind: 'foot', blocks: citeBlocks(node.attrs.ids, node.attrs.locator) }))
+      } else if (style !== 'chicago-notes' && before === 'chicago-notes') {
+        const found: { pos: number; cite: { ids: string[]; locator?: string } }[] = []
+        state.doc.descendants((node, pos) => {
+          if (node.type === n.note && node.attrs.kind === 'foot') {
+            const c = citeOnlyNote(node.attrs.blocks as Block[])
+            if (c) found.push({ pos, cite: c })
+          }
+          return !node.isAtom
+        })
+        for (const { pos, cite } of found.reverse()) tr.replaceWith(pos, pos + 1, n.cite.create({ ids: cite.ids, locator: cite.locator ?? '' }))
+      }
+      dispatch(tr)
+    }
+    return true
+  }
+}
+
+/** Notes Chicago : la citation est insérée dans une nouvelle note de bas de page. */
+export function insertCiteNote(ids: string[], locator = ''): Command {
+  return (state, dispatch) => {
+    const $pos = state.doc.resolve(state.selection.to)
+    if (!$pos.parent.isTextblock || !$pos.parent.canReplaceWith($pos.index(), $pos.index(), n.note)) return false
+    if (dispatch) dispatch(state.tr.insert(state.selection.to, n.note.create({ kind: 'foot', blocks: citeBlocks(ids, locator) })).scrollIntoView())
+    return true
+  }
 }

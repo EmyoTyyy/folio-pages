@@ -1,11 +1,11 @@
 // Onglet Format de l'image : corrections (luminosité, contraste), couleur
 // (saturation, recoloration), effets artistiques, transparence, effets
-// (ombre, halo, bords adoucis). Chaque choix montre un aperçu de l'image.
+// (ombre, halo, bords adoucis, reflet). Chaque choix montre un aperçu de l'image.
 
 import type { FolioApp } from '../app'
 import { figureAt, setFigureAttrs } from '../editor/tables'
 import { parseColor } from '../format/color'
-import { adjustCss, cleanAdjust, cssText } from '../format/picture'
+import { adjustCss, cleanAdjust, cssText, REFLECTION_MASK } from '../format/picture'
 import type { PictureAdjust } from '../format/types'
 import type { Key } from '../i18n/dict'
 import { t } from '../i18n/i18n'
@@ -34,6 +34,24 @@ function preview(app: FolioApp, a: PictureAdjust, label: string, data: Record<st
   const img = h('img', { src, alt: '', class: 'fp-pfx__img', style: cssText(adjustCss(a, (c) => P.cssOf(app, c) ?? c)) })
   return popItem(h('span', { class: 'fp-pfx__cell' }, h('span', { class: 'fp-pfx__frame' }, img), h('span', { class: 'fp-pfx__label' }, label)), onPick, {
     ...data,
+    title: label,
+    role: 'menuitemradio',
+    'aria-checked': String(selected),
+  })
+}
+
+/** Aperçu d'un reflet : l'image en petit, et sa copie retournée coupée à `pct` %. */
+function reflectionPreview(app: FolioApp, cur: PictureAdjust, pct: number, label: string, selected: boolean): HTMLElement {
+  const src = (figureAt(app.state)?.node.attrs.src as string) ?? ''
+  const style = cssText(adjustCss({ ...cur, reflection: undefined }, (c) => P.cssOf(app, c) ?? c))
+  const shown = h('img', { src, alt: '', class: 'fp-pfx__img fp-pfx__img--small', style })
+  const parts: HTMLElement[] = [shown]
+  if (pct) {
+    const mirror = h('img', { src, alt: '', class: 'fp-pfx__img fp-pfx__img--small fp-pfx__mirror', style })
+    parts.push(h('span', { class: 'fp-pfx__reflect', style: `height:${Math.round((30 * pct) / 100)}px;mask-image:${REFLECTION_MASK};-webkit-mask-image:${REFLECTION_MASK}` }, mirror))
+  }
+  return popItem(h('span', { class: 'fp-pfx__cell' }, h('span', { class: 'fp-pfx__frame fp-pfx__frame--stack' }, ...parts), h('span', { class: 'fp-pfx__label' }, label)), () => adjust(app, { reflection: pct || undefined }), {
+    'data-reflection': String(pct),
     title: label,
     role: 'menuitemradio',
     'aria-checked': String(selected),
@@ -134,8 +152,10 @@ export function pictureEffects(app: FolioApp): Ctl {
         colorPalette({ theme: app.theme, current: cur.glow ?? null, noneLabel: t('fx.noGlow'), onPick: (c) => adjust(app, { glow: c ?? undefined }) }),
         heading(t('pfx.softEdges')),
         soft,
+        heading(t('pfx.reflection')),
+        grid(4, ...([0, 33, 50, 100] as const).map((n) => reflectionPreview(app, cur, n, t(`pfx.reflection${n}` as Key), (cur.reflection ?? 0) === n))),
         h('hr', { class: 'fp-pop__sep' }),
-        popItem(t('pfx.clearEffects'), () => adjust(app, { shadow: undefined, glow: undefined, softEdges: undefined }), { 'data-pfx': 'clear' }),
+        popItem(t('pfx.clearEffects'), () => adjust(app, { shadow: undefined, glow: undefined, softEdges: undefined, reflection: undefined }), { 'data-pfx': 'clear' }),
       )
     },
   })

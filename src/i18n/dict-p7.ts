@@ -78,6 +78,13 @@ export const P7_DICT = {
     en: 'The new version is accepted only if its signature and fingerprint are valid.',
   },
   'update.apply': { fr: 'Mettre à jour ce fichier', en: 'Update this file' },
+  'update.auto': { fr: 'Rechercher à chaque ouverture', en: 'Check each time the file opens' },
+  'update.found': { fr: 'Folio Pages {version} est disponible (ce fichier : {current}).', en: 'Folio Pages {version} is available (this file: {current}).' },
+  'update.button': { fr: 'Mettre à jour', en: 'Update' },
+  'update.buttonHint': {
+    fr: 'Folio Pages {version} est disponible (ce fichier : {current}). Mettre à jour l’application en gardant le document.',
+    en: 'Folio Pages {version} is available (this file: {current}). Update the application and keep the document.',
+  },
   'update.doneInPlace': { fr: '{name} est en version {version}. Rouvrez-le pour l’utiliser.', en: '{name} is now version {version}. Reopen it to use it.' },
   'update.doneDownload': { fr: 'Version {version} téléchargée : {name}. Ouvrez ce fichier.', en: 'Version {version} downloaded: {name}. Open that file.' },
   'update.updated': { fr: 'Folio Pages est passé de la version {from} à {to}.', en: 'Folio Pages went from version {from} to {to}.' },

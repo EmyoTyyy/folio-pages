@@ -3,8 +3,12 @@
 // $…$ ; les images sont des fichiers à part (dossier images/), réunis avec le
 // texte dans une archive .zip quand il y en a.
 
+import { chartRows } from '../format/chart'
+import { diagramBullets } from '../format/diagram'
+import { chartMarkdown } from '../format/markdown-out'
 import type { Block, FolioDoc, Inline, Run } from '../format/types'
 import { isRun } from '../format/types'
+import { calloutLabel } from '../format/callout'
 import { base64Bytes, generated, imageData, inlineText, isEmptyContent, listLabels, prepareExport, type ExportCommonOptions, type ExportContext } from './common'
 import { safeHref } from './html'
 
@@ -85,7 +89,7 @@ class MdWriter {
           break
         case 'list': {
           const labels = listLabels(b)
-          out.push(b.items.map((it, i) => `${'    '.repeat(it.level)}${it.style === 'number' ? `${/^\d+\.$/.test(labels[i]) ? labels[i] : '1.'}` : '-'} ${this.inline(it.content)}`).join('\n'))
+          out.push(b.items.map((it, i) => `${'    '.repeat(it.level)}${it.style === 'number' ? `${/^\d+\.$/.test(labels[i]) ? labels[i] : '1.'}` : it.style === 'check' ? (it.checked ? '- [x]' : '- [ ]') : '-'} ${this.inline(it.content)}`).join('\n'))
           break
         }
         case 'quote':
@@ -93,6 +97,14 @@ class MdWriter {
             this.blocks(b.blocks)
               .join('\n\n')
               .split('\n')
+              .map((l) => `> ${l}`.trimEnd())
+              .join('\n'),
+          )
+          break
+        case 'callout':
+          // Alerte GitHub : « > [!NOTE] », avec le titre s'il n'est pas celui par défaut.
+          out.push(
+            [`[!${b.kind.toUpperCase()}]${b.title ? ` ${b.title}` : ''}`, ...this.blocks(b.blocks).join('\n\n').split('\n')]
               .map((l) => `> ${l}`.trimEnd())
               .join('\n'),
           )
@@ -125,6 +137,12 @@ class MdWriter {
           out.push(rows.join('\n'))
           break
         }
+        case 'chart':
+          out.push(chartMarkdown(b, this.ctx.doc.meta.lang))
+          break
+        case 'diagram':
+          out.push([b.title ? `**${b.title}**` : '', ...diagramBullets(b)].filter(Boolean).join('\n'))
+          break
         case 'image':
           out.push(this.image(b))
           break
@@ -132,6 +150,8 @@ class MdWriter {
         case 'figures':
         case 'index':
         case 'authorities':
+        case 'glossary':
+        case 'abbreviations':
         case 'bibliography': {
           const g = generated(b, this.ctx)
           const parts: string[] = []
@@ -139,7 +159,7 @@ class MdWriter {
           for (const gr of g.groups) {
             if (gr.heading) parts.push(`*${escapeMd(gr.heading)}*`)
             const lines = gr.lines.map((l) => {
-              const text = l.pieces.map((p) => (p.italic ? `*${escapeMd(p.text)}*` : escapeMd(p.text))).join('')
+              const text = l.pieces.map((p) => (p.bold ? `**${escapeMd(p.text)}**` : p.italic ? `*${escapeMd(p.text)}*` : escapeMd(p.text))).join('')
               const body = b.type === 'toc' && l.href ? `[${text}](${l.href})` : text
               return `${'    '.repeat(l.level)}- ${l.label ? `${escapeMd(l.label)} ` : ''}${body}`
             })
@@ -215,6 +235,11 @@ class TextWriter {
         case 'quote':
           out.push(...this.blocks(b.blocks, indent + '    '))
           break
+        case 'callout':
+          // « REMARQUE : » (espace avant les deux-points en français), puis le contenu en retrait.
+          add(`${(b.title || calloutLabel(b.kind, this.ctx.doc.meta.lang)).toUpperCase()}${/^fr\b/i.test(this.ctx.doc.meta.lang) ? ' :' : ':'}`)
+          out.push(...this.blocks(b.blocks, indent + '    '))
+          break
         case 'code':
           add(b.text.split('\n').map((l) => `    ${l}`).join('\n'))
           break
@@ -232,6 +257,12 @@ class TextWriter {
         case 'table':
           add(b.rows.map((r) => r.map((c) => this.blocks(c.blocks).join(' ').replace(/\s*\n\s*/g, ' ')).join('\t')).join('\n'))
           break
+        case 'chart':
+          add([b.title ?? '', ...chartRows(b, this.ctx.doc.meta.lang).map((r) => r.join('\t'))].filter(Boolean).join('\n'))
+          break
+        case 'diagram':
+          add([b.title ?? '', ...diagramBullets(b)].filter(Boolean).join('\n'))
+          break
         case 'image': {
           const cap = this.inline(b.caption).trim()
           add(`[${b.alt || cap || 'Image'}]${cap && b.alt ? ` ${cap}` : ''}`)
@@ -241,6 +272,8 @@ class TextWriter {
         case 'figures':
         case 'index':
         case 'authorities':
+        case 'glossary':
+        case 'abbreviations':
         case 'bibliography': {
           const g = generated(b, this.ctx)
           const lines: string[] = []

@@ -14,7 +14,7 @@ Guide for AIs: [`agents.md`](docs/agents.md)
 
 The interface is in French and English. The website and the app share one
 look: white paper on a neutral green-grey, green ink, Newsreader titles. This is
-**version 0.10**, with an interface laid out the way word processors usually are.
+**version 0.11**, with an interface laid out the way word processors usually are.
 
 ---
 
@@ -38,7 +38,7 @@ While you write, a backup copy is kept **in your browser only**. If the tab or
 the browser closes before you save, reopen the file: Folio Pages offers to
 restore the changes, and warns you if the backup is older than the file.
 
-## What it does (version 0.10)
+## What it does (version 0.11)
 
 - **A ribbon**: File first, then Home, Insert, Design, Layout, References,
   Mailings, Review, View, AI and Help, with contextual Table, Picture Format and
@@ -88,8 +88,10 @@ restore the changes, and warns you if the backup is older than the file.
 - **Pictures**: insert, paste or drop; resize with the handles; crop with the
   mouse (**Picture → Crop**, or **Crop** under the right-click menu: the whole
   picture shows dimmed, drag the black handles or move the picture under the
-  frame, <kbd>Enter</kbd> to finish); rotate, flip, wrap text around, caption,
-  alternative text. Photos are reduced to
+  frame, <kbd>Enter</kbd> to finish); rotate, flip, caption, alternative text.
+  **Wrap Text**: square, tight or through (the text follows the outline of a
+  picture with transparent areas), top and bottom, behind or in front of the
+  text, and a default layout for the next pictures. Photos are reduced to
   2560 px; screenshots stay intact; a command compresses the document's pictures.
 - **Pages**: real pages on screen, exactly as they print (paper size, portrait or
   landscape, margins); headers and footers with page numbers, a different first
@@ -112,9 +114,20 @@ restore the changes, and warns you if the backup is older than the file.
   with the sources in the word processor's source manager.
 - **Review**: comments on any passage, with replies, resolve and reopen, in a
   side pane; tracked changes (additions underlined, deletions struck through,
-  with author and date), accepted or rejected one by one or all at once, shown
-  as all markup, final or original; your name is asked once and kept in the
-  browser only; comments never print.
+  formatting changes dotted, reformatted paragraphs marked in the margin, with
+  author and date), accepted or rejected one by one or all at once, shown as
+  simple markup (final text, a bar beside changed paragraphs), all markup,
+  final or original; **Filter Markup** and **Show Markup** hide comments,
+  insertions and deletions, formatting, or chosen reviewers; the **Reviewing
+  Pane** (left or bottom) lists every revision with its counts, goes to it and
+  accepts or rejects it. Formatting changes travel in `.docx` as Word's own
+  revisions. **Compare** sets this document against an earlier version (another
+  file — Folio Pages, `.docx`, `.odt`, `.rtf`, Markdown — or a version saved in
+  the browser) and opens, in a new tab, the current text with every difference
+  as a tracked change: words added and removed, formatting, paragraph styles.
+  Pictures, tables of another shape and code blocks that changed show in their
+  new version and are counted. Your name is asked once and kept in the browser only; comments
+  never print.
 - **Opening**: <kbd>Ctrl</kbd> <kbd>O</kbd> opens another Folio Pages document in
   the same window (it is then saved in place on Chrome and Edge), imports
   Markdown and plain text, and says plainly what a file is when it cannot be
@@ -145,7 +158,28 @@ restore the changes, and warns you if the backup is older than the file.
   pages, a signature line (signed with the mouse or a finger), screenshots, and
   a draft view. Pictures take corrections (brightness, contrast), colour
   (saturation, greyscale, sepia, washout), artistic effects, transparency,
-  shadow, glow and soft edges.
+  shadow, glow, soft edges and reflection.
+- **Diagrams** (**Insert → Diagram**, or right-click a list → Convert List to
+  Diagram): a short list drawn as a list, a process, a cycle, an organisation
+  chart, a pyramid or a radial diagram, in the theme colours; double-click to
+  change the layout, the items (one per line, <kbd>Tab</kbd> for a sub-item),
+  the title or the colours. In `.docx` and `.odt` a diagram is an SVG picture
+  that becomes an editable diagram again when the file is opened in Folio
+  Pages.
+- **Insert → Icons**: 90 free icons built into the file (Tabler Icons, MIT),
+  searchable in French and English, in any theme or custom colour; inserted as
+  an SVG picture named in its alternative text. **Search more icons online**
+  looks through the rest of the set (over 5 000 icons, through Iconify); it is
+  blocked by offline mode, and what comes back is cleaned (shapes only) before
+  it is shown.
+- **Insert → Object**: **Text from File** inserts the content of another
+  document (Folio Pages, `.docx`, `.odt`, `.rtf`, Markdown, text) at the
+  cursor; **Attached File** puts any file (up to 20 MB) in the document as a
+  chip with its name and size. Double-click the chip, press <kbd>Enter</kbd> on
+  it or right-click → Save Attached File to save it to the computer. The file
+  is kept as plain bytes: it is never opened or run inside the page. Web page
+  exports keep it as a download link; `.docx`, `.odt`, EPUB and Markdown keep
+  its name only (reported for `.docx` and `.odt`).
 - **AutoCorrect**: common typos, symbols (`(c)` → ©, `->` → →, `1/2` → ½),
   curly quotes and apostrophes, and the French non-breaking spaces before
   ; : ! ? and inside « ». Backspace right after a correction undoes it; the
@@ -181,10 +215,14 @@ restore the changes, and warns you if the backup is older than the file.
   **Thesaurus** (<kbd>Shift</kbd> <kbd>F7</kbd>, or right-click) show Wikipedia,
   definitions and synonyms in a side pane; **More fonts online** embeds a free
   Google font in the document. Nothing is sent without a click.
-- **Updates**: **Help → Check for updates** downloads a new version only if its
-  signature (ECDSA P-256, public key built in) and checksum are valid, then
-  writes the same document into the new application. Optional, and never
-  automatic.
+- **Updates**: each time the file opens, it fetches the signed release manifest
+  from the project's website (one request, no identifier, no cookie). If a newer
+  version exists, an **Update** button appears in the title bar (and a notice,
+  once per version). Updating downloads the new version only if its signature
+  (ECDSA P-256, public key built in) and checksum are valid, then writes the
+  same document into the new application; it always takes a click. **Help →
+  Check each time the file opens** turns the check off, offline mode blocks it,
+  and **Help → Check for updates** runs it by hand.
 - **Languages**: French and English built in; a language pack (a JSON file of
   translated sentences, checked line by line) adds another, and can be embedded
   in the file to travel with the document. **Help → Language → Manage**
@@ -193,6 +231,40 @@ restore the changes, and warns you if the backup is older than the file.
   text, tables without a header row, skipped heading levels, vague link text,
   missing title or language), read aloud with the device's own voices, sorting
   paragraphs or list items, a focus mode that leaves only the page.
+- **Outline view** (**View → Outline**): the document as an outline, with a
+  button on each heading to fold or unfold its part, body text indented under
+  its heading, a Show Level filter (1 to 6) and first line only. The
+  **Outlining** tab (or <kbd>Alt</kbd> <kbd>Shift</kbd> and the arrow keys)
+  promotes and demotes headings, turns them back into body text, and moves a
+  heading up or down with its whole part.
+- **Immersive Reader** (**View → Immersive Reader**): the text alone in one
+  column, without pages or tools; column width, page colour (white, sepia,
+  soft, inverse), line focus on one, three or five lines (the arrow keys move
+  it), wider text spacing, and read aloud paragraph by paragraph with the one
+  being read highlighted. Settings are remembered; <kbd>Esc</kbd> closes it.
+- **Writing tools (new in 0.11)**: check lists (click a box to tick it, or
+  type `[ ] `); callouts (Note, Tip, Important, Warning, Caution, or type
+  `[!note] `); snippets (save a passage, insert it from Quick Parts or with
+  <kbd>F3</kbd> after its shortcut); typewriter scrolling and dimmed
+  paragraphs in focus mode; statistics and readability (click the word
+  count), long sentences shown, a writing goal with a deadline; a glossary and
+  a list of abbreviations, always up to date; AutoSave.
+- **Layout and pages (new in 0.11)**: line numbers (continuous, by page or by
+  section, every n lines, a paragraph left out); right-to-left paragraphs
+  (Arabic, Hebrew) and vertical text in table cells; printing a range of
+  pages, a booklet, the comments; direct PDF export, with no print dialog.
+- **Charts (new in 0.11)**: bars (vertical or horizontal), lines and pies,
+  drawn from a table in one click (**Table → Chart**) or from data typed in
+  their window; they follow the theme colours, and are real charts in `.docx`
+  (with their data, editable in Word) and LibreOffice.
+- **Windows (new in 0.11)**: **View → Split** (or **Side by Side**) adds a
+  second editable pane on the same document, with synchronous scrolling;
+  **View → New Window** opens the document in another tab, every change shows
+  in both. Find and replace also searches footnotes and endnotes.
+- **More (new in 0.11)**: fillable forms (Developer tab: text, list, date and
+  check box fields, a protected form), a Draw tab (pen, highlighter, eraser),
+  Inspect Document and redaction, BibTeX / RIS / CSL-JSON sources, Vancouver
+  and Chicago notes citation styles, opening `.odt` and `.rtf` files.
 - **Interface**: light or dark, or following the system (the page stays white).
 - **Also**: code blocks with syntax highlighting, links, special characters,
   page breaks, fields (`{{page}}`, `{{title}}`, `{{date:DD/MM/YYYY}}`…),
@@ -230,14 +302,21 @@ For agents and scripts:
 <!-- … -->    guide for AI agents
 <script type="application/folio+json" id="folio-doc">   ← the document, readable JSON
 splash        a CSS-only loading screen
-<script type="folio/deflate-b86">                       ← the app, DEFLATE + base86
+<script type="folio/deflate-b122">                      ← the app, DEFLATE + base122
 <script>      browser check (ES5), then the loader
 ```
 
 The document block comes first so that a person or an AI finds it without
-reading any code. The application is compressed (≈ 620 KB of JavaScript and CSS
-→ ≈ 250 KB), and the three embedded fonts add ≈ 460 KB; the blank file weighs
-about 735 KB.
+reading any code. The application is minified (Terser) and compressed with
+Zopfli, a DEFLATE encoder that packs tighter than zlib for the same format,
+then written as base122: 7 bits per byte of the file, so the compressed code
+grows by 14 % instead of 25 % with base64-like encodings. Most characters are
+plain ASCII; about one in twenty is a two-byte character (U+0180 to U+07FF),
+and some are control characters, so the file must be read and written as
+UTF-8, byte for byte (any editor or script does this by default). The three
+embedded fonts (Latin and Latin Extended, weights 400 to 700 only,
+`scripts/slim-fonts.py`) take ≈ 250 KB of the file, the application ≈ 590 KB
+and the `.docx` module ≈ 135 KB. The blank file weighs about 1.03 MB.
 
 A minimal document:
 
@@ -273,6 +352,7 @@ Node 18.19 or newer.
 npm install
 npm run dev          # Vite dev server, http://localhost:5173
 npm run build        # typecheck → dist/folio-pages.html (copied to docs/) → docs/schema
+                     # (FOLIO_FAST=1 npm run build: zlib instead of Zopfli, quicker, ≈ 30 KB bigger)
 npm test             # unit tests (Vitest)
 npm run test:e2e     # end-to-end tests on the built file (Playwright: Chrome and Firefox)
 npm run test:all     # all of the above
@@ -317,7 +397,7 @@ built file opened from disk, in Chrome and Firefox.
   Markdown parser (including pathological input, which must stay linear), JSON
   error location and repair, text recovery, round trips on 2 000 random
   documents (compact ⇄ full, format ⇄ editor), the schema under Ajv strict mode,
-  every example in `agents.md`, paste sanitising, base86 and the DEFLATE decoder,
+  every example in `agents.md`, paste sanitising, base122 and the DEFLATE decoder,
   the i18n dictionary.
 - **End to end (Playwright, ~225 tests, each in Chrome and Firefox):** open → write → save → reopen in both
   saving modes; conflicts, refused permissions and failed writes; crash recovery;
@@ -340,7 +420,7 @@ every field is bounded. The application code is checked against a length and a
 checksum before it runs. Report vulnerabilities through GitHub's private
 advisories rather than public issues.
 
-## Known limitations (version 0.10)
+## Known limitations (version 0.11)
 
 Page layout: a block in columns, and an index in several columns, stay whole on
 one page. A landscape section in the middle of the document is printed page by
@@ -348,16 +428,37 @@ page at its own size; browsers without named pages (older Safari) print it on
 the first section's paper.
 
 Notes: a footnote stays whole on its page (a very long one is not continued on
-the next page), and find and replace does not search inside notes.
+the next page).
+
+Windows: the second pane of a split shows the text continuously, without
+pages. Side by side, the page keeps its paper width (zoom out, or use Page
+Width). A new window needs the browser to allow pop-ups for the file; it is
+the first window that writes the file.
+
+Direct PDF export: it uses the 14 standard PDF fonts, so characters outside
+Latin, Greek and common symbols (Arabic, Hebrew, Chinese…) are replaced; print
+to PDF for those. Charts are pictures in the PDF. Line numbers show in page
+view only.
 
 
-Tracked changes cover text: formatting changes, paragraph splits and joins,
-and deleting whole objects (pictures, tables, breaks, notes, code) are applied
-directly, not tracked. Edits inside notes, headers and footers are not tracked.
+Tracked changes cover text and its formatting (characters and paragraphs):
+paragraph splits and joins, list changes, and deleting whole objects
+(pictures, tables, breaks, notes, code) are applied directly, not tracked.
+Edits inside notes, headers and footers are not tracked. The Original view
+shows the text before the changes, but with its new formatting. Simple markup's
+margin bar needs Firefox 121 or later (any recent Chrome, Edge or Safari).
 
 Word-style tools: text glow shows in Word but not in LibreOffice. A picture's
-shadow and glow are kept in `.odt` but not in `.docx` (its colours,
-transparency and soft edges are). The watermark is not exported to `.odt`.
+shadow, glow and reflection are written as Word's own picture effects in
+`.docx`; in `.odt`, shadow and glow are kept and the reflection is reported as
+lost. The direct PDF export leaves the reflection out. The watermark is not exported to `.odt`.
+
+Picture wrapping: a picture behind or in front of the text stays where it is
+anchored (it cannot be dragged anywhere on the page yet), and one behind the
+text is selected with the keyboard. Tight and through wrapping follow the
+outline in Folio Pages and LibreOffice; in a `.docx`, Word recomputes the
+outline, while LibreOffice wraps it square. An exported web page wraps it
+square.
 Hyphenation follows the browser's dictionaries (French and English in Chrome
 and Firefox).
 
@@ -369,7 +470,7 @@ and a similar font otherwise. In `.odt`, a rotated picture is not rotated, and a
 formula that draws stretched arrows stays as LaTeX text.
 
 `.docx`: the conversion is done by a module kept in its own compressed block
-(about 110 KB of the file), unpacked the first time you import or export. What
+(about 130 KB of the file), unpacked the first time you import or export. What
 has no equivalent is reported, never silently dropped:
 
 - on import, equations come back as LaTeX (an unreadable one stays text), shapes and charts are skipped, text
@@ -424,7 +525,7 @@ See the [roadmap](https://emyotyyy.github.io/folio-pages/#roadmap) on the websit
 ## Licence and credits
 
 MIT — see [`LICENSE`](LICENSE). Folio Pages reuses the file format idea, the
-self-saving mechanism, the loader, the base86 codec and the DEFLATE decoder of
+self-saving mechanism, the loader and the DEFLATE decoder of
 [Bento](https://github.com/nyblnet/bento) (MIT, © 2026 The Bento authors), and
 is built on [ProseMirror](https://prosemirror.net) (MIT). Details in
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The website's fonts

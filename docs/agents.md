@@ -26,8 +26,10 @@ A Folio Pages file contains exactly one document block, near the top:
 ```
 
 - **Edit that block in place.** Never regenerate, retype or reformat the rest
-  of the file. The blocks of type `folio/deflate-b86` further down are the
-  compressed application: leave them byte for byte.
+  of the file. The blocks of type `folio/deflate-b122` further down are the
+  compressed application: leave them byte for byte. They contain non-ASCII
+  and control characters, so read and write the file as UTF-8 and edit it
+  with a tool that only changes the bytes you replace.
 - **Escape every `<` in the JSON as `<`.** The JSON sits inside a
   `<script>` element; a literal `</script>` in a string would end it early.
   `<` is ordinary JSON and reads back as `<`.
@@ -106,6 +108,11 @@ fills in the defaults; the file it saves always holds the complete form.
 | `trackChanges` | boolean | `false` | Track changes: what people add or delete is marked until accepted. See *Tracked changes*. |
 | `template` | boolean | `false` | A template: each opening starts a new document from it. Leave it out unless asked for a template. |
 | `readOnly` | boolean | `false` | A read-only copy: opens in reading view. Leave it out unless asked. |
+| `terms` | array | `[]` | Glossary terms and abbreviations, defined once. See *More blocks*. |
+| `formsOnly` | boolean | `false` | A protected form: only the form fields can be filled in. |
+| `goal` | object | none | A writing goal: `{ "words": 1500, "deadline": "2026-12-01" }`. |
+| `hyphenate` | boolean | `false` | Automatic hyphenation. |
+| `lineNumbers` | `true` or object | none | Line numbers in the left margin. See *More blocks*. |
 | `mailMerge` | object | none | Mail merge: the list of recipients and how to merge. See *Mail merge*. |
 | `sources` | array | `[]` | Sources cited by `cite` runs and listed by `bibliography` blocks. See *References and citations*. |
 | `citationStyle` | string | `"apa"` | `apa`, `mla`, `chicago` (author-date), `harvard`, `ieee` (numbered), `iso690`. |
@@ -134,10 +141,14 @@ fills in the defaults; the file it saves always holds the complete form.
 |---|---|---|
 | `paragraph` | text, `style`, paragraph options | `style`: `"title"`, `"subtitle"`, `"caption"` or one of yours. |
 | `heading` | `level` 1–6 (default 1), text, paragraph options | One level-1 heading for the title. |
-| `list` | `style` `"bullet"` (default) or `"number"`, `start` (default 1), `items`, `numbering`, `bullet`, `continue` | |
+| `list` | `style` `"bullet"` (default), `"number"` or `"check"`, `start` (default 1), `items`, `numbering`, `bullet`, `continue` | A check list item may have `"checked": true`. |
 | `quote` | text, or `blocks` | A block quotation. |
 | `code` | `language` (default `""`), `text` | `text` holds the code, `\n` between lines. Highlighted by language. |
 | `table` | `header` (default `true`), `rows`, `style`, `widths`, `align`, `firstColumn`, `border` | `rows` is an array of rows; a row is an array of cells. |
+| `chart` | `kind` (`"bar"`, `"line"`, `"pie"`), `title`, `labels`, `series`, or `rows`; `legend`, `horizontal` | A chart drawn from its own data. See *More blocks*. |
+| `diagram` | `kind` (`"list"`, `"process"`, `"cycle"`, `"hierarchy"`, `"pyramid"`, `"radial"`), `title`, `items` (strings or `{ "text", "level" }`), `color` | A diagram drawn from a short list (like SmartArt). See *More blocks*. |
+| `callout` | `kind` (`"note"`, `"tip"`, `"important"`, `"warning"`, `"caution"`), `title`, text or `blocks` | A box that sets a passage apart. |
+| `glossary`, `abbreviations` | `title`, `all` | The terms of `terms` used in the text, always up to date. |
 | `image` | `src`, `alt`, `caption`, `width`, `align`, `wrap`, `crop`, `rotate`, `flip`, `border` | See *Pictures*. |
 | `pagebreak` | — | Start a new page. |
 | `columns` | `count` (2–6, default 2), `gap` (pt), `rule`, `blocks` | Text in balanced columns; a `columnbreak` block inside moves to the next column. |
@@ -152,7 +163,10 @@ fills in the defaults; the file it saves always holds the complete form.
 points (72 pt = 1 inch; a negative `first` is a hanging indent), `line`
 (line spacing as a multiple: 1, 1.15, 1.5, 2), `keepNext`, `keepLines`,
 `pageBreakBefore` (`true`), `shading` and `border` (a colour), `dropCap` (the
-first letter over 2 to 10 lines). Leave them out to follow the style.
+first letter over 2 to 10 lines), `dir` (`"rtl"` for Arabic or Hebrew
+paragraphs; left out, the direction follows the text), `noLineNumbers`
+(`true`). Leave them out to follow the style. In a right-to-left paragraph,
+`"left"` and `"right"` mean its start and its end.
 
 **List options:** `numbering` — `"default"` (1. a. i. by level), `"decimal"`,
 `"alpha"`, `"ALPHA"`, `"roman"`, `"ROMAN"`, `"outline"` (1. 1.1. 1.1.1.) —
@@ -163,8 +177,9 @@ previous one.
 **Table options:** `style` — `"grid"` (default), `"lines"`, `"zebra"`,
 `"boxed"`, `"minimal"`; `widths` — one width per column, in points;
 `align` — `"center"` or `"right"`; `firstColumn: true` to emphasise the first
-column; `border` — a colour. Cells may have `bg` (a colour) and `valign`
-(`"middle"`, `"bottom"`).
+column; `border` — a colour. Cells may have `bg` (a colour), `valign`
+(`"middle"`, `"bottom"`) and `textDir` (`"tbrl"`: vertical, top to bottom;
+`"btlr"`: bottom to top — for narrow header cells).
 
 **Colours** are `"#rrggbb"` or a theme colour: `"text"`, `"accent1"` …
 `"accent6"`. Theme colours follow the theme when it changes: prefer them.
@@ -252,6 +267,64 @@ A nested level inherits the parent's style unless the item says otherwise:
 }
 ```
 
+### More blocks
+
+**Charts.** Give the categories in `labels` and one or more `series`, each
+with a `name` and one number per label (`null` for none). A pie chart shows the
+first series. Instead of `labels` and `series`, `rows` may give the data like
+a table: the first row names the series, the first column gives the labels.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "blocks": [
+    { "type": "chart", "kind": "bar", "title": "Visitors", "labels": ["Jan", "Feb", "Mar"], "series": [{ "name": "2025", "values": [120, 95, 140] }, { "name": "2026", "values": [130, 110, null] }] },
+    { "type": "chart", "kind": "pie", "title": "Budget", "rows": [["", "€"], ["Rent", 820], ["Food", 350], ["Leisure", 120]] }
+  ]
+}
+```
+
+**Diagrams** turn a short list into a drawing: steps joined by arrows
+(`process`), steps around a circle (`cycle`), an organisation chart from the
+levels (`hierarchy`), layers (`pyramid`), a centre with items around it
+(`radial`), or stacked bars (`list`). A sub-item has `"level": 1` and belongs
+to the item before it. `color` is `"colorful"` (default) or one theme colour.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "blocks": [
+    { "type": "diagram", "kind": "process", "title": "Hiring", "items": ["Apply", "Interview", "Offer", "First day"] },
+    { "type": "diagram", "kind": "hierarchy", "items": ["Director", { "text": "Sales", "level": 1 }, { "text": "Support", "level": 1 }, { "text": "Paris office", "level": 2 }] }
+  ]
+}
+```
+
+**Callouts** hold text (`text`, `md`, `content`) or `blocks`:
+`{ "type": "callout", "kind": "tip", "md": "Press **F3** to insert a snippet." }`.
+
+**Glossary and abbreviations.** Define each term once in `terms`
+(`{ "term": "WHO", "definition": "World Health Organization", "kind": "abbreviation" }`;
+`kind` is `"glossary"` by default), then put a `glossary` or `abbreviations`
+block where the list should appear.
+
+**Form fields** are runs: `{ "type": "formfield", "kind": "text", "name": "Name", "placeholder": "Your name" }`;
+`kind` may be `"dropdown"` (with `options`), `"date"` (`value` YYYY-MM-DD) or
+`"checkbox"` (`checked`). Set `"formsOnly": true` to protect the rest of the
+document.
+
+**Attached files** are runs too: `{ "type": "attachment", "src": "asset:f1", "name": "budget.xlsx", "size": 48213, "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }`,
+with `assets.f1` a `data:application/octet-stream;base64,…` URI (no other data
+type is accepted for a file). They are shown as a chip that saves the file on
+double-click. Not inside notes.
+
+**Line numbers** — `"lineNumbers": true`, or
+`{ "restart": "page", "start": 1, "countBy": 5, "distance": 18 }` (`restart`:
+`"continuous"`, `"page"` or `"section"`; `distance` in points). They show in
+page view, when printing and in PDF; tables and notes are not numbered.
+
 ### Theme and styles
 
 The theme defines the document's colours and fonts once. Built-in themes:
@@ -316,7 +389,11 @@ reader asks, since that needs a connection. Always give `alt`.
 
 `width` is in points (the text of a page is about 470 pt wide; `0` or absent:
 natural size). `wrap` is `"none"` (on its own line, default), `"left"` or
-`"right"` (floating on that side, text flowing around it). Optional: `crop`
+`"right"` (floating on that side, text flowing around its box), `"tight"` or
+`"through"` (text follows the outline of a picture with transparent areas,
+such as a PNG cut-out; the side comes from `align`), `"behind"` or `"front"`
+(behind or in front of the text, at its place, taking no room: a background
+picture or a stamp). Optional: `crop`
 `{ "top", "right", "bottom", "left" }` in percent, `rotate` (90, 180, 270),
 `flip` (`"h"`, `"v"`, `"hv"`), `border` (a colour), `height` (only to
 stretch the picture on purpose), and `adjust` for corrections and effects:

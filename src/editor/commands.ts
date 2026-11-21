@@ -5,10 +5,12 @@
 // (ruban, menus, raccourcis) les appelle, et les tests les vérifient sans
 // navigateur.
 
+import { firstStrong } from '../format/bidi'
 import { lift, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands'
 import { Fragment, NodeRange, type Mark, type MarkType, type Node as PMNode, type NodeType } from 'prosemirror-model'
 import { liftListItem, sinkListItem } from 'prosemirror-schema-list'
-import { NodeSelection, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state'
+import { closeHistory } from 'prosemirror-history'
+import { NodeSelection, Plugin, Selection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state'
 import { resolveStyle } from '../format/theme'
 import type { StyleDef } from '../format/types'
 import { PARA_ATTR_NAMES, schema } from './schema'
@@ -81,11 +83,15 @@ export const clearFormatting: Command = (state, dispatch) => {
   if (empty) {
     tr.setStoredMarks([])
   } else {
-    for (const type of Object.values(schema.marks)) if (type !== m.link) tr.removeMark(from, to, type)
+    // La mise en forme seulement : liens, commentaires et marques de suivi restent.
+    const keep = new Set([m.link, m.comment, m.insertion, m.deletion, m.formatchange])
+    for (const type of Object.values(schema.marks)) if (!keep.has(type)) tr.removeMark(from, to, type)
   }
   eachTextblock(state, (node, pos) => {
     const reset: Record<string, unknown> = {}
     for (const k of PARA_ATTR_NAMES) reset[k] = n.paragraph.spec.attrs![k].default
+    // La modification suivie reste (accepter ou refuser la règle).
+    reset.fmtChange = node.attrs.fmtChange
     if (node.type === n.heading) tr.setNodeMarkup(pos, n.paragraph, { ...reset, style: null })
     else if (node.type === n.paragraph) tr.setNodeMarkup(pos, null, { ...reset, style: null })
   })
@@ -221,8 +227,68 @@ export function paraAttr(state: EditorState, name: string): unknown {
   return mixed ? 'mixed' : (value ?? null)
 }
 
-export const setAlign = (align: 'left' | 'center' | 'right' | 'justify' | null): Command =>
-  setParaAttrs({ align: align === 'left' ? null : align })
+/** Sens effectif d'un paragraphe : celui qui est imposé, sinon celui de son texte. */
+export function nodeDir(node: PMNode): 'rtl' | 'ltr' {
+  const d = node.attrs.dir
+  return d === 'rtl' || d === 'ltr' ? d : (firstStrong(node.textContent) ?? 'ltr')
+}
+
+/** Sens du premier paragraphe de la sélection. */
+export function paraDir(state: EditorState): 'rtl' | 'ltr' {
+  let dir: 'rtl' | 'ltr' | null = null
+  eachTextblock(state, (node) => (dir ??= nodeDir(node)))
+  return dir ?? 'ltr'
+}
+
+/**
+ * Alignement, du côté de la page qu'il nomme : dans un paragraphe de droite à gauche, aligner à droite
+ * l'aligne sur son début, que le format écrit « left » (gauche et droite y sont logiques, comme dans un .docx).
+ */
+export const setAlign =
+  (align: 'left' | 'center' | 'right' | 'justify' | null): Command =>
+  (state, dispatch) => {
+    let found = false
+    eachTextblock(state, () => (found = true))
+    if (!found) return false
+    if (!dispatch) return true
+    const tr = state.tr
+    eachTextblock(state, (node, pos) => {
+      const a = nodeDir(node) === 'rtl' && (align === 'left' || align === 'right') ? (align === 'left' ? 'right' : 'left') : align
+      tr.setNodeMarkup(pos, null, { ...node.attrs, align: a === 'left' ? null : a })
+    })
+    dispatch(tr.scrollIntoView())
+    return true
+  }
+
+/** Alignement visuel commun de la sélection (gauche et droite vus sur la page), 'mixed' sinon. */
+export function visualAlign(state: EditorState): string | null {
+  let value: string | undefined
+  let mixed = false
+  eachTextblock(state, (node) => {
+    const a = (node.attrs.align as string | null) ?? 'left'
+    const v = nodeDir(node) === 'rtl' && (a === 'left' || a === 'right') ? (a === 'left' ? 'right' : 'left') : a
+    if (value === undefined) value = v
+    else if (v !== value) mixed = true
+  })
+  return mixed ? 'mixed' : (value ?? 'left')
+}
+
+/** Sens d'écriture des paragraphes sélectionnés ; omis quand le texte le donne déjà. */
+export const setDirection =
+  (dir: 'rtl' | 'ltr'): Command =>
+  (state, dispatch) => {
+    let found = false
+    eachTextblock(state, () => (found = true))
+    if (!found) return false
+    if (!dispatch) return true
+    const tr = state.tr
+    eachTextblock(state, (node, pos) => {
+      const auto = firstStrong(node.textContent) ?? 'ltr'
+      tr.setNodeMarkup(pos, null, { ...node.attrs, dir: dir === auto ? null : dir })
+    })
+    dispatch(tr.scrollIntoView())
+    return true
+  }
 
 export const setLineSpacing = (line: number | null): Command => setParaAttrs({ line })
 
@@ -353,21 +419,43 @@ export function listAt(state: EditorState): { node: PMNode; pos: number } | null
   const { $from } = state.selection
   for (let d = $from.depth; d > 0; d--) {
     const node = $from.node(d)
-    if (node.type === n.bullet_list || node.type === n.ordered_list) return { node, pos: $from.before(d) }
+    if (isListNode(node)) return { node, pos: $from.before(d) }
   }
   return null
+}
+
+/** Liste à puces, numérotée ou à cocher. */
+export const isListNode = (node: PMNode): boolean => node.type === n.bullet_list || node.type === n.ordered_list || node.type === n.check_list
+
+/** Coche ou décoche les éléments de liste à cocher de la sélection (ou celui du curseur). */
+export const toggleChecked: Command = (state, dispatch) => {
+  const { from, to } = state.selection
+  const items: { node: PMNode; pos: number }[] = []
+  state.doc.nodesBetween(from, to, (node, pos, parent) => {
+    // Seulement les éléments dont le paragraphe est touché : un élément parent ne suit pas sa sous-liste.
+    const para = node.firstChild
+    if (node.type === n.list_item && parent?.type === n.check_list && para && pos + 1 <= to && pos + 1 + para.nodeSize >= from) items.push({ node, pos })
+    return true
+  })
+  if (!items.length) return false
+  if (dispatch) {
+    const on = !items.every((it) => it.node.attrs.checked)
+    const tr = state.tr
+    for (const it of items) tr.setNodeMarkup(it.pos, null, { ...it.node.attrs, checked: on })
+    dispatch(tr)
+  }
+  return true
 }
 
 export const inList = (state: EditorState) => !!listAt(state)
 
 /** Liste à puces ou numérotée : l'applique, la retire, ou change le type de la liste au curseur. */
-export function toggleList(kind: 'bullet' | 'number'): Command {
-  const type = kind === 'bullet' ? n.bullet_list : n.ordered_list
-  const other = kind === 'bullet' ? n.ordered_list : n.bullet_list
+export function toggleList(kind: 'bullet' | 'number' | 'check'): Command {
+  const type = kind === 'bullet' ? n.bullet_list : kind === 'check' ? n.check_list : n.ordered_list
   return (state, dispatch) => {
     const list = listAt(state)
     if (list && list.node.type === type) return liftOutOfFlatList(state, dispatch)
-    if (list && list.node.type === other) {
+    if (list) {
       if (dispatch) dispatch(state.tr.setNodeMarkup(list.pos, type, type === n.ordered_list ? { order: 1 } : null))
       return true
     }
@@ -454,7 +542,7 @@ export function wrapInFlatList(listType: NodeType): Command {
       kids.push({ node: c, pos })
       pos += c.nodeSize
     }
-    const allowed = [n.paragraph, n.heading, n.bullet_list, n.ordered_list]
+    const allowed = [n.paragraph, n.heading, n.bullet_list, n.ordered_list, n.check_list]
     if (!kids.length || !kids.every((k) => allowed.includes(k.node.type))) return false
     if (!parent.canReplaceWith(range.startIndex, range.endIndex, listType)) return false
     if (!dispatch) return true
@@ -462,7 +550,7 @@ export function wrapInFlatList(listType: NodeType): Command {
     const attrs = listType === n.ordered_list ? { order: 1 } : null
     for (let k = kids.length - 1; k >= 0; k--) {
       const { node, pos: at } = kids[k]
-      if (node.type === n.bullet_list || node.type === n.ordered_list) {
+      if (isListNode(node)) {
         if (node.type !== listType) tr.setNodeMarkup(at, listType, attrs)
         continue
       }
@@ -497,7 +585,7 @@ export function setListAttrs(attrs: Record<string, unknown>): Command {
     if (here && empty) lists.push(here)
     else {
       state.doc.nodesBetween(from, to, (node, pos) => {
-        if (node.type === n.bullet_list || node.type === n.ordered_list) {
+        if (isListNode(node)) {
           lists.push({ node, pos })
           return false
         }
@@ -772,7 +860,7 @@ export function setSectionAttrs(attrs: Record<string, unknown>): Command {
 export function sortParagraphs(desc: boolean, lang?: string): Command {
   return (state, dispatch) => {
     const { $from, $to } = state.selection
-    const isList = (node: PMNode) => node.type === schema.nodes.bullet_list || node.type === schema.nodes.ordered_list
+    const isList = isListNode
     let range = $from.blockRange($to)
     // Dans une liste : on trie ses éléments (tous, si la sélection n'en couvre qu'un).
     if (range && (range.parent.type === schema.nodes.list_item || range.endIndex - range.startIndex < 2)) {
@@ -798,4 +886,30 @@ export function sortParagraphs(desc: boolean, lang?: string): Command {
     }
     return true
   }
+}
+
+/**
+ * Listes à cocher : un clic sur la case (à gauche du texte de l'élément) la
+ * coche ou la décoche, sans déplacer le curseur. Une modification annulable.
+ */
+export function checklistPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        mousedown: (view, event) => {
+          const li = event.target as HTMLElement
+          if (event.button !== 0 || li.tagName !== 'LI' || !li.parentElement?.classList.contains('fp-checklist') || !view.editable) return false
+          const para = li.firstElementChild as HTMLElement | null
+          if (!para || event.clientX >= para.getBoundingClientRect().left) return false
+          const pos = view.posAtDOM(li, 0) - 1
+          const node = view.state.doc.nodeAt(pos)
+          if (!node || node.type !== n.list_item) return false
+          event.preventDefault()
+          // Chaque case cochée est une étape d'annulation à part (pas fondue avec la saisie voisine).
+          view.dispatch(closeHistory(view.state.tr.setNodeMarkup(pos, null, { ...node.attrs, checked: !node.attrs.checked })))
+          return true
+        },
+      },
+    },
+  })
 }

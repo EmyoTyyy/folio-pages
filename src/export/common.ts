@@ -6,13 +6,16 @@
 // - listes générées (sommaire, illustrations, index, références, bibliographie) ;
 // - modifications suivies : le document est exporté tel qu'il serait accepté.
 
+import { CHECKED_BOX, EMPTY_BOX } from '../format/lists'
 import { fieldValue, type FieldContext } from '../format/fields'
 import type { Block, CiteInline, FieldInline, FolioDoc, Inline, ListItem, NoteInline, Numbering, Run } from '../format/types'
 import { AUTHORITY_CATEGORIES, defaultNotes, isRun } from '../format/types'
 import { noteNumber } from '../editor/notes'
 import { labelOf, type MathContext } from '../math'
-import { bibliographyEntry, bibliographyOrder, entryLabel, type Piece } from '../refs/cite'
+import { bibliographyEntry, bibliographyOrder, citePlain, entryLabel, type Piece } from '../refs/cite'
 import { formatRefs, type FormatRefs } from '../refs/values'
+import { termsToList } from '../format/terms'
+import { formText } from '../format/runs'
 import { pageLabel } from '../layout/paginate'
 
 export interface ExportCommonOptions {
@@ -95,10 +98,15 @@ export function inlinePiece(x: Inline, ctx: ExportContext): string {
     case 'seq':
       return String(ctx.refs.seq.get(x) ?? '')
     case 'xref':
-    case 'cite':
       return ctx.refs.text.get(x) ?? ''
+    case 'cite':
+      return citePlain(ctx.refs.text.get(x) ?? '')
     case 'mergefield':
       return `«${x.name}»`
+    case 'formfield':
+      return formText(x)
+    case 'attachment':
+      return `[${x.name}]`
     default:
       return ''
   }
@@ -134,7 +142,7 @@ function eachInline(blocks: Block[], fn: (x: Inline) => void): void {
   for (const b of blocks) {
     if (b.type === 'paragraph' || b.type === 'heading') b.content.forEach(fn)
     else if (b.type === 'list') for (const it of b.items) it.content.forEach(fn)
-    else if (b.type === 'quote' || b.type === 'columns') eachInline(b.blocks, fn)
+    else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') eachInline(b.blocks, fn)
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) eachInline(c.blocks, fn)
     else if (b.type === 'image') b.caption.forEach(fn)
   }
@@ -143,7 +151,7 @@ function eachInline(blocks: Block[], fn: (x: Inline) => void): void {
 function eachBlock(blocks: Block[], fn: (b: Block) => void): void {
   for (const b of blocks) {
     fn(b)
-    if (b.type === 'quote' || b.type === 'columns') eachBlock(b.blocks, fn)
+    if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') eachBlock(b.blocks, fn)
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) eachBlock(c.blocks, fn)
   }
 }
@@ -230,7 +238,7 @@ const AUTHORITY_NAMES: Record<string, [string, string]> = {
 }
 
 /** Le contenu d'une liste générée, prêt à écrire dans n'importe quel format. */
-export function generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' }>, ctx: ExportContext, o: ExportCommonOptions = {}): Generated {
+export function generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' | 'glossary' | 'abbreviations' }>, ctx: ExportContext, o: ExportCommonOptions = {}): Generated {
   const fr = ctx.fr
   const pages = o.refPages
   const text = (s: string): Piece[] => [{ text: s }]
@@ -299,6 +307,13 @@ export function generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' 
     })
     return { title: b.title, groups, empty: fr ? 'Aucune entrée de table des références n’a été trouvée.' : 'No table of authorities entries found.' }
   }
+  if (b.type === 'glossary' || b.type === 'abbreviations') {
+    const list = termsToList(ctx.doc, b.type === 'glossary' ? 'glossary' : 'abbreviation', !!b.all, ctx.locale)
+    const lines = list.map((x): GenLine =>
+      b.type === 'glossary' ? { pieces: [{ text: x.term, bold: true }, { text: `${fr ? ' : ' : ': '}${x.definition}` }], level: 0 } : { pieces: [{ text: x.definition }], level: 0, label: x.term },
+    )
+    return { title: b.title, groups: [{ lines }], empty: b.type === 'glossary' ? (fr ? 'Aucun terme du glossaire dans le texte.' : 'No glossary term in the text.') : fr ? 'Aucune abréviation dans le texte.' : 'No abbreviation in the text.' }
+  }
   const cite = ctx.refs.cite
   const ids = b.all ? (ctx.doc.sources ?? []).map((s) => s.id) : ctx.refs.cited
   const lines = bibliographyOrder(cite, ids).map((src): GenLine => {
@@ -313,6 +328,8 @@ export function generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' 
 const BULLETS = ['•', '◦', '▪']
 
 /** Numéro d'un élément selon la numérotation (« default » : 1. a. i. selon le niveau ; « outline » : 1.1.1.). */
+export { CHECKED_BOX, EMPTY_BOX }
+
 export function listLabels(b: Extract<Block, { type: 'list' }>): string[] {
   const counters: number[] = []
   return b.items.map((it: ListItem, i) => {
@@ -320,6 +337,7 @@ export function listLabels(b: Extract<Block, { type: 'list' }>): string[] {
     for (let l = 0; l < it.level; l++) counters[l] ??= 1
     counters[it.level] = (counters[it.level] ?? (it.level === 0 ? b.start - 1 : 0)) + 1
     if (it.style === 'bullet') return b.bullet && it.level === 0 ? b.bullet : BULLETS[it.level % BULLETS.length]
+    if (it.style === 'check') return it.checked ? CHECKED_BOX : EMPTY_BOX
     void i
     return numberText(counters, it.level, b.numbering ?? 'default')
   })

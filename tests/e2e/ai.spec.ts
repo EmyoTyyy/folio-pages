@@ -96,7 +96,7 @@ test('un document maladroit s’ouvre quand même, avec un rapport détaillé', 
   await expect(dlg).toContainText('champ inconnu « colour »')
   await expect(dlg).toContainText('lien refusé')
   await expect(dlg).toContainText('niveau de liste corrigé')
-  await expect(dlg).toContainText('type de bloc inconnu, converti (callout → paragraph)')
+  await expect(dlg).toContainText('type de bloc inconnu, converti (marquee → paragraph)')
   await page.keyboard.press('Escape')
   await expect(dlg).toHaveCount(0)
   errs.check()

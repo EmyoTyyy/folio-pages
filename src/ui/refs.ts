@@ -16,8 +16,13 @@ import {
   refBlockNode,
   refsOf,
   removeBookmark,
+  insertCiteNote,
+  setCitationStyleCmd,
 } from '../editor/refs'
 import { schema } from '../editor/schema'
+import { IMPORT_LIMITS, parseSources, toBibtex, toCslJson, toRis, type SourceFormat } from '../refs/formats'
+import { downloadFile, fileNameFor } from '../file/save'
+import { pickFile } from './panels'
 import {
   AUTHORITY_CATEGORIES,
   BOOKMARK_NAME,
@@ -34,7 +39,7 @@ import {
 import type { Key } from '../i18n/dict'
 import { lang, t } from '../i18n/i18n'
 import { OfflineError } from '../net'
-import { bibliographyEntry, citeContext, citationText, piecesText } from '../refs/cite'
+import { bibliographyEntry, citeContext, citationText, isNumbered, piecesText } from '../refs/cite'
 import { lookupIdentifier, parseIdentifier, suggestId } from '../refs/lookup'
 import { openDialog, toast } from './dialog'
 import { h } from './dom'
@@ -513,7 +518,9 @@ const setDocAttr =
   }
 
 export function setCitationStyle(app: FolioApp, style: CitationStyle): void {
-  app.run(setDocAttr('citationStyle', style), false)
+  const before = citationStyleOf(app)
+  app.run(setCitationStyleCmd(style), false)
+  if (style === 'chicago-notes' && before !== style) toast(t('cite.notesOn'), { kind: 'info', timeout: 7000 })
 }
 
 /** Sources citées dans le document. */
@@ -533,14 +540,18 @@ function previewOf(app: FolioApp, s: Source): string {
 }
 
 const shortOf = (app: FolioApp, s: Source): string => {
-  const ctx = citeContext(sourcesOf(app), [s.id], citationStyleOf(app) === 'ieee' ? 'apa' : citationStyleOf(app), (app.state.doc.attrs.lang as string) || lang())
+  const ctx = citeContext(sourcesOf(app), [s.id], isNumbered(citationStyleOf(app)) || citationStyleOf(app) === 'chicago-notes' ? 'apa' : citationStyleOf(app), (app.state.doc.attrs.lang as string) || lang())
   return `${citationText(ctx, [s.id])} ${s.title}`.slice(0, 120)
 }
 
 /** Insère une citation (une ou plusieurs sources) au curseur. */
 export function insertCitation(app: FolioApp, ids: string[], locator = ''): boolean {
+  // Notes Chicago : la citation va dans une note de bas de page (sauf dans une note, un en-tête…).
+  if (citationStyleOf(app) === 'chicago-notes' && app.run(insertCiteNote(ids, locator))) return true
   return app.run(insertInline(n.cite.create({ ids, locator })))
 }
+
+const FORMAT_NAMES: Record<SourceFormat, string> = { bibtex: 'BibTeX', ris: 'RIS', csl: 'CSL-JSON' }
 
 /** Le menu « Insérer une citation » : les sources, puis ajouter / retrouver une source. */
 export function citationMenu(app: FolioApp): HTMLElement {
@@ -629,11 +640,39 @@ export function sourceManager(app: FolioApp): void {
     setCitationStyle(app, style.value as CitationStyle)
     render()
   })
+  // Importer et exporter : BibTeX, RIS, CSL-JSON (Zotero, Mendeley, Google Scholar…).
+  const importBtn = h('button', { type: 'button', class: 'fp-btn', 'data-source-import': '' }, t('src.import'))
+  importBtn.addEventListener('click', async () => {
+    const file = await pickFile('.bib,.bibtex,.ris,.json,.txt,application/json')
+    if (!file) return
+    if (file.size > IMPORT_LIMITS.file) return void toast(t('src.importTooLarge'), { kind: 'error' })
+    const current = sourcesOf(app)
+    const { format, sources } = parseSources(await file.text(), current.map((x) => x.id))
+    if (!format || !sources.length) return void toast(t('src.importNone'), { kind: 'error' })
+    // Même DOI ou même titre et même année : déjà là, pas en double.
+    const key = (x: Source) => (x.doi ? `doi:${x.doi.toLowerCase()}` : `${x.title.toLowerCase()}|${x.year ?? ''}`)
+    const known = new Set(current.map(key))
+    const fresh = sources.filter((x) => !known.has(key(x))).slice(0, Math.max(0, 2000 - current.length))
+    app.run(setDocAttr('sources', [...current, ...fresh]), false)
+    toast(t('src.imported', { n: fresh.length, skipped: sources.length - fresh.length, format: FORMAT_NAMES[format] }), { kind: 'success', timeout: 7000 })
+    render()
+  })
+  const exportMenu = h('select', { class: 'fp-input fp-src__export', 'data-field': 'source-export', 'aria-label': t('src.export') }, h('option', { value: '' }, t('src.export')), h('option', { value: 'bibtex' }, 'BibTeX (.bib)'), h('option', { value: 'ris' }, 'RIS (.ris)'), h('option', { value: 'csl' }, 'CSL-JSON (.json)')) as HTMLSelectElement
+  exportMenu.addEventListener('change', () => {
+    const f = exportMenu.value as SourceFormat | ''
+    exportMenu.value = ''
+    const sources = sourcesOf(app)
+    if (!f || !sources.length) return
+    const name = fileNameFor(app.title() || t('src.title'), 'sources').replace(/\.html$/, '')
+    if (f === 'bibtex') downloadFile(toBibtex(sources), `${name}.bib`, 'application/x-bibtex')
+    else if (f === 'ris') downloadFile(toRis(sources), `${name}.ris`, 'application/x-research-info-systems')
+    else downloadFile(toCslJson(sources), `${name}.json`, 'application/json')
+  })
   openDialog({
     name: 'sources',
     title: t('src.title'),
     wide: true,
-    body: [h('div', { class: 'fp-ref__bar' }, row(t('cite.style'), style), add), list],
+    body: [h('div', { class: 'fp-ref__bar' }, row(t('cite.style'), style), add, importBtn, exportMenu), list],
     actions: [{ label: t('action.close'), value: 'close', primary: true }],
   })
 }

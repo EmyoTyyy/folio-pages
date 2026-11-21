@@ -3,8 +3,8 @@
 // navigation privée…), elle répond « indisponible » et l'application continue.
 
 const DB_NAME = 'folio-pages'
-const DB_VERSION = 3
-export const STORES = { recovery: 'recovery', handles: 'handles', versions: 'versions', recent: 'recent' } as const
+const DB_VERSION = 4
+export const STORES = { recovery: 'recovery', handles: 'handles', versions: 'versions', recent: 'recent', snippets: 'snippets' } as const
 type StoreName = (typeof STORES)[keyof typeof STORES]
 
 const TIMEOUT_MS = 4000
@@ -46,6 +46,8 @@ export function openDb(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(STORES.versions)) db.createObjectStore(STORES.versions, { keyPath: 'key' })
         // Version 3 : fichiers récents (Chrome, Edge : pour les rouvrir et les réécrire en place).
         if (!db.objectStoreNames.contains(STORES.recent)) db.createObjectStore(STORES.recent, { keyPath: 'key' })
+        // Version 4 : extraits réutilisables (insertion rapide).
+        if (!db.objectStoreNames.contains(STORES.snippets)) db.createObjectStore(STORES.snippets, { keyPath: 'id' })
       }
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => resolve(null)

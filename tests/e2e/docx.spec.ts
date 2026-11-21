@@ -44,7 +44,7 @@ const textOf = (blocks: any[]): string => {
   const walk = (bs: any[]) =>
     bs.forEach((b) => {
       if (b.content) inl(b.content)
-      if (b.items) b.items.forEach((i: any) => inl(i.content))
+      if (b.type === 'list') b.items.forEach((i: any) => inl(i.content))
       if (b.blocks) walk(b.blocks)
       if (b.rows) b.rows.forEach((r: any[]) => r.forEach((c) => walk(c.blocks)))
       if (b.text) s += b.text

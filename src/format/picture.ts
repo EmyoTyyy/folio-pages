@@ -1,6 +1,6 @@
 // Retouches d'une image (onglet Format de l'image) : luminosité, contraste,
 // saturation, recoloration, effets artistiques, transparence, ombre, halo,
-// bords adoucis. Une seule traduction en CSS, partagée par l'éditeur, la page
+// bords adoucis, reflet. Une seule traduction en CSS, partagée par l'éditeur, la page
 // web exportée et l'image recalculée pour .docx et .odt.
 
 import { hasOwn, type PictureAdjust } from './types'
@@ -13,7 +13,7 @@ export function cleanAdjust(raw: unknown, color: (c: string) => string | null): 
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const out: PictureAdjust = {}
-  const num = (k: 'brightness' | 'contrast' | 'saturation' | 'transparency' | 'softEdges', min: number, max: number, neutral: number) => {
+  const num = (k: 'brightness' | 'contrast' | 'saturation' | 'transparency' | 'softEdges' | 'reflection', min: number, max: number, neutral: number) => {
     const v = o[k]
     if (typeof v !== 'number' || !Number.isFinite(v)) return
     const r = Math.round(Math.min(max, Math.max(min, v)))
@@ -24,6 +24,8 @@ export function cleanAdjust(raw: unknown, color: (c: string) => string | null): 
   num('saturation', 0, 400, 100)
   num('transparency', 0, 95, 0)
   num('softEdges', 0, 50, 0)
+  num('reflection', 0, 100, 0)
+  if (out.reflection !== undefined && out.reflection < 10) out.reflection = 10
   if (typeof o.recolor === 'string' && (RECOLORS as readonly string[]).includes(o.recolor)) out.recolor = o.recolor as PictureAdjust['recolor']
   if (typeof o.artistic === 'string' && (ARTISTIC as readonly string[]).includes(o.artistic)) out.artistic = o.artistic as PictureAdjust['artistic']
   if (o.shadow === true) out.shadow = true
@@ -84,9 +86,53 @@ export function adjustCss(a: PictureAdjust | null | undefined, css: (c: string) 
   return out
 }
 
+/** Masque du reflet : il s'efface vers le bas. */
+export const REFLECTION_MASK = 'linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.12) 55%, transparent)'
+
 export const cssText = (decls: Record<string, string>): string =>
   Object.entries(decls)
     .map(([k, v]) => `${k}:${v}`)
     .join(';')
 
 export { hasOwn }
+
+// --- habillage ------------------------------------------------------------------
+
+/**
+ * Habillage d'une image :
+ * - none : seule sur sa ligne (texte au-dessus et au-dessous) ;
+ * - left / right : encadré, l'image flotte de ce côté ;
+ * - tight / through : le texte suit le contour de l'image (côté donné par l'alignement) ;
+ * - behind / front : derrière ou devant le texte, l'image ne prend pas de place.
+ */
+export const WRAPS = ['none', 'left', 'right', 'tight', 'through', 'behind', 'front'] as const
+export type Wrap = (typeof WRAPS)[number]
+
+/** Côté où l'image flotte (le texte passe de l'autre côté), ou null si elle ne flotte pas. */
+export function floatSide(wrap: string, align: string): 'left' | 'right' | null {
+  if (wrap === 'left' || wrap === 'right') return wrap
+  if (wrap === 'tight' || wrap === 'through') return align === 'right' ? 'right' : 'left'
+  return null
+}
+
+/** Derrière ou devant le texte : l'image ne prend aucune place dans la page. */
+export const overText = (wrap: string): wrap is 'behind' | 'front' => wrap === 'behind' || wrap === 'front'
+
+/** Le texte suit le contour de l'image. */
+export const contourWrap = (wrap: string): wrap is 'tight' | 'through' => wrap === 'tight' || wrap === 'through'
+
+/** Ordre des habillages dans les menus (celui des traitements de texte habituels). */
+export const WRAP_MENU: readonly Wrap[] = ['left', 'right', 'tight', 'through', 'none', 'behind', 'front']
+
+/** Attributs posés quand on choisit un habillage (l'alignement suit le côté de l'image). */
+export function wrapAttrs(wrap: Wrap, align: string): { wrap: Wrap; align?: 'left' | 'right' } {
+  if (wrap === 'left' || wrap === 'right') return { wrap, align: wrap }
+  if (contourWrap(wrap)) return { wrap, align: align === 'right' ? 'right' : 'left' }
+  return { wrap }
+}
+
+/** Attributs posés quand on aligne l'image : un habillage carré change de côté (ou cesse au centre), les autres restent. */
+export function alignAttrs(align: 'left' | 'center' | 'right', wrap: string): { align: 'left' | 'center' | 'right'; wrap?: Wrap } {
+  if (wrap === 'left' || wrap === 'right') return { align, wrap: align === 'center' ? 'none' : align }
+  return { align }
+}

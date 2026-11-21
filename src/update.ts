@@ -10,8 +10,9 @@
 //   3. seule une version plus récente est proposée (jamais de retour en arrière).
 // Un hébergement ou un dépôt compromis ne peut donc pas imposer de code.
 //
-// Rien ne part sur le réseau sans un geste de l'utilisateur, et rien en mode
-// hors ligne (net.ts). La requête ne porte aucun identifiant.
+// La recherche part à chaque ouverture du fichier (réglage « autoUpdate », que
+// l'on peut couper) ou sur demande ; jamais en mode hors ligne (net.ts). La
+// requête ne porte aucun identifiant. Installer demande toujours un clic.
 
 import { isOffline, netFetch, OfflineError } from './net'
 import { extractDocBlock, spliceDocBlock } from './file/shell'

@@ -159,6 +159,12 @@ test('nouveau document vide depuis la démonstration, annulable', async ({ page 
   await expect(page.locator('#fp-title')).toHaveValue('')
   await expect(page.locator('#fp-banner')).toBeHidden()
   await expect(page).toHaveTitle('Document sans titre — Folio Pages')
+  // Rien de la démonstration ne reste : ni son en-tête « {{title}} », ni son pied de page, ni son style « Astuce ».
+  const doc = await docJson(page)
+  expect(JSON.stringify(doc.headers ?? {})).not.toContain('{{')
+  expect(JSON.stringify(doc.footers ?? {})).not.toContain('{{')
+  expect(doc.styles?.tip).toBeUndefined()
+  await expect(page.locator('.fp-hf-zone').filter({ hasText: /\S/ })).toHaveCount(0)
   await page.keyboard.type('Ma lettre')
   await page.keyboard.press(`${mod}+z`)
   await page.keyboard.press(`${mod}+z`)

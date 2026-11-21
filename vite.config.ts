@@ -16,7 +16,9 @@ export default defineConfig({
     emptyOutDir: true,
     cssCodeSplit: false,
     sourcemap: false,
-    minify: 'esbuild',
+    // Terser : 1,5 % de moins qu'esbuild une fois compressé (deux passes).
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 }, format: { comments: false } },
     lib: {
       entry: 'src/main.ts',
       formats: ['iife'],

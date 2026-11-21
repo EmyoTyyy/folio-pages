@@ -7,6 +7,10 @@
 // (format, orientation, marges), colonnes, images, formules (objets MathML),
 // commentaires. Les modifications suivies sont exportées acceptées.
 
+import { CHART_ALT, CHART_H, CHART_W, chartLookOf, chartSvg } from '../format/chart'
+import { diagramsAsImages } from '../format/diagram'
+import type { ChartBlock } from '../format/types'
+import { blockDir } from '../format/bidi'
 import { strToU8, zipSync, type Zippable } from 'fflate'
 import { resolveStyle } from '../format/theme'
 import type { Block, FolioDoc, HeaderSet, Inline, Marks, PageSetup, Run, StyleDef, TableCell } from '../format/types'
@@ -15,9 +19,13 @@ import { cssHighlight, HIGHLIGHT_VALUES } from '../format/color'
 import { hasOwn, isRun } from '../format/types'
 import { tokenize } from '../editor/highlight'
 import { renderTex } from '../math'
-import { base64Bytes, fieldText, generated, imageData, imageSize, inlineText, prepareExport, resolveColor, type ExportCommonOptions, type ExportContext } from './common'
+import { CALLOUT_COLORS, calloutLabel } from '../format/callout'
+import type { InkStroke } from '../format/types'
+import { citePieces } from '../refs/cite'
+import { inkBounds, inkOpacity, inkPath } from '../format/ink'
+import { base64Bytes, CHECKED_BOX, EMPTY_BOX, fieldText, generated, imageData, imageSize, inlineText, prepareExport, resolveColor, type ExportCommonOptions, type ExportContext } from './common'
 import { textWidthPt } from './html'
-import { hasColorAdjust } from '../format/picture'
+import { contourWrap, floatSide, hasColorAdjust } from '../format/picture'
 
 export interface OdtOptions extends ExportCommonOptions {
   /** Redessine une image avec ses retouches de couleur (PNG). */
@@ -34,7 +42,7 @@ export interface OdtResult {
   losses: { code: OdtLoss; count: number }[]
 }
 
-export type OdtLoss = 'image-rotate' | 'image-format' | 'math' | 'watermark' | 'picture-adjust'
+export type OdtLoss = 'image-rotate' | 'image-format' | 'math' | 'watermark' | 'picture-adjust' | 'picture-reflection' | 'attachment'
 
 const MIME = 'application/vnd.oasis.opendocument.text'
 
@@ -160,9 +168,15 @@ function hexOf(css: string): string {
 }
 
 /** Propriétés de paragraphe. */
-function paraProps(s: Partial<StyleDef>, doc: FolioDoc, extra: string[] = []): string {
+function paraProps(s: Partial<StyleDef> & { dir?: 'rtl'; noLineNumbers?: boolean }, doc: FolioDoc, extra: string[] = []): string {
   const a: string[] = [...extra]
-  if (s.align) a.push(`fo:text-align="${s.align === 'left' ? 'start' : s.align === 'right' ? 'end' : s.align}"`)
+  if (s.noLineNumbers) a.push('text:number-lines="false"')
+  if (s.dir === 'rtl') {
+    // De droite à gauche. LibreOffice lit start et end comme la gauche et la droite de la page :
+    // notre gauche (le début du paragraphe) s'écrit donc end, et se répète quand le style dit autre chose.
+    a.push('style:writing-mode="rl-tb"')
+    a.push(`fo:text-align="${s.align === 'right' ? 'start' : s.align === 'center' || s.align === 'justify' ? s.align : 'end'}"`)
+  } else if (s.align) a.push(`fo:text-align="${s.align === 'left' ? 'start' : s.align === 'right' ? 'end' : s.align}"`)
   if (s.indent?.left !== undefined) a.push(`fo:margin-left="${pt(s.indent.left)}"`)
   if (s.indent?.right !== undefined) a.push(`fo:margin-right="${pt(s.indent.right)}"`)
   if (s.indent?.first !== undefined) a.push(`fo:text-indent="${pt(s.indent.first)}"`)
@@ -184,6 +198,9 @@ function tint(hex: string, amount: number): string {
 }
 
 type Pending = { break?: 'page' | 'column'; master?: string; pageNumber?: number }
+
+/** Mise en forme directe d'un paragraphe : celle d'un style, plus la lettrine et le sens d'écriture. */
+type ParaLook = Partial<StyleDef> & { dropCap?: number; dir?: 'rtl'; noLineNumbers?: boolean }
 
 interface Ctx {
   /** Style de paragraphe par défaut (citation, cellule d'en-tête…). */
@@ -230,7 +247,7 @@ class OdtWriter {
       for (const b of blocks) {
         if (b.type === 'paragraph' || b.type === 'heading') count(b.content)
         else if (b.type === 'list') b.items.forEach((it) => count(it.content))
-        else if (b.type === 'quote' || b.type === 'columns') walk(b.blocks)
+        else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') walk(b.blocks)
         else if (b.type === 'table') b.rows.forEach((r) => r.forEach((c) => walk(c.blocks)))
         else if (b.type === 'image') count(b.caption)
       }
@@ -337,10 +354,17 @@ class OdtWriter {
           out += this.span(it as unknown as Run, inner, c)
           break
         }
+        case 'cite':
+          for (const p of citePieces(this.ctx.refs.text.get(it) ?? '')) out += this.span({ ...(it as unknown as Run), ...(p.italic ? { italic: true } : {}) } as Run, odfText(p.text), c)
+          break
         case 'seq':
         case 'mergefield':
-        case 'cite':
+        case 'formfield':
           out += this.span(it as unknown as Run, odfText(inlineText([it], this.ctx)), c)
+          break
+        case 'attachment':
+          this.loss('attachment')
+          out += odfText(inlineText([it], this.ctx))
           break
         case 'xref':
           out += `<text:a xlink:type="simple" xlink:href="#${x(it.target)}">${this.span(it as unknown as Run, odfText(this.ctx.refs.text.get(it) ?? ''), c)}</text:a>`
@@ -405,12 +429,17 @@ class OdtWriter {
   // --- paragraphes ----------------------------------------------------------------
 
   /** Style d'un paragraphe : son style nommé, sa mise en forme directe, un saut en attente. */
-  private paraStyle(base: string, props: Partial<StyleDef> & { dropCap?: number }, c: Ctx, extra: string[] = []): string {
+  private paraStyle(base: string, props: ParaLook, c: Ctx, extra: string[] = []): string {
     const p = this.pending
     const breaks: string[] = [...extra]
     if (p.break === 'page' && !p.master) breaks.push('fo:break-before="page"')
     if (p.break === 'column') breaks.push('fo:break-before="column"')
     if (p.pageNumber !== undefined) breaks.push(`style:page-number="${p.pageNumber}"`)
+    // Numéros de ligne : premier numéro du document (ou de la section), sur son premier paragraphe.
+    if (this.lineStart !== null && !c.margin) {
+      breaks.push(`text:line-number="${this.lineStart}"`)
+      this.lineStart = null
+    }
     const body = paraProps(props, this.ctx.doc, breaks)
     const text = c.bold ? `<style:text-properties ${textProps({ bold: true }, this.ctx.doc, this.fonts)}/>` : ''
     const master = p.master ? `style:master-page-name="${p.master}"` : ''
@@ -422,20 +451,39 @@ class OdtWriter {
     return c.margin ? this.marginAuto('P', 'paragraph', inner, base) : this.autoStyle('P', 'paragraph', inner, base, master)
   }
 
-  private para(style: string, props: Partial<StyleDef> & { dropCap?: number }, inner: string, c: Ctx, extra: string[] = []): string {
+  private para(style: string, props: ParaLook, inner: string, c: Ctx, extra: string[] = []): string {
     return `<text:p text:style-name="${this.paraStyle(style, props, c, extra)}">${inner}</text:p>`
   }
 
-  private propsOf(b: Record<string, unknown>): Partial<StyleDef> & { dropCap?: number } {
+  /** Dessin à main levée : un chemin vectoriel par trait, ancré au paragraphe. */
+  private ink(strokes: InkStroke[] | undefined): string {
+    if (!strokes?.length) return ''
+    return strokes
+      .map((s) => {
+        const b = inkBounds([s])
+        const style = this.autoStyle(
+          'gr',
+          'graphic',
+          `<style:graphic-properties draw:stroke="solid" svg:stroke-color="${resolveColor(s.color, this.ctx.doc)}" svg:stroke-width="${pt(s.width)}"${inkOpacity(s) < 1 ? ` svg:stroke-opacity="${Math.round(inkOpacity(s) * 100)}%"` : ''} draw:stroke-linejoin="round" svg:stroke-linecap="${s.tool === 'highlighter' ? 'square' : 'round'}" draw:fill="none" style:wrap="run-through" style:run-through="foreground" style:vertical-pos="from-top" style:vertical-rel="paragraph" style:horizontal-pos="from-left" style:horizontal-rel="paragraph"/>`,
+        )
+        const r = s.width / 2
+        return `<draw:path draw:style-name="${style}" text:anchor-type="paragraph" draw:z-index="${++this.inkZ}" svg:x="${pt(b.x + r)}" svg:y="${pt(b.y + r)}" svg:width="${pt(Math.max(0.5, b.width - s.width))}" svg:height="${pt(Math.max(0.5, b.height - s.width))}" svg:viewBox="0 0 ${Math.max(50, Math.round((b.width - s.width) * 100))} ${Math.max(50, Math.round((b.height - s.width) * 100))}" svg:d="${inkPath(s, b.x + r, b.y + r, 100)}"/>`
+      })
+      .join('')
+  }
+  private inkZ = 0
+
+  private propsOf(b: Record<string, unknown>): ParaLook {
     const { align, indent, spacing, line, keepNext, keepLines, pageBreakBefore, shading, border } = b as Partial<StyleDef>
-    return { align, indent, spacing, line, keepNext, keepLines, pageBreakBefore, shading, border, ...(typeof b.dropCap === 'number' ? { dropCap: b.dropCap } : {}) }
+    return { align, indent, spacing, line, keepNext, keepLines, pageBreakBefore, shading, border, ...(typeof b.dropCap === 'number' ? { dropCap: b.dropCap } : {}), ...(blockDir(b as { content?: unknown[] }) === 'rtl' ? { dir: 'rtl' as const } : {}), ...(b.noLineNumbers ? { noLineNumbers: true } : {}) }
   }
 
   // --- listes ---------------------------------------------------------------------
 
-  private listStyle(b: Extract<Block, { type: 'list' }>): string {
+  /** checked : variante où les cases sont cochées (posée élément par élément, text:style-override). */
+  private listStyle(b: Extract<Block, { type: 'list' }>, checked = false): string {
     // Puce ou numéro par niveau : celui du premier élément de ce niveau.
-    const kind: ('bullet' | 'number')[] = []
+    const kind: ('bullet' | 'number' | 'check')[] = []
     for (const it of b.items) kind[it.level] ??= it.style
     const fmt = (level: number): [string, string] => {
       const n = b.numbering ?? 'default'
@@ -448,8 +496,8 @@ class OdtWriter {
       const k = kind[l] ?? kind.slice(0, l).filter(Boolean).pop() ?? b.style
       const indent = 18 * (l + 1)
       const props = `<style:list-level-properties text:list-level-position-and-space-mode="label-alignment"><style:list-level-label-alignment text:label-followed-by="listtab" text:list-tab-stop-position="${pt(indent)}" fo:text-indent="${pt(-14)}" fo:margin-left="${pt(indent)}"/></style:list-level-properties>`
-      if (k === 'bullet') {
-        const ch = l === 0 && b.bullet ? b.bullet : bullets[l % 3]
+      if (k === 'bullet' || k === 'check') {
+        const ch = k === 'check' ? (checked ? CHECKED_BOX : EMPTY_BOX) : l === 0 && b.bullet ? b.bullet : bullets[l % 3]
         levels += `<text:list-level-style-bullet text:level="${l + 1}" text:bullet-char="${x(ch)}">${props}</text:list-level-style-bullet>`
       } else {
         const [f, suffix] = fmt(l)
@@ -489,7 +537,8 @@ class OdtWriter {
       if (open[depth]) out += '</text:list-item>'
       const start = i === 0 && b.start > 1 && !b.continue ? ` text:start-value="${b.start}"` : ''
       const props = this.propsOf(it as unknown as Record<string, unknown>)
-      out += `<text:list-item${start}>${this.para(c.parent ?? 'List_20_Paragraph', props, this.inline(it.content, c), c)}`
+      const override = it.checked ? ` text:style-override="${this.listStyle(b, true)}"` : ''
+      out += `<text:list-item${start}${override}>${this.para(c.parent ?? 'List_20_Paragraph', props, this.ink(it.ink) + this.inline(it.content, c), c)}`
       open[depth] = true
     })
     while (depth > 0) {
@@ -502,6 +551,17 @@ class OdtWriter {
   }
 
   // --- tableaux ---------------------------------------------------------------------
+
+  /** Encadré : un tableau d'une cellule (barre de couleur à gauche, fond teinté), nommé « Callout_type_n ». */
+  private callout(b: Extract<Block, { type: 'callout' }>, c: Ctx): string {
+    const col = CALLOUT_COLORS[b.kind]
+    const tStyle = this.autoStyle('Tab', 'table', `<style:table-properties style:width="${pt(this.textWidth)}" table:align="margins"${this.pending.break === 'page' ? ' fo:break-before="page"' : ''} fo:margin-top="4pt" fo:margin-bottom="8pt"/>`)
+    if (this.pending.break === 'page') this.pending = {}
+    const cell = this.autoStyle('Cell', 'table-cell', `<style:table-cell-properties fo:background-color="${col.fill}" fo:padding-top="4pt" fo:padding-bottom="3pt" fo:padding-left="8pt" fo:padding-right="6pt" fo:border-left="3pt solid ${col.bar}" fo:border-right="none" fo:border-top="none" fo:border-bottom="none"/>`)
+    const title = this.autoStyle('T', 'text', `<style:text-properties fo:font-weight="bold" style:font-weight-asian="bold" fo:color="${col.bar}"/>`)
+    const head = this.para('Standard', { spacing: { before: 0, after: 2 } }, `<text:span text:style-name="${title}">${odfText(b.title || calloutLabel(b.kind, this.ctx.doc.meta.lang))}</text:span>`, c)
+    return `<table:table table:name="Callout_${b.kind}_${++this.tableN}" table:style-name="${tStyle}"><table:table-column/><table:table-row><table:table-cell table:style-name="${cell}" office:value-type="string">${head}${this.blocks(b.blocks, c)}</table:table-cell></table:table-row></table:table>`
+  }
 
   private table(b: Extract<Block, { type: 'table' }>, c: Ctx): string {
     const n = ++this.tableN
@@ -577,6 +637,9 @@ class OdtWriter {
     const bg = cell.bg ? resolveColor(cell.bg, this.ctx.doc, '') : head && (b.style === 'zebra' || b.style === 'boxed') ? tint(accent, 0.14) : b.style === 'zebra' && !head && (ri - (b.header ? 1 : 0)) % 2 === 1 ? tint(accent, 0.07) : ''
     if (bg) props.push(`fo:background-color="${bg}"`)
     if (cell.valign && cell.valign !== 'top') props.push(`style:vertical-align="${cell.valign}"`)
+    // Texte vertical : tb-rl (ODF), bt-lr (extension de LibreOffice).
+    if (cell.textDir === 'tbrl') props.push('style:writing-mode="tb-rl"')
+    else if (cell.textDir === 'btlr') props.push('loext:writing-mode="bt-lr"')
     const style = this.autoStyle('Cell', 'table-cell', `<style:table-cell-properties ${props.join(' ')}/>`)
     const span = `${cell.colspan > 1 ? ` table:number-columns-spanned="${cell.colspan}"` : ''}${cell.rowspan > 1 ? ` table:number-rows-spanned="${cell.rowspan}"` : ''}`
     const inner = this.blocks(cell.blocks, { ...c, parent: head ? 'Table_20_Heading' : 'Table_20_Contents', bold: c.bold || (b.firstColumn && col === 0 && !head) })
@@ -637,15 +700,24 @@ class OdtWriter {
     if (b.border) graphic.push(`fo:border="0.5pt solid ${resolveColor(b.border, this.ctx.doc)}"`)
     const effects = b.adjust
     if (effects?.shadow) graphic.push('draw:shadow="visible" draw:shadow-offset-x="0.12cm" draw:shadow-offset-y="0.14cm" draw:shadow-color="#000000" draw:shadow-opacity="38%"')
+    if (effects?.reflection) this.loss('picture-reflection')
     if (effects?.glow) graphic.push(`loext:glow-radius="0.2cm" loext:glow-color="${resolveColor(effects.glow, this.ctx.doc)}" loext:glow-transparency="40%"`)
     if (crop) {
       // fo:clip : ce qu'on retire de chaque côté, dans la taille d'origine de l'image.
       graphic.push(`fo:clip="rect(${pt((natH * crop.top) / 100)}, ${pt((natW * crop.right) / 100)}, ${pt((natH * crop.bottom) / 100)}, ${pt((natW * crop.left) / 100)})"`)
     }
     let anchor = 'as-char'
-    if (b.wrap !== 'none') {
+    const side = floatSide(b.wrap, b.align)
+    if (side) {
       anchor = 'paragraph'
-      graphic.push(`style:wrap="${b.wrap === 'left' ? 'right' : 'left'}" style:horizontal-pos="${b.wrap}" style:horizontal-rel="paragraph" style:wrap-contour="false" fo:margin-${b.wrap === 'left' ? 'right' : 'left'}="9pt"`)
+      // Rapproché : le contour, sans les creux intérieurs ; au travers : le contour complet.
+      const contour = contourWrap(b.wrap) ? `style:wrap-contour="true" style:wrap-contour-mode="${b.wrap === 'through' ? 'full' : 'outside'}"` : 'style:wrap-contour="false"'
+      graphic.push(`style:wrap="${side === 'left' ? 'right' : 'left'}" style:horizontal-pos="${side}" style:horizontal-rel="paragraph" ${contour} fo:margin-${side === 'left' ? 'right' : 'left'}="9pt"`)
+    } else if (b.wrap === 'behind' || b.wrap === 'front') {
+      // Derrière ou devant le texte : « au travers » de LibreOffice, à l'arrière-plan ou au premier plan.
+      anchor = 'paragraph'
+      graphic[0] = 'style:vertical-pos="top" style:vertical-rel="paragraph"'
+      graphic.push(`style:wrap="run-through" style:run-through="${b.wrap === 'behind' ? 'background' : 'foreground'}" style:horizontal-pos="${b.align === 'center' ? 'center' : b.align}" style:horizontal-rel="paragraph"`)
     }
     const style = this.autoStyle('fr', 'graphic', `<style:graphic-properties ${graphic.join(' ')}/>`, 'Graphics')
     const id = b.src.slice(6)
@@ -665,6 +737,23 @@ class OdtWriter {
     let out = this.para(c.parent ?? 'Standard', { align: b.align === 'left' ? 'left' : b.align, spacing: { before: 4, after: b.caption.length ? 2 : 8 } }, key, c)
     if (b.caption.length) out += this.para('Caption', {}, this.inline(b.caption, c), c)
     return out
+  }
+
+  /**
+   * Graphique : son dessin en image SVG, à la largeur du texte. Ses données vont dans la description
+   * de l'image (« folio-chart: » puis le JSON) : notre import en refait un graphique modifiable.
+   */
+  private chart(b: ChartBlock, c: Ctx): string {
+    const path = `Pictures/${String(this.pictureNames.size + 1).padStart(3, '0')}.svg`
+    this.pictureNames.set(`chart:${path}`, path)
+    this.pictures[path] = [strToU8(chartSvg(b, chartLookOf(this.ctx.doc))), { level: 6 }]
+    const w = this.textWidth
+    const h = (w * CHART_H) / CHART_W
+    const n = ++this.frameN
+    const style = this.autoStyle('fr', 'graphic', '<style:graphic-properties style:vertical-pos="top" style:vertical-rel="baseline"/>', 'Graphics')
+    const { type: _t, ...data } = b
+    const frame = `<draw:frame draw:style-name="${style}" draw:name="Chart${n}" text:anchor-type="as-char" svg:width="${pt(w)}" svg:height="${pt(h)}" draw:z-index="${n}"><draw:image xlink:href="${x(path)}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad" draw:mime-type="image/svg+xml"/><svg:title>${x(b.title ?? '')}</svg:title><svg:desc>${x(CHART_ALT + JSON.stringify(data))}</svg:desc></draw:frame>`
+    return this.para(c.parent ?? 'Standard', { align: 'center', spacing: { before: 4, after: 8 } }, frame, c)
   }
 
   /** Remplace les images, une fois leurs fichiers prêts. */
@@ -706,12 +795,12 @@ class OdtWriter {
 
   // --- listes générées ------------------------------------------------------------------
 
-  private generatedList(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' }>, c: Ctx): string {
+  private generatedList(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' | 'glossary' | 'abbreviations' }>, c: Ctx): string {
     const g = generated(b, this.ctx, this.o)
     const lines: string[] = []
     const levelStyle = (l: number) => (b.type === 'toc' ? `Contents_20_${Math.min(10, l + 1)}` : b.type === 'index' ? `Index_20_${Math.min(3, l + 1)}` : 'Contents_20_1')
     const lineXml = (l: (typeof g.groups)[number]['lines'][number]) => {
-      const text = l.pieces.map((p) => (p.italic ? this.span({ italic: true }, odfText(p.text), c) : odfText(p.text))).join('')
+      const text = l.pieces.map((p) => (p.bold ? this.span({ bold: true }, odfText(p.text), c) : p.italic ? this.span({ italic: true }, odfText(p.text), c) : odfText(p.text))).join('')
       const label = l.label ? `${odfText(l.label)}<text:tab/>` : ''
       const page = b.type !== 'index' && l.page ? `<text:tab/>${x(l.page)}` : ''
       return `<text:p text:style-name="${levelStyle(l.level)}">${label}${text}${page}</text:p>`
@@ -744,13 +833,13 @@ class OdtWriter {
       switch (b.type) {
         case 'paragraph': {
           const base = b.style && b.style !== 'normal' ? styleName(b.style) : (c.parent ?? 'Standard')
-          out += this.para(base, this.propsOf(b as unknown as Record<string, unknown>), this.inline(b.content, c), c)
+          out += this.para(base, this.propsOf(b as unknown as Record<string, unknown>), this.ink(b.ink) + this.inline(b.content, c), c)
           break
         }
         case 'heading': {
           const level = Math.min(6, Math.max(1, b.level))
           const style = this.paraStyle(`Heading_20_${level}`, this.propsOf(b as unknown as Record<string, unknown>), c)
-          out += `<text:h text:style-name="${style}" text:outline-level="${level}">${this.inline(b.content, c)}</text:h>`
+          out += `<text:h text:style-name="${style}" text:outline-level="${level}">${this.ink(b.ink)}${this.inline(b.content, c)}</text:h>`
           break
         }
         case 'list':
@@ -758,6 +847,9 @@ class OdtWriter {
           break
         case 'quote':
           out += this.blocks(b.blocks, { ...c, parent: 'Quotations' })
+          break
+        case 'callout':
+          out += this.callout(b, c)
           break
         case 'code':
           out += this.code(b, c)
@@ -793,11 +885,16 @@ class OdtWriter {
         case 'image':
           out += this.image(b, c)
           break
+        case 'chart':
+          out += this.chart(b, c)
+          break
         case 'toc':
         case 'figures':
         case 'index':
         case 'authorities':
         case 'bibliography':
+        case 'glossary':
+        case 'abbreviations':
           out += this.generatedList(b, c)
           break
       }
@@ -849,6 +946,8 @@ class OdtWriter {
 
   /** Saut de section : nouvelle page maîtresse si quelque chose change, sinon un simple saut de page. */
   private section(b: Extract<Block, { type: 'section' }>): void {
+    const ln = this.ctx.doc.lineNumbers
+    if (ln?.restart === 'section') this.lineStart = ln.start
     const cur = this.current!
     const page = b.page ? { ...cur.page, ...b.page, margins: b.page.margins } : cur.page
     const next = {
@@ -872,10 +971,21 @@ class OdtWriter {
   /** Le premier paragraphe porte le numéro de la première page s'il n'est pas 1. */
   primeFirst(): void {
     if (this.firstNumber) this.pending = { ...this.pending, pageNumber: this.firstNumber }
+    const ln = this.ctx.doc.lineNumbers
+    if (ln && ln.start !== 1) this.lineStart = ln.start
   }
+  /** Premier numéro de ligne à poser sur le prochain paragraphe (null : rien). */
+  private lineStart: number | null = null
 }
 
 // --- styles.xml -------------------------------------------------------------------------
+
+/** Numéros de ligne : un réglage du document (le premier numéro est sur le premier paragraphe). */
+function lineNumbering(doc: FolioDoc): string {
+  const ln = doc.lineNumbers
+  if (!ln) return ''
+  return `<text:linenumbering-configuration text:number-lines="true" text:offset="${pt(ln.distance ?? 18)}" style:num-format="1" text:number-position="left" text:increment="${ln.countBy}" text:restart-on-page="${ln.restart === 'page'}" text:count-empty-lines="true" text:count-in-text-boxes="false"/>`
+}
 
 function namedStyles(doc: FolioDoc, fonts: Set<string>, width: number): string {
   const out: string[] = []
@@ -929,6 +1039,7 @@ function namedStyles(doc: FolioDoc, fonts: Set<string>, width: number): string {
   const restart = (r: string) => (r === 'page' ? 'page' : r === 'section' ? 'chapter' : 'document')
   out.push(
     `<text:notes-configuration text:note-class="footnote" text:citation-style-name="Footnote_20_Symbol" text:citation-body-style-name="Footnote_20_anchor" style:num-format="${fmt(notes.foot.format)}" text:start-value="${Math.max(0, notes.foot.start - 1)}" text:footnotes-position="page" text:start-numbering-at="${restart(notes.foot.restart)}"/>`,
+    lineNumbering(doc),
     `<text:notes-configuration text:note-class="endnote" text:citation-style-name="Endnote_20_Symbol" text:citation-body-style-name="Endnote_20_anchor" style:num-format="${fmt(notes.end.format)}" text:start-value="${Math.max(0, notes.end.start - 1)}"/>`,
   )
   return out.join('')
@@ -947,6 +1058,7 @@ function metaXml(doc: FolioDoc, version: string, now: Date): string {
 
 /** Le document au format OpenDocument Text. */
 export async function exportOdt(doc: FolioDoc, o: OdtOptions = {}): Promise<OdtResult> {
+  doc = diagramsAsImages(doc, chartLookOf(doc))
   const ctx = prepareExport(doc, o)
   const w = new OdtWriter(ctx, o)
   // Le filigrane n'a pas d'équivalent simple en OpenDocument : il est signalé.

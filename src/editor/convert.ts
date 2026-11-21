@@ -9,6 +9,8 @@
 // demande aucune comptabilité : les ressources inutilisées disparaissent à
 // l'enregistrement.
 
+import { chartAttrs, chartOf } from './chart'
+import { diagramAttrs, diagramOf } from './diagram'
 import { Mark, Node as PMNode } from 'prosemirror-model'
 import { EditorState } from 'prosemirror-state'
 import { TableMap, fixTables } from 'prosemirror-tables'
@@ -38,6 +40,11 @@ import {
   mathMarks,
   type MathSettings,
   type Watermark,
+  type WritingGoal,
+  type LineNumbers,
+  type InkStroke,
+  type ParaChange,
+  type Term,
   type MailMerge,
   type NoteSettings,
   type CommentThread,
@@ -52,6 +59,7 @@ import {
   type XrefShow,
 } from '../format/types'
 import { FLAG_MARKS, VALUE_MARKS, schema } from './schema'
+import { formFrom } from '../format/normalize'
 
 const n = schema.nodes
 
@@ -75,6 +83,7 @@ function marksOf(r: Marks): readonly Mark[] {
   for (const id of r.comments ?? []) list.push(schema.marks.comment.create({ id }))
   if (r.inserted) list.push(schema.marks.insertion.create({ author: r.inserted.author, date: r.inserted.date }))
   if (r.deleted) list.push(schema.marks.deletion.create({ author: r.deleted.author, date: r.deleted.date }))
+  if (r.formatChange) list.push(schema.marks.formatchange.create({ author: r.formatChange.author, date: r.formatChange.date, before: { ...r.formatChange.before } }))
   // addToSet trie selon le schéma et applique les exclusions (sup/sub).
   return list.reduce<readonly Mark[]>((set, m) => m.addToSet(set), Mark.none)
 }
@@ -87,6 +96,7 @@ function marksFrom(node: PMNode): Marks {
     if (m.type.name === 'comment') comments.push(m.attrs.id as string)
     else if (m.type.name === 'insertion') r.inserted = { author: m.attrs.author, date: m.attrs.date }
     else if (m.type.name === 'deletion') r.deleted = { author: m.attrs.author, date: m.attrs.date }
+    else if (m.type.name === 'formatchange') r.formatChange = { author: m.attrs.author, date: m.attrs.date, before: m.attrs.before }
     else if ((FLAG_MARKS as readonly string[]).includes(m.type.name)) r[m.type.name] = true
     else {
       for (const [key, [mark, attr]] of Object.entries(VALUE_MARKS)) if (mark === m.type.name) r[key] = m.attrs[attr]
@@ -95,9 +105,18 @@ function marksFrom(node: PMNode): Marks {
   return cleanMarks(r)
 }
 
+/** Ressources du document en cours de conversion : les fichiers joints y prennent leurs octets. */
+let convAssets: Record<string, string> = {}
+
 export function runsToInline(items: Inline[]): PMNode[] {
   const out: PMNode[] = []
   for (const r of items) {
+    if (!isRun(r) && r.type === 'attachment') {
+      const id = r.src.startsWith('asset:') ? r.src.slice(6) : null
+      const src = id !== null && hasOwn(convAssets, id) ? convAssets[id] : r.src
+      out.push(n.attachment.create({ src, assetId: id, name: r.name, size: r.size ?? null, mime: r.mime ?? '' }))
+      continue
+    }
     if (!isRun(r) && r.type === 'note') {
       out.push(n.note.create({ kind: r.kind, blocks: r.blocks }))
       continue
@@ -135,6 +154,10 @@ export function runsToInline(items: Inline[]): PMNode[] {
       out.push(n.field.create({ name: r.name, format: r.format }, null, marks))
       continue
     }
+    if (!isRun(r) && r.type === 'formfield') {
+      out.push(n.formfield.create({ kind: r.kind, name: r.name ?? '', value: r.value ?? '', options: r.options ? [...r.options] : [], checked: !!r.checked, placeholder: r.placeholder ?? '' }, null, marks))
+      continue
+    }
     if (!isRun(r)) continue
     clean(r.text)
       .split(/\r\n|\r|\n/)
@@ -163,6 +186,10 @@ export function paraToAttrs(p: ParaProps): Record<string, unknown> {
     shading: p.shading ?? null,
     border: p.border ?? null,
     dropCap: p.dropCap ?? null,
+    ink: p.ink?.length ? p.ink.map((s) => ({ ...s, points: [...s.points] })) : null,
+    dir: p.dir ?? null,
+    noLineNumbers: !!p.noLineNumbers,
+    fmtChange: p.formatChange ? { author: p.formatChange.author, date: p.formatChange.date, before: { ...p.formatChange.before } } : null,
   }
 }
 
@@ -181,10 +208,15 @@ export function paraFromAttrs(a: Record<string, unknown>): ParaProps {
   if (typeof a.line === 'number') p.line = a.line
   if (a.keepNext) p.keepNext = true
   if (a.keepLines) p.keepLines = true
+  if (a.noLineNumbers) p.noLineNumbers = true
   if (a.pageBreakBefore) p.pageBreakBefore = true
   if (typeof a.shading === 'string') p.shading = a.shading
   if (typeof a.border === 'string') p.border = a.border
   if (typeof a.dropCap === 'number') p.dropCap = a.dropCap
+  if (a.dir === 'rtl' || a.dir === 'ltr') p.dir = a.dir
+  if (Array.isArray(a.ink) && a.ink.length) p.ink = (a.ink as InkStroke[]).map((s) => ({ ...s, points: [...s.points] }))
+  const fc = a.fmtChange as ParaChange | null
+  if (fc && typeof fc === 'object') p.formatChange = { author: fc.author, date: fc.date, before: { ...fc.before } }
   return p
 }
 
@@ -199,8 +231,9 @@ const paragraph = (runs: Inline[], props: ParaProps = {}, style?: string) =>
 
 function listNode(tree: TreeList, list: BlockOf<'list'> | null): PMNode {
   const items = tree.items.map((it: TreeItem) =>
-    n.list_item.create(null, [paragraph(it.content, it.props), ...it.sublists.map((s) => listNode(s, null))]),
+    n.list_item.create(tree.style === 'check' && it.checked ? { checked: true } : null, [paragraph(it.content, it.props), ...it.sublists.map((s) => listNode(s, null))]),
   )
+  if (tree.style === 'check') return n.check_list.create(null, items)
   if (tree.style === 'number') {
     return n.ordered_list.create(
       { order: list ? list.start : 1, numbering: list?.numbering ?? null, continue: !!list?.continue },
@@ -214,10 +247,10 @@ function listNode(tree: TreeList, list: BlockOf<'list'> | null): PMNode {
 function cellNodes(blocks: Block[], ctx: ToCtx): PMNode[] {
   const out: PMNode[] = []
   for (const b of blocks) {
-    if (b.type === 'quote') out.push(...cellNodes(b.blocks, ctx))
+    if (b.type === 'quote' || b.type === 'callout') out.push(...cellNodes(b.blocks, ctx))
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) out.push(...cellNodes(c.blocks, ctx))
     else if (b.type === 'columns') out.push(...cellNodes(b.blocks, ctx))
-    else if (!['divider', 'pagebreak', 'columnbreak', 'section', 'toc', 'figures', 'index', 'authorities', 'bibliography'].includes(b.type)) out.push(...blockNodes(b, ctx))
+    else if (!['divider', 'pagebreak', 'columnbreak', 'section', 'toc', 'figures', 'index', 'authorities', 'bibliography', 'glossary', 'abbreviations'].includes(b.type)) out.push(...blockNodes(b, ctx))
   }
   return out.length ? out : [n.paragraph.create()]
 }
@@ -238,7 +271,7 @@ function tableNode(b: BlockOf<'table'>, ctx: ToCtx): PMNode | null {
         null,
         row.map((c: TableCell) =>
           (b.header && r === 0 ? n.table_header : n.table_cell).create(
-            { colspan: c.colspan, rowspan: c.rowspan, colwidth: null, bg: c.bg ?? null, valign: c.valign ?? null },
+            { colspan: c.colspan, rowspan: c.rowspan, colwidth: null, bg: c.bg ?? null, valign: c.valign ?? null, textDir: c.textDir ?? null },
             cellNodes(c.blocks, ctx),
           ),
         ),
@@ -288,10 +321,15 @@ function blockNodes(b: Block, ctx: ToCtx): PMNode[] {
       return [n.heading.create({ level: Math.min(6, Math.max(1, b.level)), ...paraToAttrs(b) }, runsToInline(b.content))]
     case 'list':
       if (!b.items.length) return []
-      return [listNode(buildTree(b.style, b.items.map((it) => ({ content: it.content, level: it.level, style: it.style, props: itemProps(it) }))), b)]
+      return [listNode(buildTree(b.style, b.items.map((it) => ({ content: it.content, level: it.level, style: it.style, props: itemProps(it), checked: !!it.checked }))), b)]
     case 'quote': {
       const inner = b.blocks.flatMap((x) => blockNodes(x, ctx))
       return [n.blockquote.create(null, inner.length ? inner : [n.paragraph.create()])]
+    }
+    case 'callout': {
+      // Ni encadré, ni colonnes, ni saut de section à l'intérieur : leur contenu est gardé.
+      const inner = b.blocks.flatMap((x) => (x.type === 'callout' || x.type === 'columns' ? x.blocks : [x])).filter((x) => x.type !== 'section' && x.type !== 'columnbreak').flatMap((x) => blockNodes(x, ctx))
+      return [n.callout.create({ kind: b.kind, title: b.title ?? '' }, inner.length ? inner : [n.paragraph.create()])]
     }
     case 'code': {
       const text = clean(b.text).replace(/\r\n?/g, '\n')
@@ -305,6 +343,10 @@ function blockNodes(b: Block, ctx: ToCtx): PMNode[] {
       return [n.horizontal_rule.create()]
     case 'equation':
       return [n.equation.create({ tex: b.tex, numbered: !!b.numbered })]
+    case 'chart':
+      return [n.chart.create(chartAttrs(b))]
+    case 'diagram':
+      return [n.diagram.create(diagramAttrs(b))]
     case 'pagebreak':
       return [n.page_break.create()]
     case 'columnbreak':
@@ -318,7 +360,9 @@ function blockNodes(b: Block, ctx: ToCtx): PMNode[] {
     case 'authorities':
       return [n.refblock.create({ kind: 'authorities', category: b.category, title: b.title })]
     case 'bibliography':
-      return [n.refblock.create({ kind: 'bibliography', title: b.title, all: !!b.all })]
+    case 'glossary':
+    case 'abbreviations':
+      return [n.refblock.create({ kind: b.type, title: b.title, all: !!b.all })]
     case 'section':
       return [
         n.section_break.create({
@@ -377,11 +421,17 @@ export function metaAttrs(meta: Meta): Record<string, unknown> {
   }
 }
 
-/** Images (« asset:id ») d'une liste de blocs, en profondeur. */
+/** Images et fichiers joints (« asset:id ») d'une liste de blocs, en profondeur. */
 export function imageRefs(blocks: Block[], out = new Set<string>()): Set<string> {
+  const inl = (items: Inline[]) => {
+    for (const x of items) if (!isRun(x) && x.type === 'attachment' && x.src.startsWith('asset:')) out.add(x.src.slice(6))
+  }
   for (const b of blocks) {
+    if (b.type === 'paragraph' || b.type === 'heading') inl(b.content)
+    else if (b.type === 'list') for (const it of b.items) inl(it.content)
+    if (b.type === 'image') inl(b.caption)
     if (b.type === 'image' && b.src.startsWith('asset:')) out.add(b.src.slice(6))
-    else if (b.type === 'quote') imageRefs(b.blocks, out)
+    else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') imageRefs(b.blocks, out)
     else if (b.type === 'table') for (const r of b.rows) for (const c of r) imageRefs(c.blocks, out)
   }
   return out
@@ -397,7 +447,10 @@ export function designAttrs(
     comments?: FolioDoc['comments']
     trackChanges?: boolean
     hyphenate?: boolean
+    lineNumbers?: FolioDoc['lineNumbers']
     watermark?: FolioDoc['watermark']
+    goal?: FolioDoc['goal']
+    terms?: FolioDoc['terms']
     sources?: FolioDoc['sources']
     citationStyle?: FolioDoc['citationStyle']
   },
@@ -420,12 +473,16 @@ export function designAttrs(
     math: { macros: doc.math?.macros ?? '' },
     mailMerge: doc.mailMerge ? copy(doc.mailMerge) : null,
     sources: copy(doc.sources ?? []),
+    terms: copy(doc.terms ?? []),
     citationStyle: doc.citationStyle ?? 'apa',
     comments: copy(doc.comments ?? []),
     trackChanges: !!doc.trackChanges,
     hyphenate: !!doc.hyphenate,
+    lineNumbers: doc.lineNumbers ? { ...doc.lineNumbers } : null,
     // L'image du filigrane voyage avec ses données (comme celles des en-têtes).
     watermark: doc.watermark ? { ...copy(doc.watermark), ...(doc.watermark.image && 'assets' in doc ? { image: (doc as FolioDoc).assets[doc.watermark.image.slice(6)] ?? '' } : {}) } : null,
+    goal: doc.goal ? { ...doc.goal } : null,
+    formsOnly: !!(doc as FolioDoc).formsOnly,
     hfAssets,
     theme: cloneTheme(doc.theme),
     styles: JSON.parse(JSON.stringify(doc.styles)) as Record<string, StyleDef>,
@@ -439,7 +496,7 @@ export function designAttrs(
 /** Document Folio → document de l'éditeur (tableaux irréguliers réparés). */
 export function docToPM(doc: FolioDoc): PMNode {
   const ctx: ToCtx = { assets: doc.assets }
-  const content = doc.blocks.flatMap((b) => blockNodes(b, ctx))
+  const content = withAssets(doc.assets, () => doc.blocks.flatMap((b) => blockNodes(b, ctx)))
   let node = n.doc.create({ ...metaAttrs(doc.meta), ...designAttrs(doc) }, content.length ? content : [n.paragraph.create()])
   node.check()
   const tr = fixTables(EditorState.create({ schema, doc: node }))
@@ -448,8 +505,18 @@ export function docToPM(doc: FolioDoc): PMNode {
 }
 
 /** Blocs seuls (pour remplacer le contenu sans toucher aux propriétés). */
+function withAssets<T>(assets: Record<string, string>, fn: () => T): T {
+  const before = convAssets
+  convAssets = assets
+  try {
+    return fn()
+  } finally {
+    convAssets = before
+  }
+}
+
 export function blocksToPM(blocks: Block[], assets: Record<string, string> = {}): PMNode[] {
-  const content = blocks.flatMap((b) => blockNodes(b, { assets }))
+  const content = withAssets(assets, () => blocks.flatMap((b) => blockNodes(b, { assets })))
   return content.length ? content : [n.paragraph.create()]
 }
 
@@ -467,6 +534,12 @@ export function inlineToRuns(node: PMNode): Inline[] {
   node.forEach((child) => {
     const marks = marksFrom(child)
     if (child.type === n.field) items.push({ type: 'field', name: child.attrs.name as FieldName, format: child.attrs.format, ...marks })
+    else if (child.type === n.formfield) items.push(formFrom({ type: 'formfield', ...child.attrs, ...marks }))
+    else if (child.type === n.attachment) {
+      const a = child.attrs
+      // Les octets restent ici (URI data:) : storeAttachments les range dans les ressources.
+      items.push({ type: 'attachment', src: a.src as string, name: a.name as string, ...(typeof a.size === 'number' ? { size: a.size } : {}), ...(a.mime ? { mime: a.mime as string } : {}) })
+    }
     else if (child.type === n.mergefield) items.push({ type: 'mergefield', name: child.attrs.name as string, ...(child.attrs.opts ? { opts: { ...(child.attrs.opts as Record<string, string>) } } : {}), ...marks })
     else if (child.type === n.math) items.push({ type: 'math', tex: child.attrs.tex as string, ...mathMarks(marks) })
     else if (child.type === n.note) items.push({ type: 'note', kind: child.attrs.kind === 'end' ? 'end' : 'foot', blocks: copy(child.attrs.blocks as Block[]) })
@@ -493,7 +566,7 @@ export function inlineToRuns(node: PMNode): Inline[] {
 }
 
 function treeOf(list: PMNode): TreeList {
-  const style: ListStyle = list.type === n.ordered_list ? 'number' : 'bullet'
+  const style: ListStyle = list.type === n.ordered_list ? 'number' : list.type === n.check_list ? 'check' : 'bullet'
   const items: TreeItem[] = []
   list.forEach((li) => {
     let content: Inline[] = []
@@ -503,9 +576,9 @@ function treeOf(list: PMNode): TreeList {
       if (i === 0 && child.type === n.paragraph) {
         content = inlineToRuns(child)
         props = paraFromAttrs(child.attrs)
-      } else if (child.type === n.bullet_list || child.type === n.ordered_list) sublists.push(treeOf(child))
+      } else if (child.type === n.bullet_list || child.type === n.ordered_list || child.type === n.check_list) sublists.push(treeOf(child))
     })
-    items.push({ content, props, sublists })
+    items.push({ content, props, sublists, ...(style === 'check' && li.attrs.checked ? { checked: true } : {}) })
   })
   return { style, items }
 }
@@ -559,12 +632,18 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
       return { type: 'heading', level: node.attrs.level, content: inlineToRuns(node), ...paraFromAttrs(node.attrs) }
     case n.blockquote:
       return { type: 'quote', blocks: pmBlocks(node, ctx) }
+    case n.callout:
+      return { type: 'callout', kind: node.attrs.kind, ...(node.attrs.title ? { title: node.attrs.title } : {}), blocks: pmBlocks(node, ctx) }
     case n.code_block:
       return { type: 'code', language: node.attrs.language, text: node.textContent }
     case n.horizontal_rule:
       return { type: 'divider' }
     case n.equation:
       return { type: 'equation', tex: node.attrs.tex as string, ...(node.attrs.numbered ? { numbered: true as const } : {}) }
+    case n.chart:
+      return chartOf(node)
+    case n.diagram:
+      return diagramOf(node)
     case n.page_break:
       return { type: 'pagebreak' }
     case n.column_break:
@@ -575,7 +654,7 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
       const a = node.attrs
       if (a.kind === 'figures') return { type: 'figures', label: a.label, title: a.title }
       if (a.kind === 'authorities') return { type: 'authorities', category: a.category, title: a.title }
-      if (a.kind === 'bibliography') return { type: 'bibliography', title: a.title, ...(a.all ? { all: true as const } : {}) }
+      if (a.kind === 'bibliography' || a.kind === 'glossary' || a.kind === 'abbreviations') return { type: a.kind, title: a.title, ...(a.all ? { all: true as const } : {}) }
       return { type: 'index', columns: a.columns, title: a.title }
     }
     case n.section_break: {
@@ -611,7 +690,8 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
       return img
     }
     case n.bullet_list:
-    case n.ordered_list: {
+    case n.ordered_list:
+    case n.check_list: {
       const tree = treeOf(node)
       const list: BlockOf<'list'> = {
         type: 'list',
@@ -635,6 +715,7 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
           const c: TableCell = { blocks: pmBlocks(cell, ctx), colspan: cell.attrs.colspan, rowspan: cell.attrs.rowspan }
           if (cell.attrs.bg) c.bg = cell.attrs.bg
           if (cell.attrs.valign) c.valign = cell.attrs.valign
+          if (cell.attrs.textDir) c.textDir = cell.attrs.textDir
           cells.push(c)
         })
         rows.push(cells)
@@ -658,7 +739,7 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
 /** Contenu d'un éditeur secondaire (en-tête, pied de page) → blocs du format et données de ses images. */
 export function pmToBlocks(node: PMNode, given: Record<string, string>): { blocks: Block[]; assets: Record<string, string> } {
   const assets = new AssetTable(given)
-  const blocks = pmBlocks(node, { assets, styles: {} })
+  const blocks = storeAttachments(pmBlocks(node, { assets, styles: {} }), assets)
   return { blocks, assets: assets.result() }
 }
 
@@ -677,6 +758,30 @@ interface EditorFont {
   unicodeRange?: string
 }
 
+/** Fichiers joints : leurs octets (URI data:) dans les ressources, remplacés par « asset:id ». Renvoie des copies. */
+export function storeAttachments(blocks: Block[], assets: AssetTable, extra: Record<string, string> = {}): Block[] {
+  const fix = (items: Inline[]): Inline[] =>
+    items.some((x) => !isRun(x) && x.type === 'attachment')
+      ? items.map((x) => {
+          if (isRun(x) || x.type !== 'attachment') return x
+          if (x.src.startsWith('data:')) return { ...x, src: `asset:${assets.add(x.src)}` }
+          const want = x.src.slice(6)
+          const id = assets.use(want) ?? (hasOwn(extra, want) ? assets.add(extra[want], want) : null)
+          return id ? { ...x, src: `asset:${id}` } : x
+        })
+      : items
+  const walk = (list: Block[]): Block[] =>
+    list.map((b): Block => {
+      if (b.type === 'paragraph' || b.type === 'heading') return { ...b, content: fix(b.content) }
+      if (b.type === 'list') return { ...b, items: b.items.map((it) => ({ ...it, content: fix(it.content) })) }
+      if (b.type === 'image') return { ...b, caption: fix(b.caption) }
+      if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') return { ...b, blocks: walk(b.blocks) } as Block
+      if (b.type === 'table') return { ...b, rows: b.rows.map((row) => row.map((c) => ({ ...c, blocks: walk(c.blocks) }))) }
+      return b
+    })
+  return walk(blocks)
+}
+
 /** Range les images d'en-têtes et de pieds de page dans les ressources du document. */
 function storeHeaderSet(set: HeaderSet, hfAssets: Record<string, string>, assets: AssetTable): HeaderSet {
   const fix = (blocks: Block[]): Block[] =>
@@ -691,7 +796,7 @@ function storeHeaderSet(set: HeaderSet, hfAssets: Record<string, string>, assets
         return b
       }
       if (b.type === 'table') return { ...b, rows: b.rows.map((r) => r.map((c) => ({ ...c, blocks: fix(c.blocks) }))) }
-      if (b.type === 'quote') return { ...b, blocks: fix(b.blocks) }
+      if (b.type === 'quote' || b.type === 'callout') return { ...b, blocks: fix(b.blocks) }
       return b
     })
   return { default: fix(set.default), first: fix(set.first), even: fix(set.even) }
@@ -718,9 +823,13 @@ export function pmToDoc(node: PMNode, identity: Identity): FolioDoc {
     ...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
   }))
   const hfAssets = a.hfAssets as Record<string, string>
-  const headers = storeHeaderSet(a.headers as HeaderSet, hfAssets, assets)
-  const footers = storeHeaderSet(a.footers as HeaderSet, hfAssets, assets)
-  const blocks = pmBlocks(node, ctx)
+  const stored = (set: HeaderSet): HeaderSet => {
+    const out = storeHeaderSet(set, hfAssets, assets)
+    return { default: storeAttachments(out.default, assets, hfAssets), first: storeAttachments(out.first, assets, hfAssets), even: storeAttachments(out.even, assets, hfAssets) }
+  }
+  const headers = stored(a.headers as HeaderSet)
+  const footers = stored(a.footers as HeaderSet)
+  const blocks = storeAttachments(pmBlocks(node, ctx), assets)
   return {
     format: FORMAT,
     version: FORMAT_VERSION,
@@ -742,6 +851,7 @@ export function pmToDoc(node: PMNode, identity: Identity): FolioDoc {
     math: { macros: ((a.math as MathSettings | undefined)?.macros ?? '') as string },
     ...(a.mailMerge ? { mailMerge: copy(a.mailMerge as MailMerge) } : {}),
     ...((a.sources as Source[]).length ? { sources: copy(a.sources as Source[]) } : {}),
+    ...((a.terms as Term[] | undefined)?.length ? { terms: copy(a.terms as Term[]) } : {}),
     ...(a.citationStyle && a.citationStyle !== 'apa' ? { citationStyle: a.citationStyle as CitationStyle } : {}),
     theme: cloneTheme(a.theme as Theme),
     styles,
@@ -750,7 +860,10 @@ export function pmToDoc(node: PMNode, identity: Identity): FolioDoc {
     comments: copy(a.comments as CommentThread[]),
     trackChanges: a.trackChanges === true,
     ...(a.hyphenate ? { hyphenate: true as const } : {}),
+    ...(a.lineNumbers ? { lineNumbers: { ...(a.lineNumbers as LineNumbers) } } : {}),
     ...(a.watermark ? { watermark: storeWatermark(a.watermark as Watermark, assets) } : {}),
+    ...(a.goal ? { goal: { ...(a.goal as WritingGoal) } } : {}),
+    ...(a.formsOnly ? { formsOnly: true as const } : {}),
     // Réglages du fichier, posés par l'application à l'enregistrement (modèle, lecture seule).
     template: false,
     readOnly: false,

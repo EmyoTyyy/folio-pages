@@ -2,7 +2,9 @@ Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologou
 Copyright 2020 The Newsreader Project Authors (https://github.com/productiontype/Newsreader)
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
-These fonts are embedded in Folio Pages under the SIL Open Font License, Version 1.1:
+These fonts are embedded in Folio Pages under the SIL Open Font License, Version 1.1.
+They are subsets made for Folio Pages: Latin and Latin Extended characters,
+weights 400 to 700, common OpenType features (no Reserved Font Name applies):
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

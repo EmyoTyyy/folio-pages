@@ -148,7 +148,7 @@ function image(r: R): unknown {
   if (r.chance(0.4)) img.width = r.pick([0, 120, 240.5])
   if (r.chance(0.1)) img.height = r.pick([0, 80, 300])
   if (r.chance(0.3)) img.align = r.pick(['left', 'center', 'right'])
-  if (r.chance(0.3)) img.wrap = r.pick(['none', 'left', 'right'])
+  if (r.chance(0.3)) img.wrap = r.pick(['none', 'left', 'right', 'tight', 'through', 'behind', 'front'])
   if (r.chance(0.4)) img.caption = r.chance(0.5) ? 'Figure *un*' : runs(r)
   if (r.chance(0.2)) img.crop = { top: 5, left: 10, right: 0, bottom: 2.5 }
   if (r.chance(0.2)) img.rotate = r.pick([90, 180, 270])

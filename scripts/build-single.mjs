@@ -2,7 +2,7 @@
 // Assemble le fichier unique dist/folio-pages.html à partir du build Vite.
 //
 //   head → notices → guide pour les IA → #folio-doc (vide) → écran de chargement
-//   → application compressée (DEFLATE + base86) → vérification du navigateur
+//   → application compressée (DEFLATE + base122) → vérification du navigateur
 //   → chargeur
 //
 // Principe et code du chargeur repris de Bento (MIT). Le fichier produit est
@@ -14,7 +14,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deflateRawSync, inflateRawSync } from 'node:zlib'
 import { transformSync } from 'esbuild'
-import { decode, encode, FORBIDDEN, LOADER_DECODER } from './lib/b86.mjs'
+import zopfli from '@gfx/zopfli'
+import { decode, encode, FORBIDDEN, LOADER_DECODER } from './lib/b122.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p) => readFileSync(join(root, p), 'utf8')
@@ -40,30 +41,39 @@ function fnv1a(bytes) {
   return h.toString(16).padStart(8, '0')
 }
 
-function pack(text, id) {
+/**
+ * DEFLATE le plus serré possible : Zopfli (même format, 4 à 8 % plus petit que zlib niveau 9,
+ * le chargeur ne change pas). FOLIO_FAST=1 : zlib, pour un build de travail rapide.
+ */
+const FAST = process.env.FOLIO_FAST === '1'
+const deflate = (raw) =>
+  FAST
+    ? Promise.resolve(deflateRawSync(raw, { level: 9 }))
+    : new Promise((ok, ko) => zopfli.deflate(raw, { numiterations: 15 }, (e, out) => (e ? ko(e) : ok(Buffer.from(out)))))
+
+async function pack(text, id) {
   const raw = Buffer.from(text, 'utf8')
-  const packed = deflateRawSync(raw, { level: 9 })
+  const packed = await deflate(raw)
   if (!inflateRawSync(packed).equals(raw)) fail(`la charge utile ${id} ne se décompresse pas à l'identique`)
-  const b86 = encode(packed)
-  if (!Buffer.from(decode(b86)).equals(packed)) fail(`la base86 de ${id} ne se relit pas à l'identique`)
-  for (const f of FORBIDDEN) if (b86.includes(f)) fail(`la charge utile ${id} contient « ${f} »`)
+  const coded = encode(packed)
+  if (!Buffer.from(decode(coded)).equals(packed)) fail(`la base122 de ${id} ne se relit pas à l'identique`)
+  for (const f of FORBIDDEN) if (coded.includes(f)) fail(`la charge utile ${id} contient le caractère ${JSON.stringify(f)}`)
   return {
-    tag: `    <script id="${id}" type="folio/deflate-b86" data-len="${raw.length}" data-hash="${fnv1a(raw)}">${b86}</script>`,
+    tag: `    <script id="${id}" type="folio/deflate-b122" data-len="${raw.length}" data-hash="${fnv1a(raw)}">${coded}</script>`,
     raw: raw.length,
-    packed: b86.length,
+    // Octets dans le fichier (UTF-8) : certains caractères en prennent deux.
+    packed: Buffer.byteLength(coded, 'utf8'),
   }
 }
 
-const cssPack = pack(css, 'folio-rt-css')
-const jsPack = pack(js, 'folio-rt')
 // Module .docx : décompressé seulement quand on importe ou exporte un .docx.
-const docxPack = pack(read('build/docx/docx.js'), 'folio-rt-docx')
+const [cssPack, jsPack, docxPack] = await Promise.all([pack(css, 'folio-rt-css'), pack(js, 'folio-rt'), pack(read('build/docx/docx.js'), 'folio-rt-docx')])
 
 // --- chargeur -----------------------------------------------------------------
 const inflaterSrc = read('scripts/lib/inflate-raw.js').replace(/^export function/m, 'function')
 let inflater = transformSync(inflaterSrc + '\nwindow.__folioInflate = inflateRaw', { minify: true, target: 'es2017' }).code.trim()
 inflater = `var inflateRaw = (function(){${inflater.replace('window.__folioInflate=', 'return ')}})();`
-const loader = read('shell/loader.js').replace('/*INFLATER*/', inflater).replace('/*B86*/', LOADER_DECODER.trim())
+const loader = read('shell/loader.js').replace('/*INFLATER*/', inflater).replace('/*DECODER*/', LOADER_DECODER.trim())
 const check = read('shell/check.js')
 
 for (const [name, code] of [['chargeur', loader], ['vérification', check]]) {
@@ -110,7 +120,7 @@ const closes = (outsideComments.match(/<\/script>/g) ?? []).length
 if (opens !== closes) fail(`balises script déséquilibrées (${opens} ouvertures, ${closes} fermetures)`)
 const docAt = html.indexOf('id="folio-doc"')
 if (html.indexOf('folio-doc"') !== docAt + 4) fail('la première mention de folio-doc" doit être le bloc lui-même')
-if (docAt < 0 || docAt > html.indexOf('type="folio/deflate-b86"')) fail('le bloc #folio-doc doit précéder le code de l’application')
+if (docAt < 0 || docAt > html.indexOf('type="folio/deflate-b122"')) fail('le bloc #folio-doc doit précéder le code de l’application')
 if (!/<script type="application\/folio\+json" id="folio-doc"><\/script>/.test(html)) fail('le bloc #folio-doc doit être vide dans l’application vierge')
 const bytes = Buffer.byteLength(html, 'utf8')
 if (bytes > MAX_BYTES) fail(`fichier trop gros : ${bytes} octets (limite ${MAX_BYTES})`)

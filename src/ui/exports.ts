@@ -5,6 +5,7 @@ import type { FolioApp } from '../app'
 import { strToU8, zipSync } from 'fflate'
 import { outline } from '../editor/outline'
 import { exportEpub } from '../export/epub'
+import { exportPdfUi } from './pdf'
 import { toHtml } from '../export/html'
 import { exportOdt, ODT_MIME } from '../export/odt'
 import { toMarkdown, toPlainText } from '../export/text'
@@ -62,7 +63,7 @@ let busy = false
 
 export async function exportAs(app: FolioApp, format: ExportFormat): Promise<void> {
   if (format === 'docx') return P.exportDocxUi(app)
-  if (format === 'pdf') return void window.print()
+  if (format === 'pdf') return exportPdfUi(app)
   if (busy) return
   busy = true
   try {
@@ -130,7 +131,7 @@ export function exportDialog(app: FolioApp, initial: ExportFormat = 'odt'): void
         value: 'go',
         primary: true,
         // La fenêtre se ferme d'abord : l'impression ne doit pas l'imprimer.
-        run: () => void setTimeout(() => void exportAs(app, chosen), chosen === 'pdf' ? 120 : 0),
+        run: () => void setTimeout(() => void exportAs(app, chosen), 0),
       },
     ],
   })

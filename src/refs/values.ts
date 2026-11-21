@@ -30,7 +30,7 @@ function paragraphs(blocks: Block[], out: Para[] = []): Para[] {
   for (const b of blocks) {
     if (b.type === 'paragraph' || b.type === 'heading') out.push({ content: b.content })
     else if (b.type === 'list') for (const it of b.items) out.push({ content: it.content })
-    else if (b.type === 'quote' || b.type === 'columns') paragraphs(b.blocks, out)
+    else if (b.type === 'quote' || b.type === 'callout' || b.type === 'columns') paragraphs(b.blocks, out)
     else if (b.type === 'table') for (const row of b.rows) for (const c of row) paragraphs(c.blocks, out)
     else if (b.type === 'image') out.push({ content: b.caption })
   }
@@ -78,6 +78,10 @@ export function formatRefs(doc: FolioDoc, o: FormatRefsOptions): FormatRefs {
       else if (x.type === 'xref') xrefs.push({ x, order })
       else if (x.type === 'cite') cites.push(x)
       else if (x.type === 'xe') entries.push(x)
+      else if (x.type === 'note') {
+        // Citations dans une note (notes Chicago) : à leur place dans l'ordre du texte.
+        for (const q of paragraphs(x.blocks)) for (const y of q.content) if (!isRun(y) && y.type === 'cite') cites.push(y)
+      }
     }
     if (first) captions.push({ label: first.label, number: seq.get(first) ?? 0, text: textOf(p, seq) })
   }

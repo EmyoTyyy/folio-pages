@@ -2,6 +2,9 @@
 // secours et les actions sur le document. L'interface (ui/) appelle ces
 // méthodes ; window.folio (api.ts) aussi.
 
+import { collab } from 'prosemirror-collab'
+import type { SyncHub } from './sync/hub'
+import type { SyncClient } from './sync/client'
 import { TRACK_SKIP } from './editor/track'
 import { selectAll } from 'prosemirror-commands'
 import { closeHistory, redo, undo } from 'prosemirror-history'
@@ -27,7 +30,8 @@ import { prettyJson } from './format/json'
 import { loadDocument, type LoadResult } from './format/load'
 import { emptyMeta, mintId, type FolioDoc } from './format/types'
 import type { Key } from './i18n/dict'
-import { formatDate, lang, t } from './i18n/i18n'
+import { fileSize, formatDate, lang, t } from './i18n/i18n'
+import { markupClasses } from './ui/markup'
 import { deleteSnapshot, findBlankSnapshot, getSnapshot, pruneSnapshots, putSnapshot } from './file/recovery'
 import { canWriteInPlace, fileNameFor, openedFileName, Saver, type FsHandle, type SaveOutcome } from './file/save'
 import { rememberRecent } from './file/open'
@@ -60,7 +64,7 @@ export interface AppInit {
 /** Variantes d'enregistrement (CLAUDE.md 4.8). */
 export type SaveVariant = 'copy' | 'new' | 'template' | 'readonly'
 
-export type SaveStatus = 'pristine' | 'dirty' | 'saving' | 'saved' | 'downloaded' | 'error'
+export type SaveStatus = 'pristine' | 'dirty' | 'saving' | 'saved' | 'downloaded' | 'error' | 'synced'
 
 /** Ce qui compte pour comparer deux états du document (sans identité ni dates). */
 function contentKey(doc: FolioDoc): string {
@@ -92,6 +96,16 @@ export const AUTO_VERSION_MS = 10 * 60 * 1000
 
 export class FolioApp {
   readonly view: EditorView
+  /** Contexte de l'éditeur (aussi pour les volets du fractionnement). */
+  editorCtx!: EditorContext
+  /** Autres vues du document : volets et fenêtres ouvertes d'ici (fenêtre principale). */
+  sync: SyncHub | null = null
+  /** Fenêtre ouverte par une autre : elle lui envoie ses modifications. */
+  syncClient: SyncClient | null = null
+  /** Numéro de cette fenêtre (1 : la principale). */
+  windowIndex = 1
+  /** Après un changement complet d'état (document ouvert, historique oublié). */
+  onStateReset: (() => void) | null = null
   boot: BootKind
   /** Mode lecture : le document ne se modifie pas. */
   reading = false
@@ -136,6 +150,12 @@ export class FolioApp {
   onFileDrop: ((file: File) => void) | null = null
   /** Modifier le lien sous le curseur (l'interface ouvre sa fenêtre). */
   editLink: (() => void) | null = null
+  private formHintAt = 0
+  /** Menu du type d'un encadré (posé par l'interface). */
+  calloutMenu: ((pos: number, anchor: HTMLElement) => void) | null = null
+  /** Modifier un graphique (installé par l'interface). */
+  editChart: ((pos: number) => void) | null = null
+  editDiagram: ((pos: number) => void) | null = null
   /** Modifier une formule (l'interface ouvre l'éditeur d'équation). */
   editMath: ((view: EditorView, pos: number) => void) | null = null
   /** Branchements des équations, partagés avec les éditeurs secondaires. */
@@ -164,6 +184,7 @@ export class FolioApp {
       },
       paste: {
         reduceImages: () => settings().reduceImages,
+        layout: () => ({ wrap: settings().imageWrap, align: settings().imageAlign }),
         onImageError: (reason) => toast(t(reason === 'too-large' ? 'image.tooLarge' : 'image.unreadable'), { kind: 'error' }),
       },
       markdownTyping: () => settings().markdownTyping,
@@ -185,6 +206,8 @@ export class FolioApp {
           emptyIndex: t('ref.emptyIndex'),
           emptyAuthorities: t('ref.emptyAuthorities'),
           emptyBibliography: t('ref.emptyBibliography'),
+          emptyGlossary: t('gl.emptyGlossary'),
+          emptyAbbreviations: t('gl.emptyAbbreviations'),
           see: t('ref.see'),
           passim: 'passim',
           category: (c) => t(`ref.cat.${c}` as Key),
@@ -197,6 +220,31 @@ export class FolioApp {
         open: (pos) => this.openNote?.(pos),
       },
       onShortcut: (name) => this.onShortcut?.(name) ?? false,
+      attachment: {
+        size: (b) => fileSize(b),
+        title: (name, size) => t('obj.attachTitle', { name, size: size || '—' }),
+      },
+      forms: {
+        label: (k) => t(k === 'choose' ? 'form.choose' : 'form.type'),
+        // Une frappe refusée : on le dit une fois, pas à chaque touche.
+        blocked: () => {
+          if (Date.now() - this.formHintAt < 4000) return
+          this.formHintAt = Date.now()
+          toast(t('form.lockedHint'), { kind: 'info' })
+        },
+      },
+      chart: {
+        edit: (pos) => this.editChart?.(pos),
+        label: () => t('chart.editHint'),
+      },
+      diagram: {
+        edit: (pos) => this.editDiagram?.(pos),
+        label: () => t('dg.editHint'),
+      },
+      callout: {
+        menu: (pos, anchor) => this.calloutMenu?.(pos, anchor),
+        labels: () => ({ icon: t('callout.kindMenu'), title: t('callout.rename') }),
+      },
       math: this.mathHooks,
       links: {
         labels: () => ({ open: t('link.open'), edit: t('link.editShort'), remove: t('link.removeShort'), hint: t('link.ctrlClick', { key: /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl' }) }),
@@ -206,6 +254,7 @@ export class FolioApp {
         blocked: () => toast(t('offline.blocked'), { kind: 'info' }),
       },
     }
+    this.editorCtx = ctx
     let state = EditorState.create({ schema, doc: docToPM(init.doc), plugins: editorPlugins(ctx) })
     // Les listes qui continuent la numérotation prennent leur numéro dès l'ouverture.
     const fix = fixNumbering(state)
@@ -217,7 +266,7 @@ export class FolioApp {
       state,
       nodeViews: nodeViews(ctx),
       attributes: (s) => ({
-        class: 'fp-prose' + (settings().showMarks ? ' show-marks' : '') + ` track-${settings().trackView}` + (s.doc.attrs.hyphenate ? ' is-hyphenated' : ''),
+        class: 'fp-prose' + (settings().showMarks ? ' show-marks' : '') + ` track-${settings().trackView}` + markupClasses() + (s.doc.attrs.hyphenate ? ' is-hyphenated' : ''),
         spellcheck: settings().spellcheck ? 'true' : 'false',
         lang: s.doc.attrs.lang || lang(),
         role: 'textbox',
@@ -267,6 +316,9 @@ export class FolioApp {
     this.view.updateState(next)
     if (tr.docChanged) {
       this.saveFailed = false
+      // Les autres vues du document reçoivent la modification (juste après).
+      this.sync?.schedule(this.view)
+      this.syncClient?.schedule()
       this.scheduleSnapshot()
       this.updateDocStyle()
       for (const fn of this.docListeners) fn(tr)
@@ -418,6 +470,8 @@ export class FolioApp {
   }
 
   get dirty(): boolean {
+    // Une fenêtre synchronisée : c'est la principale qui garde le fichier.
+    if (this.syncClient?.active) return false
     return this.protectionChanged || this.savedDoc === null || !this.state.doc.eq(this.savedDoc)
   }
 
@@ -516,6 +570,7 @@ export class FolioApp {
   }
 
   status(): SaveStatus {
+    if (this.syncClient?.active) return 'synced'
     if (this.saving) return 'saving'
     if (this.saveFailed) return 'error'
     if (this.dirty) return 'dirty'
@@ -529,6 +584,15 @@ export class FolioApp {
 
   get writesInPlace(): boolean {
     return canWriteInPlace()
+  }
+
+  /** Un fichier ouvert où l'on peut réécrire en place (enregistrement automatique). */
+  get hasFileHandle(): boolean {
+    return this.saver.hasHandle
+  }
+
+  get isSaving(): boolean {
+    return this.saving
   }
 
   title(): string {
@@ -679,6 +743,51 @@ export class FolioApp {
     return true
   }
 
+  /**
+   * Fenêtre synchronisée : le document reçu de la fenêtre principale devient le sien, à cette version
+   * de la synchronisation. Il passe par la validation du format (comme un fichier ouvert) ; s'il en
+   * ressort différent, cette fenêtre garde la version validée et continue seule (renvoie false).
+   */
+  adoptShared(json: unknown, version: number): boolean {
+    let doc: PMNode
+    try {
+      doc = schema.nodeFromJSON(json)
+      doc.check()
+    } catch {
+      return false
+    }
+    const checked = loadDocument(pmToDoc(doc, this.identity) as unknown as Record<string, unknown>, { now: new Date().toISOString() })
+    if (!checked.ok) return false
+    const clean = docToPM(checked.doc)
+    const same = clean.eq(doc)
+    const plugins = this.view.state.plugins.filter((p) => !(p as unknown as { key: string }).key.startsWith('collab$'))
+    const state = EditorState.create({ schema, doc: same ? doc : clean, plugins: same ? [...plugins, collab({ version })] : plugins })
+    this.view.updateState(state)
+    this.view.setProps({})
+    this.savedDoc = state.doc
+    this.updateDocStyle()
+    for (const fn of this.docListeners) fn(state.tr)
+    this.notify()
+    return same
+  }
+
+  /** Le document n'est plus celui du fichier (fenêtre détachée : ses modifications sont à enregistrer). */
+  markUnsaved(): void {
+    this.savedDoc = null
+    this.notify()
+  }
+
+  /** Oublie l'historique d'annulation (après un caviardage : le texte retiré ne doit plus revenir). */
+  clearHistory(): void {
+    // Sans le greffon d'historique, puis de nouveau avec lui : son état repart de zéro, celui des autres
+    // greffons est gardé (dont les étapes pas encore envoyées aux autres vues du document).
+    const plugins = this.view.state.plugins
+    const without = this.view.state.reconfigure({ plugins: plugins.filter((p) => !(p as unknown as { key: string }).key.startsWith('history$')) })
+    this.view.updateState(without.reconfigure({ plugins }))
+    this.view.setProps({})
+    this.notify()
+  }
+
   /** Nouvel état de l'éditeur (historique vide) ; `saved` : le fichier contient déjà ce document. */
   private resetState(doc: FolioDoc, saved: boolean): void {
     let state = EditorState.create({ schema, doc: docToPM(doc), plugins: this.view.state.plugins })
@@ -686,6 +795,7 @@ export class FolioApp {
     if (fix) state = state.apply(fix.setMeta('addToHistory', false))
     this.view.updateState(state)
     this.view.setProps({})
+    this.onStateReset?.()
     this.savedDoc = saved ? state.doc : null
     this.updateDocStyle()
     for (const fn of this.docListeners) fn(state.tr)
@@ -740,7 +850,9 @@ export class FolioApp {
   }
 
   windowTitle(): string {
-    return `${this.displayTitle()} — Folio Pages`
+    // Plusieurs fenêtres sur le document : chacune son numéro.
+    const numbered = this.windowIndex > 1 || (this.sync?.windows ?? 0) > 0
+    return `${this.displayTitle()}${numbered ? ` (${this.windowIndex})` : ''} — Folio Pages`
   }
 
   suggestedFileName(): string {
@@ -762,6 +874,12 @@ export class FolioApp {
 
   async save(): Promise<SaveOutcome | null> {
     if (this.saving) return null
+    // Fenêtre synchronisée : la principale enregistre le fichier.
+    if (this.syncClient?.active) {
+      this.syncClient.requestSave()
+      toast(t('win.savedByMain'), { kind: 'info' })
+      return null
+    }
     if (this.lockedReadOnly) {
       toast(t('read.locked'), { kind: 'info', action: { label: t('read.editCopy'), run: () => this.editCopy() } })
       return null
@@ -836,6 +954,7 @@ export class FolioApp {
   // --- copie de secours ---------------------------------------------------
 
   private scheduleSnapshot(): void {
+    if (this.syncClient?.active) return
     const now = Date.now()
     if (!this.snapshotDue) this.snapshotDue = now + SNAPSHOT_MAX_WAIT
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer)
@@ -870,6 +989,14 @@ export class FolioApp {
   async versions(): Promise<Version[]> {
     await this.versionWrites
     return listVersions(this.identity.id)
+  }
+
+  /** Le document d'une version gardée (ouverte si elle est scellée), ou null s'il est illisible. */
+  async versionDoc(v: Version): Promise<FolioDoc | null> {
+    const json = this.sealer ? await this.sealer.open(v.json) : v.json
+    if (json === null) return null
+    const res = loadDocument(json)
+    return res.ok ? res.doc : null
   }
 
   /** Revient à une version : une étape annulable ; l'état quitté est gardé dans l'historique. */
@@ -984,12 +1111,17 @@ export class FolioApp {
     if (this.lockedReadOnly) this.editCopy()
     this.setReading(false)
     const wasDemo = this.isDemo
-    const meta = wasDemo ? emptyMeta() : this.getDoc().meta
     this.isDemo = false
-    // La démonstration perd aussi sa liste de destinataires d'exemple.
-    // La démonstration a sa liste de destinataires et ses sources : un document vide ne les garde pas.
-    const { mailMerge, sources, ...rest } = this.getDoc()
-    const blank = { ...rest, ...(wasDemo || !mailMerge ? {} : { mailMerge }), ...(wasDemo || !sources ? {} : { sources }), meta, blocks: [], comments: [] }
+    let blank: FolioDoc
+    if (wasDemo) {
+      // Depuis la démonstration : un document neuf. Rien de la démonstration ne reste
+      // (en-tête « {{title}} », pied de page, style « Astuce », destinataires, sources…).
+      const fresh = loadDocument({ format: 'folio/doc', version: 1, blocks: [] })
+      blank = { ...(fresh.ok ? fresh.doc : this.getDoc()), meta: emptyMeta(), blocks: [], comments: [] }
+    } else {
+      // Un document de l'utilisateur garde sa mise en page, son thème, ses propriétés, ses listes.
+      blank = { ...this.getDoc(), blocks: [], comments: [] }
+    }
     // Depuis la démonstration : le thème, les styles et la mise en page « par défaut » s'il y en a.
     this.replaceDocument(wasDemo ? withDefaultDesign(blank) : blank, !wasDemo)
     this.view.focus()

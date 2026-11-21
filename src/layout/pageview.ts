@@ -3,12 +3,15 @@
 // notes (en bas des pages, à la fin ; en vue web, à la suite du texte),
 // réglages d'impression, passage vue page ⇄ vue web.
 
+import { AUTO_DISTANCE, drawLineNumbers, lineLabels, measureLines } from './linenumbers'
+import type { LineNumbers } from '../format/types'
+import { findState, markNoteHits } from '../editor/find'
 import { mathContextOf } from '../editor/math'
 import type { FolioApp } from '../app'
 import { collectNotes, noteLabels, refreshNotes, type NoteRef } from '../editor/notes'
 import { refreshFields } from '../editor/views'
 import { closeHistory } from 'prosemirror-history'
-import { NodeSelection, TextSelection } from 'prosemirror-state'
+import { NodeSelection, Selection, TextSelection } from 'prosemirror-state'
 import type { Node as PMNode } from 'prosemirror-model'
 import type { FieldContext } from '../format/fields'
 import { loadNoteBlocks } from '../format/load'
@@ -17,9 +20,12 @@ import { t } from '../i18n/i18n'
 import { settings, updateSettings } from '../settings'
 import { h } from '../ui/dom'
 import { HeaderFooterEditor } from './hfeditor'
+import { outlineKey } from '../editor/outlineview'
 import { GAP, Paginator, geometry, paginationKey, type Geometry, type NotesLayout, type PageInfo, type SectionInfo, type SectionShift } from './pages'
 import { pageLabel } from './paginate'
+import { displayScale } from './scale'
 import { drawSheets, fillFields, renderBlocks, type HeaderKind, type HeaderWhich, type SheetSpec } from './sheets'
+import { fillNoteCites, refsKey } from '../editor/refs'
 
 /** Une section, réglages hérités résolus. */
 interface Section {
@@ -64,10 +70,36 @@ export function sheetLayout(pages: PageSetup[]): SheetLayout {
   return { width, textLeft, textRight, geoms, sheetLeft, shifts, mixed: geoms.some((g) => key(g) !== key(geoms[0])) }
 }
 
+/** Options d'une impression : pages (indices à partir de 0), livret plié, contenu ajouté à la fin. */
+export interface PrintOptions {
+  pages?: number[]
+  booklet?: boolean
+  extra?: HTMLElement
+}
+
+/**
+ * Ordre d'impression d'un livret de n pages (complété à un multiple de 4 par
+ * des pages blanches, notées -1) : chaque feuille a un recto et un verso, et
+ * l'on plie la pile au milieu. Paires [gauche, droite], recto puis verso.
+ */
+export function bookletOrder(n: number): [number, number][] {
+  const total = Math.max(4, Math.ceil(n / 4) * 4)
+  const at = (i: number) => (i < n ? i : -1)
+  const out: [number, number][] = []
+  for (let s = 0; s < total / 4; s++) {
+    out.push([at(total - 1 - 2 * s), at(2 * s)])
+    out.push([at(2 * s + 1), at(total - 2 - 2 * s)])
+  }
+  return out
+}
+
 export class PageView {
   readonly paginator: Paginator
   private readonly sheets: HTMLElement
   private readonly overlay: HTMLElement
+  /** Numéros de ligne, dans la marge. */
+  private readonly lineLayer: HTMLElement
+  private lineTimer = 0
   private readonly printStyle: HTMLStyleElement
   /** Mesure des notes (invisible) et notes à la suite du texte (vue web). */
   private readonly measureBox: HTMLElement
@@ -92,7 +124,8 @@ export class PageView {
     this.measureBox = h('div', { class: 'fp-hf fp-notes-measure', 'aria-hidden': 'true' })
     this.endList = h('div', { class: 'fp-hf fp-notes-end', role: 'region', 'aria-label': t('note.list') })
     page.prepend(this.sheets)
-    page.append(this.endList, this.overlay, this.measureBox)
+    this.lineLayer = h('div', { class: 'fp-line-numbers', 'aria-hidden': 'true' })
+    page.append(this.endList, this.overlay, this.measureBox, this.lineLayer)
     this.printStyle = h('style', { id: 'fp-print-style', 'data-folio-transient': '' })
     document.head.append(this.printStyle)
 
@@ -148,7 +181,31 @@ export class PageView {
     })
     // Un clic dans le texte ferme l'en-tête (ou la note) en cours de modification.
     // (à la capture : avant l'éditeur, dont le double-clic sur un appel ouvre une note).
-    app.view.dom.addEventListener('mousedown', () => this.closeEditor(), true)
+    // Le curseur est posé ici, au point du clic : Firefox perd le focus quand l'éditeur
+    // qui l'avait disparaît pendant le clic (plus de curseur, plus de frappe).
+    app.view.dom.addEventListener(
+      'mousedown',
+      (e) => {
+        if (!this.editor) return
+        this.closeEditor()
+        if (e.button !== 0 || app.reading) return
+        e.preventDefault()
+        this.caretNear(e.clientX, e.clientY, e.shiftKey)
+      },
+      true,
+    )
+    // Un clic sur la page hors du texte (marges, sous la dernière ligne, page vide, en-tête
+    // qu'on ne modifie pas) : l'en-tête ouvert se ferme et le curseur va au point le plus proche.
+    page.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || app.reading) return
+      const target = e.target as HTMLElement
+      const zone = target.closest('.fp-hf-zone')
+      const blank = target === page || target === app.view.dom.parentElement || (zone && !zone.classList.contains('is-editing') && !target.closest('.fp-note'))
+      if (!blank) return
+      e.preventDefault()
+      this.closeEditor()
+      this.caretNear(e.clientX, e.clientY, e.shiftKey)
+    })
     // Notes : un clic sur le texte d'une note l'ouvre ; sur son numéro, on retourne à l'appel.
     const noteClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
@@ -164,12 +221,17 @@ export class PageView {
 
     // Impression de formats mélangés : chaque page est imprimée à part, à son format.
     window.addEventListener('beforeprint', () => this.preparePrint())
-    window.addEventListener('afterprint', () => this.cleanupPrint())
+    window.addEventListener('afterprint', () => {
+      this.cleanupPrint()
+      this.printOptions = null
+    })
 
     this.setMode(settings().view)
   }
 
   private printBox: HTMLElement | null = null
+  /** Options de la prochaine impression (fenêtre Imprimer) : pages, livret, page des commentaires. */
+  printOptions: PrintOptions | null = null
 
   /**
    * Avant l'impression, si les sections n'ont pas toutes le même format : une
@@ -181,12 +243,14 @@ export class PageView {
     // (Pas de nouveau calcul ici : les styles d'impression sont déjà actifs, les mesures seraient fausses.)
     if (this.mode !== 'page') return
     const lay = this.layout()
-    if (!lay.mixed) return
+    const o = this.printOptions
+    if (!lay.mixed && !o) return
     const pages = this.paginator.pages
     const box = h('div', { class: 'fp-print-pages', 'aria-hidden': 'true' })
-    pages.forEach((pg, k) => {
+    const sliceOf = (k: number): HTMLElement => {
+      const pg = pages[k]
       const g = this.paginator.geometryOf(pg.section)
-      const slice = h('div', { class: 'fp-print-page', 'data-sec': String(pg.section) })
+      const slice = h('div', { class: 'fp-print-page', 'data-sec': String(pg.section), 'data-page': String(k + 1) })
       slice.style.width = `${g.width}px`
       slice.style.height = `${g.height}px`
       slice.style.setProperty('page', `fp-sec-${pg.section}`)
@@ -195,13 +259,58 @@ export class PageView {
       copy.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'))
       copy.querySelectorAll('[contenteditable]').forEach((el) => el.setAttribute('contenteditable', 'false'))
       copy.style.position = 'absolute'
-      copy.style.top = `${-this.paginator.sheetOffset(k, pages)}px`
+      const offset = this.paginator.sheetOffset(k, pages)
+      copy.style.top = `${-offset}px`
+      // Coupée au bas de sa page : la suite du document, même masquée, ajouterait des feuilles blanches.
+      copy.style.height = `${offset + g.height}px`
+      copy.style.overflow = 'hidden'
       copy.style.left = `${-(lay.sheetLeft[pg.section] ?? 0)}px`
       copy.style.transform = 'none'
       copy.style.margin = '0'
       slice.append(copy)
-      box.append(slice)
-    })
+      return slice
+    }
+    const chosen = (o?.pages ?? pages.map((_, k) => k)).filter((k) => k >= 0 && k < pages.length)
+    if (o?.booklet && chosen.length) {
+      // Livret : deux pages réduites côte à côte sur une feuille à l'italienne, dans l'ordre du pliage.
+      const g = this.paginator.geometryOf(pages[chosen[0]].section)
+      const sheetW = g.height
+      const sheetH = g.width
+      const scale = Math.min(sheetW / 2 / g.width, sheetH / g.height)
+      const mm = (px: number) => Math.round(((px * 25.4) / 96) * 100) / 100
+      box.append(h('style', {}, `@page fp-booklet{size:${mm(sheetW)}mm ${mm(sheetH)}mm;margin:0}`))
+      for (const [left, right] of bookletOrder(chosen.length)) {
+        const side = h('div', { class: 'fp-print-page fp-print-sheet' })
+        side.style.width = `${sheetW}px`
+        side.style.height = `${sheetH}px`
+        side.style.setProperty('page', 'fp-booklet')
+        for (const i of [left, right]) {
+          const half = h('div', { class: 'fp-print-half' })
+          half.style.width = `${sheetW / 2}px`
+          half.style.height = `${sheetH}px`
+          if (i >= 0) {
+            const slice = sliceOf(chosen[i])
+            // Le format de la face, pas celui de la page (sinon le navigateur commencerait une feuille).
+            slice.style.setProperty('page', 'fp-booklet')
+            // Réduite par « zoom » (pas par une transformation) : sa taille dans la mise en page diminue aussi,
+            // sinon elle déborderait de la face et le navigateur ajouterait des feuilles blanches.
+            slice.style.setProperty('zoom', String(scale))
+            half.append(slice)
+          }
+          side.append(half)
+        }
+        box.append(side)
+      }
+    } else for (const k of chosen) box.append(sliceOf(k))
+    if (o?.extra) {
+      // Page des commentaires (ou autre ajout), à la taille de la première page.
+      const g = this.paginator.geometryOf(0)
+      const extra = h('div', { class: 'fp-print-page fp-print-extra' }, o.extra)
+      extra.style.width = `${g.width}px`
+      extra.style.minHeight = `${g.height}px`
+      extra.style.setProperty('page', 'fp-sec-0')
+      box.append(extra)
+    }
     document.body.append(box)
     document.documentElement.classList.add('fp-print-slices')
     this.printBox = box
@@ -267,16 +376,20 @@ export class PageView {
     })
   }
 
-  get mode(): 'page' | 'web' | 'draft' {
-    return this.page.classList.contains('is-paged') ? 'page' : this.page.classList.contains('is-draft') ? 'draft' : 'web'
+  get mode(): 'page' | 'web' | 'draft' | 'outline' {
+    return this.page.classList.contains('is-paged') ? 'page' : this.page.classList.contains('is-outline') ? 'outline' : this.page.classList.contains('is-draft') ? 'draft' : 'web'
   }
 
   /** Vue page, vue web, ou brouillon (texte continu, sans habillage, sauts visibles, images en vignette). */
-  setMode(mode: 'page' | 'web' | 'draft'): void {
+  setMode(mode: 'page' | 'web' | 'draft' | 'outline'): void {
     this.closeEditor()
     if (settings().view !== mode) updateSettings({ view: mode })
     this.page.classList.toggle('is-paged', mode === 'page')
     this.page.classList.toggle('is-draft', mode === 'draft')
+    // Plan : texte continu, comme le brouillon, avec les titres repliables.
+    this.page.classList.toggle('is-outline', mode === 'outline')
+    const view = this.app.view
+    if (!!outlineKey.getState(view.state)?.on !== (mode === 'outline')) view.dispatch(view.state.tr.setMeta(outlineKey, { on: mode === 'outline' }).setMeta('addToHistory', false))
     // Les feuilles sont à redessiner (la vue web les a retirées).
     this.lastSignature = ''
     this.fieldsSignature = ''
@@ -286,6 +399,8 @@ export class PageView {
       this.paginator.setEnabled(false)
       this.sheets.replaceChildren()
       this.overlay.replaceChildren()
+      this.lineLayer.replaceChildren()
+      delete this.lineLayer.dataset.sig
     }
     this.renderEndList()
     this.app.notifyUi()
@@ -354,6 +469,7 @@ export class PageView {
       })
       this.drawRepeatedHeaders(pages)
     }
+    this.scheduleLineNumbers(pages)
     // Les numéros d'appel suivent les pages quand la numérotation recommence à chaque page.
     if ((a.notes as NoteSettings).foot.restart === 'page') {
       const sig = labels.join(',')
@@ -379,7 +495,7 @@ export class PageView {
   private drawRepeatedHeaders(pages: PageInfo[]): void {
     if (!this.paginator.repeats.length) return
     const paper = this.page.getBoundingClientRect()
-    const scale = this.page.offsetWidth ? paper.width / this.page.offsetWidth : 1
+    const scale = displayScale(this.page)
     for (const r of this.paginator.repeats) {
       const wrap = this.app.view.nodeDOM(r.table) as HTMLElement | null
       const table = wrap?.querySelector('table')
@@ -431,6 +547,41 @@ export class PageView {
     return found
   }
 
+  // --- numéros de ligne --------------------------------------------------------
+
+  /** Après la mise en page : les numéros suivent les lignes (une fois par image affichée). */
+  private scheduleLineNumbers(pages: PageInfo[]): void {
+    cancelAnimationFrame(this.lineTimer)
+    this.lineTimer = requestAnimationFrame(() => this.drawLineNumbers(pages))
+  }
+
+  private drawLineNumbers(pages: PageInfo[]): void {
+    const s = this.app.state.doc.attrs.lineNumbers as LineNumbers | null
+    if (!s || this.mode !== 'page') {
+      if (this.lineLayer.childNodes.length) this.lineLayer.replaceChildren()
+      delete this.lineLayer.dataset.sig
+      return
+    }
+    const tops = pages.map((_, k) => this.paginator.sheetOffset(k, pages) + k * GAP)
+    const lines = measureLines(
+      {
+        page: this.page,
+        prose: this.app.view.dom as HTMLElement,
+        pageOf: (y) => {
+          let k = 0
+          while (k + 1 < tops.length && tops[k + 1] <= y) k++
+          return { page: k, section: pages[k]?.section ?? 0 }
+        },
+      },
+      s.distance ?? AUTO_DISTANCE,
+    )
+    // La police et la couleur du texte (ses variables sont posées sur le texte, pas sur la feuille).
+    const cs = getComputedStyle(this.app.view.dom)
+    this.lineLayer.style.fontFamily = cs.fontFamily
+    this.lineLayer.style.color = cs.color
+    drawLineNumbers(this.lineLayer, lineLabels(lines, s))
+  }
+
   // --- notes ---------------------------------------------------------------
 
   /** Une note telle qu'elle est dessinée : numéro (retour à l'appel) et texte. */
@@ -439,14 +590,43 @@ export class PageView {
     const body = h('div', { class: 'fp-note__body' })
     body.append(renderBlocks(ref.node.attrs.blocks as Block[], {}, mathContextOf(this.app.state)))
     fillFields(body, ctx ?? { ...this.app.fieldContext(), page: 1, pages: 1 })
+    this.markHits(body, ref.pos)
+    // Citations de la note (notes Chicago) : leur texte vient du calcul des références.
+    const cites = refsKey.getState(this.app.state)?.data.noteCites.get(ref.pos)
+    if (cites) fillNoteCites(body, cites)
     return h('div', { class: `fp-note fp-note--${ref.kind}`, 'data-pos': String(ref.pos) }, num, body)
   }
+
+  /** Résultats de la recherche dans le rendu d'une note. */
+  private markHits(body: HTMLElement, pos: number): void {
+    const fs = findState(this.app.state)
+    if (!fs?.query && !body.querySelector('mark.fp-find-hit')) return
+    const first = fs ? fs.matches.findIndex((m) => m.note === pos) : -1
+    const cur = fs?.matches[fs.current]
+    markNoteHits(body, fs?.query ?? null, cur?.note === pos && first >= 0 ? fs!.current - first : -1)
+  }
+
+  /** Met à jour les résultats de la recherche dans les notes dessinées (pas dans celle qu'on modifie). */
+  refreshFindHits(): void {
+    for (const root of [this.overlay, this.endList])
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>('.fp-note[data-pos]:not(.is-editing)'))) {
+        const body = el.querySelector<HTMLElement>('.fp-note__body')
+        if (body) this.markHits(body, Number(el.dataset.pos))
+      }
+  }
+
+  /** Position de l'appel de la note ouverte (null : aucune). */
+  get openNotePos(): number | null {
+    return this.editor?.kind === 'note' && this.editor.isOpen ? this.notePos : null
+  }
+  private notePos: number | null = null
 
   /** Hauteur de chaque note, dessinée à la largeur du texte (mémorisée tant que rien ne change). */
   private measureNotes(refs: NoteRef[], labels: string[]): number[] {
     const g = geometry(this.setup())
     const a = this.app.state.doc.attrs
-    const key = JSON.stringify([g.contentWidth, a.styles, a.theme, (a.fonts as unknown[]).length])
+    const cites = refsKey.getState(this.app.state)?.data.noteCites
+    const key = JSON.stringify([g.contentWidth, a.styles, a.theme, (a.fonts as unknown[]).length, cites ? [...cites] : null])
     if (key !== this.noteHeightsKey || this.noteHeights.size > 4000) {
       this.noteHeightsKey = key
       this.noteHeights.clear()
@@ -457,7 +637,7 @@ export class PageView {
       const box = this.measureBox
       box.style.width = `${g.contentWidth}px`
       box.replaceChildren(...missing.map((i) => this.noteElement(refs[i], labels[i])))
-      const scale = this.page.offsetWidth ? this.page.getBoundingClientRect().width / this.page.offsetWidth : 1
+      const scale = displayScale(this.page)
       Array.from(box.children).forEach((el, k) => this.noteHeights.set(keys[missing[k]], el.getBoundingClientRect().height / (scale || 1)))
       box.replaceChildren()
     }
@@ -543,8 +723,10 @@ export class PageView {
         app.view.dispatch(closeHistory(app.state.tr))
       },
     }
+    this.notePos = pos
     this.editor = new HeaderFooterEditor(app, 'note', 'default', io, body, () => {
       this.editor = null
+      this.notePos = null
       this.page.classList.remove('is-note-editing')
       el.classList.remove('is-editing')
       zone?.classList.remove('is-editing')
@@ -598,6 +780,26 @@ export class PageView {
 
   closeEditor(): void {
     this.editor?.close()
+  }
+
+  /** Ferme l'en-tête (ou la note) et rend le curseur au texte, là où il était. */
+  leaveEditor(): void {
+    this.closeEditor()
+    this.app.view.focus()
+  }
+
+  /** Curseur à la position du texte la plus proche d'un point de l'écran (Maj : la sélection s'étend). */
+  caretNear(x: number, y: number, extend = false): void {
+    const view = this.app.view
+    const r = view.dom.getBoundingClientRect()
+    const left = Math.min(Math.max(x, r.left + 2), r.right - 2)
+    const top = Math.min(Math.max(y, r.top + 2), r.bottom - 2)
+    const hit = view.posAtCoords({ left, top })
+    const { doc } = view.state
+    const at = hit ? Selection.near(doc.resolve(hit.pos)) : Selection.atEnd(doc)
+    const sel = extend ? TextSelection.between(view.state.selection.$anchor, at.$head) : at
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(sel))
   }
 
   /** En-tête ou pied de page en cours de modification. */

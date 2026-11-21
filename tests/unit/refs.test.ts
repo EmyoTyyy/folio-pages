@@ -109,6 +109,8 @@ describe('calcul des références', () => {
     emptyIndex: '',
     emptyAuthorities: '',
     emptyBibliography: '',
+    emptyGlossary: 'g',
+    emptyAbbreviations: 'a',
     see: 'Voir',
     passim: 'passim',
     category: (c: string) => c,

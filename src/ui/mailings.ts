@@ -23,6 +23,7 @@ import { isOffline, openUrl } from '../net'
 import { settings, updateSettings } from '../settings'
 import { popItem } from './popover'
 import * as P from './panels'
+import { pdfFile } from './pdf'
 import { button, dropdown, type Ctl } from './ribbon'
 import { buildExport } from './exports'
 
@@ -829,10 +830,13 @@ type AttachFormat = 'html' | 'docx' | 'odt' | 'pdf'
 
 /**
  * Le fichier joint : le document Folio Pages (modifiable, chiffré s'il est
- * protégé) ou une copie .docx. Le PDF n'est pas fabriqué ici : seul le
- * navigateur sait le faire, par l'impression (« Enregistrer au format PDF »).
+ * protégé), ou une copie .docx, .odt ou PDF (fabriquée ici même).
  */
-async function attachmentOf(app: FolioApp, format: Exclude<AttachFormat, 'pdf'>): Promise<EmlAttachment | null> {
+async function attachmentOf(app: FolioApp, format: AttachFormat): Promise<EmlAttachment | null> {
+  if (format === 'pdf') {
+    const f = await pdfFile(app)
+    return f ? { name: f.name, type: 'application/pdf', data: f.bytes } : null
+  }
   if (format === 'odt') {
     const f = await buildExport(app, 'odt')
     return { name: f.name, type: f.mime, data: f.bytes }
@@ -878,17 +882,10 @@ export function sendDocumentDialog(app: FolioApp): void {
   const formatRow = row(t('mail.format'), format)
   const hint = h('p', { class: 'fp-form__hint', 'data-field': 'send-hint' })
   const error = h('p', { class: 'fp-field-error', 'data-field': 'send-error', role: 'alert', hidden: '' })
-  let draftBtn: HTMLButtonElement | null = null
-  const isPdf = () => content.value !== 'body' && format.value === 'pdf'
   const refresh = () => {
     const attach = content.value !== 'body'
     formatRow.hidden = !attach
-    hint.textContent = isPdf() ? t('mail.pdfHint') : attach ? t('mail.attachHint') : t('mail.bodyHint')
-    // Un brouillon .eml ne peut pas contenir un PDF que le navigateur n'a pas encore fabriqué.
-    if (draftBtn) {
-      draftBtn.disabled = isPdf()
-      draftBtn.title = isPdf() ? t('mail.pdfNoDraft') : ''
-    }
+    hint.textContent = attach ? t('mail.attachHint') : t('mail.bodyHint')
   }
   content.addEventListener('change', refresh)
   format.addEventListener('change', refresh)
@@ -915,19 +912,10 @@ export function sendDocumentDialog(app: FolioApp): void {
   const openMessage = async (): Promise<boolean> => {
     const m = build()
     if (!m || busy.on) return false
-    if (isPdf()) {
-      // La fenêtre se ferme d'abord (elle ne doit pas être imprimée), puis l'impression
-      // s'ouvre ; ensuite, un clic ouvre le message (une messagerie web demande un clic).
-      window.setTimeout(() => {
-        window.print()
-        toast(t('mail.pdfThen'), { kind: 'info', timeout: 60000, action: { label: t('mail.open'), run: () => void composeOne(app, m, via.value as Webmail) } })
-      }, 120)
-      return true
-    }
     busy.on = true
     try {
       if (content.value !== 'body') {
-        const file = await attachmentOf(app, format.value as Exclude<AttachFormat, 'pdf'>)
+        const file = await attachmentOf(app, format.value as AttachFormat)
         if (!file) return false
         if (typeof file.data === 'string') downloadFile(file.data, file.name, file.type)
         else downloadBytes(file.data, file.name, file.type)
@@ -945,9 +933,8 @@ export function sendDocumentDialog(app: FolioApp): void {
     try {
       const doc = app.getDoc()
       const files: EmlAttachment[] = []
-      if (isPdf()) return false
       if (content.value !== 'body') {
-        const file = await attachmentOf(app, format.value as Exclude<AttachFormat, 'pdf'>)
+        const file = await attachmentOf(app, format.value as AttachFormat)
         if (!file) return false
         files.push(file)
       }
@@ -960,7 +947,7 @@ export function sendDocumentDialog(app: FolioApp): void {
     }
   }
 
-  const handle = openDialog({
+  openDialog({
     name: 'send-doc',
     title: t('mail.title'),
     focus: to,
@@ -981,7 +968,6 @@ export function sendDocumentDialog(app: FolioApp): void {
       { label: t('mail.open'), value: 'open', primary: true, run: openMessage },
     ],
   })
-  draftBtn = handle.el.querySelector('[data-action="eml"]')
   refresh()
 }
 

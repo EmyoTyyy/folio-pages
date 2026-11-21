@@ -3,6 +3,7 @@
 import type { FolioApp } from '../app'
 import { isOffline, setOffline } from '../net'
 import { RELEASE_NOTES } from '../release-notes'
+import { settings, updateSettings } from '../settings'
 import { APP_VERSION, checkForUpdates, compareVersions, type ReleaseInfo } from '../update'
 import { lang, t } from '../i18n/i18n'
 import { openDialog, toast } from './dialog'
@@ -10,6 +11,74 @@ import { h } from './dom'
 import { carryPacks } from './packs'
 
 const SEEN_KEY = 'folio-pages:seen-version'
+/** Dernière version annoncée par une bulle : une seule fois par version, pas à chaque ouverture. */
+const NOTIFIED_KEY = 'folio-pages:update-notified'
+
+/**
+ * Version plus récente trouvée pendant cette session (manifeste signé, vérifié).
+ * Gardée en mémoire seulement : rien de ce qui sert à installer ne vient du stockage du navigateur.
+ */
+let available: ReleaseInfo | null = null
+/** Ce fichier vient d'être mis à jour : le bouton n'a plus lieu d'être (il faut le rouvrir). */
+let applied = false
+
+/** La mise à jour proposée par le bouton de la barre de titre, ou null. */
+export function availableUpdate(): ReleaseInfo | null {
+  return applied || isOffline() ? null : available
+}
+
+function setAvailable(app: FolioApp, release: ReleaseInfo | null): void {
+  available = release
+  app.notifyUi()
+}
+
+/**
+ * À chaque ouverture du fichier : une recherche discrète, sauf si le réglage est coupé
+ * ou en mode hors ligne. Un navigateur piloté par un programme (tests, robots) ne
+ * contacte pas le site du projet. Une erreur réseau ne dérange personne : on réessaiera
+ * à la prochaine ouverture.
+ */
+export function autoCheckUpdates(app: FolioApp): void {
+  if (navigator.webdriver) return
+  // Après le démarrage, pour ne pas le ralentir.
+  setTimeout(() => void quietCheck(app), 1200)
+}
+
+async function quietCheck(app: FolioApp): Promise<void> {
+  if (!settings().autoUpdate || isOffline() || applied) return
+  const res = await checkForUpdates()
+  if (res.status === 'current') return setAvailable(app, null)
+  if (res.status !== 'update') return
+  setAvailable(app, res.release)
+  let told: string | null = null
+  try {
+    told = localStorage.getItem(NOTIFIED_KEY)
+    localStorage.setItem(NOTIFIED_KEY, res.release.version)
+  } catch {
+    /* stockage refusé : la bulle s'affiche, simplement */
+  }
+  if (told === res.release.version) return
+  toast(t('update.found', { version: res.release.version, current: APP_VERSION }), {
+    kind: 'info',
+    timeout: 14000,
+    action: { label: t('update.button'), run: () => openAvailableUpdate(app) },
+  })
+}
+
+/** Aide → Mises à jour → Rechercher à chaque ouverture. L'activer cherche tout de suite. */
+export function toggleAutoUpdate(app: FolioApp): void {
+  const on = !settings().autoUpdate
+  updateSettings({ autoUpdate: on })
+  app.notifyUi()
+  if (on) void quietCheck(app)
+}
+
+/** Le bouton « Mettre à jour » de la barre de titre. */
+export function openAvailableUpdate(app: FolioApp): void {
+  const release = availableUpdate()
+  if (release) offerUpdate(app, release)
+  else void checkUpdatesUi(app)
+}
 
 function notesList(notes: string[]): HTMLElement {
   return h('ul', { class: 'fp-tips' }, ...notes.map((n) => h('li', {}, n)))
@@ -57,7 +126,11 @@ export async function checkUpdatesUi(app: FolioApp): Promise<void> {
   pending()
   if (res.status === 'offline') return void toast(t('update.offline'), { kind: 'info' })
   if (res.status === 'error') return void toast(t('update.failed', { message: res.message }), { kind: 'error', timeout: 9000 })
-  if (res.status === 'current') return void toast(t('update.current', { version: res.version }), { kind: 'success' })
+  if (res.status === 'current') {
+    setAvailable(app, null)
+    return void toast(t('update.current', { version: res.version }), { kind: 'success' })
+  }
+  setAvailable(app, res.release)
   offerUpdate(app, res.release)
 }
 
@@ -81,7 +154,11 @@ function offerUpdate(app: FolioApp, release: ReleaseInfo): void {
         run: async () => {
           const out = await app.updateFile(release, carryPacks)
           if (out.kind === 'error') toast(t('update.failed', { message: out.message }), { kind: 'error', timeout: 10000 })
-          else if (out.kind === 'saved' || out.kind === 'downloaded') toast(t(out.kind === 'saved' ? 'update.doneInPlace' : 'update.doneDownload', { name: out.name, version: release.version }), { kind: 'success', timeout: 14000 })
+          if (out.kind === 'saved' || out.kind === 'downloaded') {
+            applied = true
+            app.notifyUi()
+          }
+          if (out.kind === 'saved' || out.kind === 'downloaded') toast(t(out.kind === 'saved' ? 'update.doneInPlace' : 'update.doneDownload', { name: out.name, version: release.version }), { kind: 'success', timeout: 14000 })
         },
       },
     ],

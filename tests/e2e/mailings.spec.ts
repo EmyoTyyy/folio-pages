@@ -1,6 +1,7 @@
 // Publipostage : liste de destinataires, champs, aperçu, vérification, fusion,
 // enveloppes, étiquettes, messages.
 
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { chooseFile, docOfFile, makeFile, openEditor, rb, removeFsAccess, saveByDownload, tab, watchErrors } from './helpers'
 
@@ -354,42 +355,21 @@ test('groupe E-mail : envoyer le document (plusieurs adresses, pièce jointe, br
   errors.check()
 })
 
-test('envoyer le document en PDF : l’impression du navigateur, puis le message en un clic', async ({ page }, info) => {
+test('envoyer le document en PDF : fabriqué ici, joint au brouillon .eml', async ({ page }, info) => {
   const errors = watchErrors(page)
   await open(page, info, ['Le budget est voté.'])
-  await page.evaluate(() => {
-    const w = window as any
-    w.__opened = []
-    w.__printed = 0
-    // l'impression est bloquante dans un vrai navigateur : ici on la compte seulement
-    window.print = () => void w.__printed++
-    const click = HTMLAnchorElement.prototype.click
-    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
-      if (this.href.startsWith('mailto:')) w.__opened.push(this.href)
-      else click.call(this)
-    }
-  })
   await rb(page, 'mm-send-doc')
   const dlg = dialog(page, 'send-doc')
   await dlg.locator('[data-field="send-to"]').fill('ana@exemple.fr')
   await dlg.locator('[data-field="send-content"]').selectOption('attach')
   await dlg.locator('[data-field="send-format"]').selectOption('pdf')
-  await expect(dlg.locator('[data-field="send-hint"]')).toContainText('Enregistrer au format PDF')
-  // un brouillon .eml ne peut pas contenir ce PDF
-  await expect(dlg.locator('[data-action="eml"]')).toBeDisabled()
-  await dlg.locator('[data-field="send-format"]').selectOption('docx')
   await expect(dlg.locator('[data-action="eml"]')).toBeEnabled()
-  await dlg.locator('[data-field="send-format"]').selectOption('pdf')
-  await dlg.locator('[data-action="open"]').click()
-  await expect(dlg).toHaveCount(0)
-  await expect.poll(() => page.evaluate(() => (window as any).__printed)).toBe(1)
-  // le message attend le clic (une messagerie web en a besoin pour s'ouvrir)
-  expect(await page.evaluate(() => (window as any).__opened)).toEqual([])
-  const notice = page.locator('.fp-toast').filter({ hasText: 'PDF enregistré' })
-  await notice.getByRole('button', { name: 'Ouvrir le message' }).click()
-  await expect.poll(() => page.evaluate(() => (window as any).__opened as string[])).toHaveLength(1)
-  const url = (await page.evaluate(() => (window as any).__opened as string[]))[0]
-  expect(url).toMatch(/^mailto:ana@exemple\.fr\?subject=Relance&body=/)
-  expect(decodeURIComponent(url)).toContain('en pièce jointe')
+  const [download] = await Promise.all([page.waitForEvent('download'), dlg.locator('[data-action="eml"]').click()])
+  const eml = readFileSync((await download.path())!, 'utf8')
+  expect(eml).toContain('Content-Type: application/pdf')
+  expect(eml).toMatch(/filename="lettre\.pdf"/)
+  // le PDF joint commence bien par « %PDF »
+  const b64 = /Content-Type: application\/pdf[\s\S]*?\r?\n\r?\n([A-Za-z0-9+/=\r\n]+)/.exec(eml)![1].replace(/\s+/g, '')
+  expect(Buffer.from(b64, 'base64').subarray(0, 5).toString('latin1')).toBe('%PDF-')
   errors.check()
 })

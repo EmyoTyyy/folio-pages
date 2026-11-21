@@ -3,6 +3,7 @@
 // changent, et vit dans un <style> transitoire (jamais enregistré : le
 // fichier se recalcule à partir du JSON).
 
+import { cssAlign } from '../format/bidi'
 import { cssColor, cssHighlight } from '../format/color'
 import { resolveStyle, BUILTIN_STYLE_IDS } from '../format/theme'
 import { CODE_COLORS, THEME_COLORS, THEME_FONTS, UNICODE_RANGE, hasOwn, type StyleDef, type Theme } from '../format/types'
@@ -30,9 +31,9 @@ export function styleCss(s: StyleDef): string {
   if (s.caps !== undefined) out.push(`text-transform:${s.caps ? 'uppercase' : 'none'}`)
   if (s.smallcaps !== undefined) out.push(`font-variant-caps:${s.smallcaps ? 'small-caps' : 'normal'}`)
   if (s.letterSpacing !== undefined) out.push(`letter-spacing:${s.letterSpacing}pt`)
-  if (s.align) out.push(`text-align:${s.align}`)
-  if (s.indent?.left !== undefined) out.push(`margin-left:${s.indent.left}pt`)
-  if (s.indent?.right !== undefined) out.push(`margin-right:${s.indent.right}pt`)
+  if (s.align) out.push(`text-align:${cssAlign(s.align)}`)
+  if (s.indent?.left !== undefined) out.push(`margin-inline-start:${s.indent.left}pt`)
+  if (s.indent?.right !== undefined) out.push(`margin-inline-end:${s.indent.right}pt`)
   if (s.indent?.first !== undefined) out.push(`text-indent:${s.indent.first}pt`)
   if (s.spacing?.before !== undefined) out.push(`margin-top:${s.spacing.before}pt`)
   if (s.spacing?.after !== undefined) out.push(`margin-bottom:${s.spacing.after}pt`)

@@ -66,7 +66,7 @@ export function exportEpub(doc: FolioDoc, o: ExportCommonOptions = {}): EpubResu
       if (b.type === 'heading' && b.level <= 3) {
         const id = ctx.headingId.get(b)!
         entries.push({ text: inlineText(b.content, ctx).trim() || '—', href: `${home.get(id) ?? files[0]}#${id}`, level: b.level })
-      } else if (b.type === 'columns' || b.type === 'quote') walk(b.blocks)
+      } else if (b.type === 'columns' || b.type === 'quote' || b.type === 'callout') walk(b.blocks)
     }
   }
   walk(doc.blocks)

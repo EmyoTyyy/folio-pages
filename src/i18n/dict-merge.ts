@@ -260,13 +260,7 @@ export const MERGE_DICT = {
   'mail.format.html': { fr: 'Folio Pages (.html, modifiable)', en: 'Folio Pages (.html, editable)' },
   'mail.format.docx': { fr: 'Copie .docx', en: '.docx copy' },
   'mail.format.odt': { fr: 'Copie .odt (LibreOffice)', en: '.odt copy (LibreOffice)' },
-  'mail.format.pdf': { fr: 'PDF (par l’impression)', en: 'PDF (through printing)' },
-  'mail.pdfHint': {
-    fr: 'Le PDF est fabriqué par l’impression du navigateur : choisissez « Enregistrer au format PDF » comme imprimante. Le message s’ouvre ensuite, il ne reste qu’à y glisser le PDF.',
-    en: 'The PDF is made by the browser’s print window: pick “Save as PDF” as the printer. The message then opens, and you just drag the PDF into it.',
-  },
-  'mail.pdfNoDraft': { fr: 'Un brouillon .eml ne peut pas contenir le PDF : il est fabriqué par l’impression.', en: 'An .eml draft can’t contain the PDF: it is made by printing.' },
-  'mail.pdfThen': { fr: 'PDF enregistré ? Ouvrez le message et glissez-y le PDF.', en: 'PDF saved? Open the message and drag the PDF into it.' },
+  'mail.format.pdf': { fr: 'PDF', en: 'PDF' },
   'mail.bodyHint': {
     fr: 'Folio Pages n’envoie rien lui-même : votre messagerie s’ouvre avec le message prêt, vous cliquez sur Envoyer. Le brouillon .eml garde la mise en forme et les images.',
     en: 'Folio Pages sends nothing itself: your mail app opens with the message ready, and you click Send. The .eml draft keeps formatting and pictures.',

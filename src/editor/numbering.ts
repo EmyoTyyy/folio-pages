@@ -38,7 +38,8 @@ export function fixNumbering(state: EditorState): Transaction | null {
 export function numberingPlugin(): Plugin {
   return new Plugin({
     appendTransaction: (trs, _old, state) => {
-      if (!trs.some((t) => t.docChanged)) return null
+      // Les étapes venues d'une autre vue y ont déjà été renumérotées.
+      if (!trs.some((t) => t.docChanged && !t.getMeta('collab$'))) return null
       const tr = fixNumbering(state)
       return tr ? tr.setMeta('addToHistory', trs.every((t) => t.getMeta('addToHistory') !== false)) : null
     },

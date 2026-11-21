@@ -40,7 +40,8 @@ async function settle(page: Page) {
 async function linesInsideSheets(page: Page) {
   return page.evaluate(() => {
     const paper = document.querySelector('.fp-page') as HTMLElement
-    const scale = paper.getBoundingClientRect().width / paper.offsetWidth
+    // (pas offsetWidth : il est arrondi au pixel, et l'erreur grandit de page en page)
+    const scale = paper.getBoundingClientRect().width / parseFloat(getComputedStyle(paper).width)
     const top0 = paper.getBoundingClientRect().top
     const css = getComputedStyle(document.documentElement)
     const px = (v: string) => parseFloat(css.getPropertyValue(v))
@@ -87,6 +88,37 @@ test.describe('vue page', () => {
     await page.keyboard.press(`${mod}+z`)
     await settle(page)
     expect(await page.locator('.fp-sheet').count()).toBe(sheets)
+    errors.check()
+  })
+
+  test('un long texte collé reste aligné sur ses feuilles jusqu’à la dernière page', async ({ page, browserName }, info) => {
+    test.setTimeout(120_000)
+    const errors = watchErrors(page)
+    const words = 'habit change process coffee morning theory start tangle first expectations relationship design university'.split(' ')
+    const parts: { tag: 'h2' | 'p'; text: string }[] = []
+    for (let i = 0; i < 600; i++) {
+      if (i % 40 === 0) parts.push({ tag: 'h2', text: `Chapter ${i / 40 + 1}` })
+      const n = 25 + ((i * 37) % 80)
+      parts.push({ tag: 'p', text: Array.from({ length: n }, (_, j) => words[(i * 7 + j * 3) % words.length]).join(' ') + '.' })
+    }
+    if (browserName === 'firefox') {
+      // Firefox ignore les données d'un collage synthétique : le même texte, ouvert directement.
+      await open(page, info, { format: 'folio/doc', version: 1, blocks: parts.map((x) => (x.tag === 'h2' ? { type: 'heading', level: 2, text: x.text } : x.text)) })
+    } else {
+      await open(page, info, { format: 'folio/doc', version: 1, blocks: [''] })
+      await editor(page).click()
+      await page.evaluate((html) => {
+        const dt = new DataTransfer()
+        dt.setData('text/html', html)
+        dt.setData('text/plain', 'brut')
+        document.querySelector('.fp-prose')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+      }, parts.map((x) => `<${x.tag}>${x.text}</${x.tag}>`).join(''))
+    }
+    await expect(editor(page)).toContainText('Chapter 15')
+    await expect.poll(() => page.locator('.fp-sheet').count(), { timeout: 60_000 }).toBeGreaterThan(60)
+    await settle(page)
+    // L'échelle d'affichage arrondie décalait le texte de 0,4 px par feuille : plusieurs lignes vers la page 300.
+    expect(await linesInsideSheets(page)).toEqual([])
     errors.check()
   })
 

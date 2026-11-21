@@ -142,7 +142,7 @@ export function comparable(doc: FolioDoc): Any {
         }
       }
       if (y.content) y.content = inl(y.content, inTable, strong)
-      if (y.items) y.items = y.items.map((it: Any) => ({ ...it, content: inl(it.content, inTable, strong) }))
+      if (y.type === 'list' && y.items) y.items = y.items.map((it: Any) => ({ ...it, content: inl(it.content, inTable, strong) }))
       // Une liste qui continue celle qui la précède immédiatement : c'est la même liste, plus longue.
       if (y.type === 'list' && y.continue && prev && prev.type === 'list' && prev.style === 'number') {
         prev.items = [...prev.items, ...y.items]

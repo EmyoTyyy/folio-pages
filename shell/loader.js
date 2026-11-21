@@ -1,4 +1,4 @@
-// Chargeur (repris de Bento, MIT) : décode la base86, décompresse le DEFLATE et
+// Chargeur (repris de Bento, MIT) : décode la base122, décompresse le DEFLATE et
 // lance l'application, de façon SYNCHRONE (l'éditeur est prêt avant
 // DOMContentLoaded). Si une politique de sécurité refuse un script inséré, on
 // essaie new Function, puis en dernier recours un import de blob.
@@ -19,11 +19,12 @@
     document.body.appendChild(d)
   }
   /*INFLATER*/
-  /*B86*/
+  /*DECODER*/
   var payload = function (id) {
     var el = document.getElementById(id)
     if (!el) throw new Error('payload ' + id + ' missing')
-    var out = inflateRaw(b86decode((el.textContent || '').trim()))
+    // Pas de trim : une espace en bout de charge utile est une donnée.
+    var out = inflateRaw(b122decode(el.textContent || ''))
     var expected = Number(el.getAttribute('data-len'))
     if (expected && out.length !== expected) throw new Error('payload ' + id + ' is damaged (' + out.length + ' bytes instead of ' + expected + ')')
     var hash = el.getAttribute('data-hash')

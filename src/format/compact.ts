@@ -93,6 +93,7 @@ function cell(c: TableCell): unknown {
   if (c.rowspan !== 1) extra.rowspan = c.rowspan
   if (c.bg) extra.bg = c.bg
   if (c.valign) extra.valign = c.valign
+  if (c.textDir) extra.textDir = c.textDir
   if (runs) {
     const body = inline(runs)
     if (!Object.keys(extra).length && 'text' in body) return body.text
@@ -110,8 +111,10 @@ function listItems(list: Block & { type: 'list' }): unknown[] {
     const extra: Json = {}
     if (it.level) extra.level = it.level
     if (it.level && it.style !== inferred) extra.style = it.style
+    if (it.checked) extra.checked = true
     Object.assign(extra, para(it))
-    if (!Object.keys(extra).length && 'text' in body) return body.text
+    // Un texte qui commence par « [x] » dans une liste à cocher se lirait comme une case.
+    if (!Object.keys(extra).length && 'text' in body && !(list.style === 'check' && /^\[[ xX]\]\s/.test(String(body.text)))) return body.text
     return { ...body, ...extra }
   })
 }
@@ -136,6 +139,11 @@ function block(b: Block): Json {
       const runs = singleParagraph(b.blocks)
       return runs ? { type: 'quote', ...inline(runs) } : { type: 'quote', blocks: b.blocks.map(block) }
     }
+    case 'callout': {
+      const runs = singleParagraph(b.blocks)
+      const head: Json = { type: 'callout', ...(b.kind !== 'note' ? { kind: b.kind } : {}), ...(b.title ? { title: b.title } : {}) }
+      return runs ? { ...head, ...inline(runs) } : { ...head, blocks: b.blocks.map(block) }
+    }
     case 'code':
       return { type: 'code', ...(b.language ? { language: b.language } : {}), text: b.text }
     case 'table': {
@@ -153,6 +161,25 @@ function block(b: Block): Json {
     }
     case 'divider':
       return { type: 'divider' }
+    case 'chart':
+      return {
+        type: 'chart',
+        ...(b.kind !== 'bar' ? { kind: b.kind } : {}),
+        ...(b.title ? { title: b.title } : {}),
+        labels: [...b.labels],
+        series: b.series.map((s) => ({ name: s.name, values: [...s.values] })),
+        ...(b.legend === false ? { legend: false } : {}),
+        ...(b.horizontal ? { horizontal: true } : {}),
+      }
+    case 'diagram':
+      return {
+        type: 'diagram',
+        ...(b.kind !== 'list' ? { kind: b.kind } : {}),
+        ...(b.title ? { title: b.title } : {}),
+        // Premier niveau seul : de simples chaînes.
+        items: b.items.map((it) => (it.level ? { text: it.text, level: it.level } : it.text)),
+        ...(b.color ? { color: b.color } : {}),
+      }
     case 'equation':
       return { type: 'equation', tex: b.tex, ...(b.numbered ? { numbered: true } : {}) }
     case 'pagebreak':
@@ -168,7 +195,9 @@ function block(b: Block): Json {
     case 'authorities':
       return { type: 'authorities', ...(b.category !== 'all' ? { category: b.category } : {}), ...(b.title ? { title: b.title } : {}) }
     case 'bibliography':
-      return { type: 'bibliography', ...(b.title ? { title: b.title } : {}), ...(b.all ? { all: true } : {}) }
+    case 'glossary':
+    case 'abbreviations':
+      return { type: b.type, ...(b.title ? { title: b.title } : {}), ...(b.all ? { all: true } : {}) }
     case 'section': {
       const out: Json = { type: 'section' }
       if (b.start !== 'page') out.start = b.start
@@ -282,6 +311,7 @@ export function toCompact(doc: FolioDoc, opts: CompactOptions = {}): Json {
   if (doc.math?.macros) out.math = { macros: doc.math.macros }
   if (doc.mailMerge) out.mailMerge = JSON.parse(JSON.stringify(doc.mailMerge))
   if (doc.sources?.length) out.sources = doc.sources.map((src) => JSON.parse(JSON.stringify(src)))
+  if (doc.terms?.length) out.terms = doc.terms.map((x) => ({ term: x.term, definition: x.definition, ...(x.kind === 'abbreviation' ? { kind: x.kind } : {}), ...(x.plural ? { plural: x.plural } : {}), id: x.id }))
   if (doc.citationStyle && doc.citationStyle !== 'apa') out.citationStyle = doc.citationStyle
   const th = theme(doc.theme)
   if (th) out.theme = th
@@ -290,7 +320,13 @@ export function toCompact(doc: FolioDoc, opts: CompactOptions = {}): Json {
   out.blocks = doc.blocks.map(block)
   if (doc.comments?.length) out.comments = doc.comments.map(thread)
   if (doc.trackChanges) out.trackChanges = true
+  if (doc.goal) out.goal = { ...doc.goal }
   if (doc.hyphenate) out.hyphenate = true
+  if (doc.lineNumbers) {
+    const l = doc.lineNumbers
+    const c = { ...(l.restart !== 'continuous' ? { restart: l.restart } : {}), ...(l.start !== 1 ? { start: l.start } : {}), ...(l.countBy !== 1 ? { countBy: l.countBy } : {}), ...(l.distance !== undefined ? { distance: l.distance } : {}) }
+    out.lineNumbers = Object.keys(c).length ? c : true
+  }
   if (doc.watermark) {
     const w = doc.watermark
     out.watermark = { ...(w.image ? { image: w.image } : { text: w.text }), ...(w.color !== '#9aa0a6' ? { color: w.color } : {}), ...(!w.diagonal ? { diagonal: false } : {}), ...(w.opacity !== 35 ? { opacity: w.opacity } : {}), ...(w.size ? { size: w.size } : {}), ...(w.scale !== 70 ? { scale: w.scale } : {}) }

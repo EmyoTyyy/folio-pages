@@ -12,6 +12,8 @@ import type { FolioDoc } from '../format/types'
 import { idbDelete, idbGetAll, idbPut, STORES } from './idb'
 import type { FsHandle } from './save'
 import { importDocxFile } from './docx'
+import { importOdt } from './odt-import'
+import { importRtf } from './rtf-import'
 import { extractDocBlock, recognizeHtml } from './shell'
 import { parseEnvelope, type Envelope } from './crypto'
 
@@ -78,6 +80,21 @@ export async function readOpened(file: File, handle: FsHandle | null = null): Pr
     if (!got.ok) return { kind: 'docx-failed', name, code: /\.doc$/i.test(name) && got.code === 'not-zip' ? 'old-format' : got.code }
     return { kind: 'document', doc: got.load.doc, report: got.load.report, name: `${base(name)}.html`, handle: null, imported: true }
   }
+  // OpenDocument et RTF : lus ici même, puis validés comme un document reçu.
+  if (/\.(odt|ott|rtf)$/i.test(name)) {
+    try {
+      const odt = /\.(odt|ott)$/i.test(name)
+      const res = odt ? importOdt(new Uint8Array(await file.arrayBuffer())) : importRtf(await file.text())
+      const meta = (res.doc.meta ?? {}) as Record<string, unknown>
+      if (!meta.title) res.doc.meta = { ...meta, title: base(name) }
+      const load = loadDocument(res.doc)
+      if (!load.ok) return { kind: 'unreadable', name }
+      for (const l of res.losses) load.report.warn('', 'import-loss', `${l.code}:${l.count}`)
+      return { kind: 'document', doc: load.doc, report: load.report, name: `${base(name)}.html`, handle: null, imported: true }
+    } catch {
+      return { kind: 'unreadable', name }
+    }
+  }
   let text: string
   try {
     text = await file.text()
@@ -92,6 +109,8 @@ type OpenPicker = (o: { id?: string; multiple?: boolean; types?: { description: 
 const ACCEPT = {
   'text/html': ['.html', '.htm'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/vnd.oasis.opendocument.text': ['.odt'],
+  'application/rtf': ['.rtf'],
   'text/markdown': ['.md', '.markdown'],
   'text/plain': ['.txt'],
   'application/json': ['.json'],
@@ -116,7 +135,7 @@ export async function pickFile(): Promise<{ file: File; handle: FsHandle | null 
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.html,.htm,.md,.markdown,.txt,.json,.docx'
+    input.accept = '.html,.htm,.md,.markdown,.txt,.json,.docx,.odt,.rtf'
     input.style.display = 'none'
     let done = false
     const finish = (v: { file: File; handle: null } | null) => {

@@ -298,6 +298,47 @@ test('retouches d’image : corrections, couleur, transparence, effets', async (
   errors.check()
 })
 
+test('reflet d’image : aperçus, copie retournée sous l’image, la légende suit ; annulable', async ({ page }, info) => {
+  const errors = watchErrors(page)
+  await open(page, info, ['Avant', { type: 'image', src: pngDataUri(80, 60), alt: 'carré', width: 120, caption: ['Légende'] }, 'après'])
+  await page.locator('.fp-figure__frame').click()
+  await rb(page, 'picture-effects')
+  await expect(pop(page).locator('[data-reflection]')).toHaveCount(4)
+  await expect(pop(page).locator('[data-reflection="50"] .fp-pfx__mirror')).toHaveCount(1)
+  await expect(pop(page).locator('[data-reflection="0"]')).toHaveAttribute('aria-checked', 'true')
+  await pop(page).locator('[data-reflection="50"]').click()
+  expect((await blocks(page))[1].adjust).toEqual({ reflection: 50 })
+  const reflect = page.locator('.fp-figure__reflect')
+  await expect(reflect).toHaveCount(1)
+  await expect(reflect).toHaveAttribute('aria-hidden', 'true')
+  const frame = (await page.locator('.fp-figure__frame').boundingBox())!
+  const box = (await reflect.boundingBox())!
+  // Sous l'image, même largeur, la moitié de sa hauteur ; la légende vient après.
+  expect(Math.abs(box.width - frame.width)).toBeLessThan(1.5)
+  expect(Math.abs(box.height - frame.height / 2)).toBeLessThan(1.5)
+  expect(box.y).toBeGreaterThanOrEqual(frame.y + frame.height)
+  const cap = (await page.locator('.fp-figure figcaption').boundingBox())!
+  expect(cap.y).toBeGreaterThanOrEqual(box.y + box.height - 0.5)
+  expect(await reflect.evaluate((e) => getComputedStyle(e.firstElementChild!).transform)).toMatch(/matrix\(1, 0, 0, -1/)
+  expect(await reflect.locator('[data-handle]').count()).toBe(0)
+  // Un clic sur le reflet ne sélectionne rien de plus ; Ctrl+Z l'enlève.
+  await page.keyboard.press(`${mod}+z`)
+  await expect(reflect).toHaveCount(0)
+  await page.keyboard.press(`${mod}+y`)
+  await expect(reflect).toHaveCount(1)
+  // Reflet complet : aussi haut que l'image ; « Effacer les effets » l'enlève.
+  await page.locator('.fp-figure__frame').click()
+  await rb(page, 'picture-effects')
+  await pop(page).locator('[data-reflection="100"]').click()
+  await expect.poll(async () => Math.round((await reflect.boundingBox())!.height)).toBe(Math.round(frame.height))
+  await page.locator('.fp-figure__frame').click()
+  await rb(page, 'picture-effects')
+  await pop(page).locator('[data-pfx="clear"]').click()
+  await expect(reflect).toHaveCount(0)
+  expect((await blocks(page))[1].adjust).toBeUndefined()
+  errors.check()
+})
+
 test('mode brouillon : texte sur toute la largeur, choix mémorisé', async ({ page }, info) => {
   await open(page, info, ['Texte.'])
   await tab(page, 'view')

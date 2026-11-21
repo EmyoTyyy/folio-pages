@@ -279,7 +279,7 @@ export function screenshot(app: FolioApp): Ctl {
       h(
         'div',
         { class: 'fp-pop__list', role: 'menu' },
-        popItem(h('span', {}, h('span', { class: 'fp-pop__main' }, t('shot.window')), h('span', { class: 'fp-pop__hint' }, t('shot.hint'))), () => void insertScreenshot(app), { 'data-shot': 'window' }),
+        popItem(h('span', { class: 'fp-pop__main' }, t('shot.window')), () => void insertScreenshot(app), { 'data-shot': 'window' }),
       ),
   })
 }

@@ -6,15 +6,18 @@
 // liens dangereux sont refusés, les valeurs sont bornées, et rien d'autre n'est
 // interprété.
 
+import { chartFrom, diagramFrom } from '../format/normalize'
 import { Schema, type Attrs, type DOMOutputSpec, type MarkSpec, type NodeSpec } from 'prosemirror-model'
 import { tableNodes } from 'prosemirror-tables'
 import { cssColor, cssHighlight, parseHighlight } from '../format/color'
-import { LIMITS, isImageSrc, isSafeLink } from '../format/spec'
+import { LIMITS, cleanFileName, cleanMime, dataUriType, isImageSrc, isSafeLink } from '../format/spec'
 import { texOfMathDom } from '../math/dom'
 import { defaultTheme } from '../format/theme'
 import { loadNoteBlocks } from '../format/load'
-import { AUTHORITY_CATEGORIES, BOOKMARK_NAME, FIELD_NAMES, MERGE_OPTS, SOURCE_ID, XREF_SHOWS, defaultMath, defaultNotes, defaultPage, emptyHeaders } from '../format/types'
+import { calloutLabel } from '../format/callout'
+import { AUTHORITY_CATEGORIES, BOOKMARK_NAME, CALLOUT_KINDS, FIELD_NAMES, MERGE_OPTS, SOURCE_ID, XREF_SHOWS, defaultMath, defaultNotes, defaultPage, emptyHeaders } from '../format/types'
 import { colorFromCss, cssFont, familyFromCss, paraCss, ptFromCss, type ParaAttrs } from './css'
+import { floatSide } from '../format/picture'
 
 const brDOM: DOMOutputSpec = ['br']
 
@@ -35,6 +38,14 @@ const paraAttrs = {
   shading: { default: null },
   border: { default: null },
   dropCap: { default: null },
+  /** Dessin à main levée (format Folio : traits en points depuis le coin du paragraphe). */
+  ink: { default: null },
+  /** Sens d'écriture : 'rtl', 'ltr', ou null (selon le texte). */
+  dir: { default: null },
+  /** Sans numéros de ligne. */
+  noLineNumbers: { default: false },
+  /** Mise en forme changée pendant le suivi : { author, date, before } (format Folio : ParaChange). */
+  fmtChange: { default: null },
 }
 
 export const PARA_ATTR_NAMES = Object.keys(paraAttrs) as (keyof ParaAttrs)[]
@@ -58,7 +69,15 @@ function paraDOM(tag: string, attrs: Attrs, extra: Record<string, string> = {}):
   if (css) dom.style = css
   if (attrs.keepNext) dom['data-keep-next'] = ''
   if (attrs.keepLines) dom['data-keep-lines'] = ''
+  if (attrs.noLineNumbers) dom['data-no-line-numbers'] = ''
+  const fc = attrs.fmtChange as { author?: string; date?: string } | null
+  if (fc) {
+    dom['data-fmt-author'] = fc.author ?? ''
+    dom.class = `${dom.class ? dom.class + ' ' : ''}fp-fmt-para`
+  }
   if (attrs.pageBreakBefore) dom['data-break-before'] = ''
+  // Sens d'écriture : imposé, sinon celui du texte (un paragraphe en arabe ou en hébreu va de droite à gauche).
+  dom.dir = attrs.dir === 'rtl' || attrs.dir === 'ltr' ? attrs.dir : 'auto'
   if (attrs.dropCap) {
     dom['data-dropcap'] = String(attrs.dropCap)
     dom.style = `${dom.style ? dom.style + ';' : ''}--fp-dropcap:${attrs.dropCap}`
@@ -87,6 +106,17 @@ const tables = tableNodes({
       },
       setDOMAttr: (value, attrs) => {
         if (value) attrs.style = `${attrs.style ?? ''}vertical-align:${value};`
+      },
+    },
+    /** Texte vertical : 'tbrl' (de haut en bas) ou 'btlr' (de bas en haut). */
+    textDir: {
+      default: null,
+      getFromDOM: (dom) => {
+        const v = (dom as HTMLElement).getAttribute('data-text-dir')
+        return v === 'tbrl' || v === 'btlr' ? v : null
+      },
+      setDOMAttr: (value, attrs) => {
+        if (value) attrs['data-text-dir'] = value as string
       },
     },
   },
@@ -154,10 +184,18 @@ const nodes: Record<string, NodeSpec> = {
       /** Sources citées (format Folio) et style des citations. */
       sources: { default: [] },
       citationStyle: { default: 'apa' },
+      /** Termes du glossaire et abréviations (format Folio). */
+      terms: { default: [] },
       /** Césure automatique. */
       hyphenate: { default: false },
+      /** Numéros de ligne (format Folio), ou null. */
+      lineNumbers: { default: null },
       /** Filigrane (format Folio, image en URI data:), ou null. */
       watermark: { default: null },
+      /** Objectif d'écriture ({ words, deadline? }), ou null. */
+      goal: { default: null },
+      /** Formulaire protégé : seuls les champs se remplissent. */
+      formsOnly: { default: false },
     },
   },
   paragraph: {
@@ -194,6 +232,30 @@ const nodes: Record<string, NodeSpec> = {
     parseDOM: [{ tag: 'blockquote' }],
     toDOM: () => ['blockquote', 0],
   },
+  /** Encadré (note, astuce, important, avertissement, attention) : un titre, puis des blocs. */
+  callout: {
+    attrs: { kind: { default: 'note' }, title: { default: '' } },
+    content: '(paragraph | heading | blockquote | code_block | horizontal_rule | equation | bullet_list | ordered_list | check_list | table | figure | page_break)+',
+    group: 'block',
+    defining: true,
+    parseDOM: [
+      {
+        tag: 'aside.fp-callout',
+        contentElement: '.fp-callout__body',
+        getAttrs: (dom) => {
+          const el = dom as HTMLElement
+          const kind = el.dataset.kind ?? 'note'
+          return { kind: (CALLOUT_KINDS as readonly string[]).includes(kind) ? kind : 'note', title: (el.dataset.title ?? '').slice(0, 200) }
+        },
+      },
+    ],
+    toDOM: (node) => [
+      'aside',
+      { class: 'fp-callout', 'data-kind': node.attrs.kind, 'data-title': node.attrs.title, role: 'note' },
+      ['div', { class: 'fp-callout__head', contenteditable: 'false' }, ['span', { class: 'fp-callout__title' }, node.attrs.title || calloutLabel(node.attrs.kind, '')]],
+      ['div', { class: 'fp-callout__body' }, 0],
+    ],
+  },
   code_block: {
     attrs: { language: { default: '' } },
     content: 'text*',
@@ -214,7 +276,8 @@ const nodes: Record<string, NodeSpec> = {
         },
       },
     ],
-    toDOM: (node) => ['pre', node.attrs.language ? { 'data-language': node.attrs.language } : {}, ['code', 0]],
+    // Pas de correction orthographique du navigateur dans du code.
+    toDOM: (node) => ['pre', { spellcheck: 'false', ...(node.attrs.language ? { 'data-language': node.attrs.language } : {}) }, ['code', 0]],
   },
   /** Équation centrée : un atome ; la source LaTeX est dans ses attributs, la vue dessine le MathML. */
   equation: {
@@ -236,6 +299,54 @@ const nodes: Record<string, NodeSpec> = {
     ],
     toDOM: (node) => ['div', { class: 'fp-equation', 'data-equation': node.attrs.tex, ...(node.attrs.numbered ? { 'data-numbered': '' } : {}) }, `$$${node.attrs.tex}$$`],
   },
+  /** Graphique : ses données sont dans ses attributs (format Folio), le dessin vient de la vue. */
+  /** Diagramme : une liste mise en forme (dessin SVG fait d'après ses éléments). */
+  diagram: {
+    group: 'block',
+    atom: true,
+    selectable: true,
+    draggable: false,
+    attrs: { kind: { default: 'list' }, title: { default: '' }, items: { default: [] }, color: { default: null } },
+    parseDOM: [
+      {
+        tag: 'div[data-diagram]',
+        getAttrs: (dom) => {
+          try {
+            const d = diagramFrom(JSON.parse((dom as HTMLElement).getAttribute('data-diagram') ?? '') as Record<string, unknown>)
+            return d ? { kind: d.kind, title: d.title ?? '', items: d.items, color: d.color ?? null } : false
+          } catch {
+            return false
+          }
+        },
+      },
+    ],
+    toDOM: (node) => ['div', { class: 'fp-diagram', 'data-diagram': JSON.stringify({ kind: node.attrs.kind, title: node.attrs.title, items: node.attrs.items, color: node.attrs.color ?? undefined }) }],
+  },
+  chart: {
+    group: 'block',
+    atom: true,
+    selectable: true,
+    draggable: false,
+    attrs: { kind: { default: 'bar' }, title: { default: '' }, labels: { default: [] }, series: { default: [] }, legend: { default: true }, horizontal: { default: false } },
+    parseDOM: [
+      {
+        tag: 'div[data-chart]',
+        getAttrs: (dom) => {
+          try {
+            const c = chartFrom(JSON.parse((dom as HTMLElement).getAttribute('data-chart') ?? '') as Record<string, unknown>)
+            return c ? { kind: c.kind, title: c.title ?? '', labels: c.labels, series: c.series, legend: c.legend !== false, horizontal: !!c.horizontal } : false
+          } catch {
+            return false
+          }
+        },
+      },
+    ],
+    toDOM: (node) => {
+      const a = node.attrs
+      const data = { kind: a.kind, title: a.title || undefined, labels: a.labels, series: a.series, legend: a.legend === false ? false : undefined, horizontal: a.horizontal || undefined }
+      return ['div', { class: 'fp-chart', 'data-chart': JSON.stringify(data) }]
+    },
+  },
   horizontal_rule: {
     group: 'block',
     parseDOM: [{ tag: 'hr' }],
@@ -254,7 +365,7 @@ const nodes: Record<string, NodeSpec> = {
   },
   columns: {
     attrs: { count: { default: 2 }, gap: { default: 18 }, rule: { default: false } },
-    content: '(paragraph | heading | blockquote | code_block | horizontal_rule | equation | bullet_list | ordered_list | table | figure | toc | refblock | column_break)+',
+    content: '(paragraph | heading | blockquote | callout | code_block | horizontal_rule | equation | bullet_list | ordered_list | check_list | table | figure | toc | refblock | column_break)+',
     group: 'block',
     defining: true,
     isolating: true,
@@ -302,7 +413,7 @@ const nodes: Record<string, NodeSpec> = {
         tag: 'div.fp-refblock',
         getAttrs: (dom) => {
           const kind = (dom as HTMLElement).dataset.kind ?? ''
-          return ['figures', 'index', 'authorities', 'bibliography'].includes(kind) ? { kind, title: ((dom as HTMLElement).dataset.title ?? '').slice(0, 200) } : false
+          return ['figures', 'index', 'authorities', 'bibliography', 'glossary', 'abbreviations'].includes(kind) ? { kind, title: ((dom as HTMLElement).dataset.title ?? '').slice(0, 200) } : false
         },
       },
     ],
@@ -371,7 +482,7 @@ const nodes: Record<string, NodeSpec> = {
       if (a.width) imgAttrs.style = `width:${a.width}pt`
       return [
         'figure',
-        { class: 'fp-figure', 'data-align': a.align, 'data-wrap': a.wrap },
+        { class: 'fp-figure', 'data-align': a.align, 'data-wrap': a.wrap, 'data-side': floatSide(a.wrap, a.align) ?? '' },
         ['img', imgAttrs],
         ['figcaption', 0],
       ]
@@ -405,12 +516,30 @@ const nodes: Record<string, NodeSpec> = {
       return ['ol', attrs, 0]
     },
   },
+  /** Liste à cocher : chaque élément a une case (attribut `checked` de l'élément). */
+  check_list: {
+    content: 'list_item+',
+    group: 'block cell_block',
+    // Avant « ul » : nos listes, celles de GitHub (contains-task-list) et de Tiptap (taskList).
+    parseDOM: [{ tag: 'ul.fp-checklist', priority: 60 }, { tag: 'ul.contains-task-list', priority: 60 }, { tag: 'ul[data-type="taskList"]', priority: 60 }],
+    toDOM: () => ['ul', { class: 'fp-checklist' }, 0],
+  },
   list_item: {
+    attrs: { checked: { default: false } },
     // Un paragraphe, puis d'éventuelles sous-listes : la forme plate du format.
-    content: 'paragraph (bullet_list | ordered_list)*',
+    content: 'paragraph (bullet_list | ordered_list | check_list)*',
     defining: true,
-    parseDOM: [{ tag: 'li' }],
-    toDOM: () => ['li', 0],
+    parseDOM: [
+      {
+        tag: 'li',
+        getAttrs: (dom) => {
+          const el = dom as HTMLElement
+          const box = el.querySelector(':scope > input[type="checkbox"], :scope > label > input[type="checkbox"], :scope > p > input[type="checkbox"]') as HTMLInputElement | null
+          return { checked: el.dataset.checked === 'true' || (box ? box.hasAttribute('checked') || box.checked : false) }
+        },
+      },
+    ],
+    toDOM: (node) => ['li', node.attrs.checked ? { 'data-checked': 'true' } : {}, 0],
   },
   ...tables,
   text: { group: 'inline' },
@@ -584,6 +713,68 @@ const nodes: Record<string, NodeSpec> = {
     ],
   },
   /** Citation de sources : son texte dépend du style du document. */
+  /** Champ de formulaire (texte, liste, date, case) : rempli dans le texte, sa valeur dans les attributs. */
+  formfield: {
+    inline: true,
+    group: 'inline',
+    atom: true,
+    selectable: true,
+    attrs: { kind: { default: 'text' }, name: { default: '' }, value: { default: '' }, options: { default: [] }, checked: { default: false }, placeholder: { default: '' } },
+    leafText: (node) => (node.attrs.kind === 'checkbox' ? (node.attrs.checked ? '☒' : '☐') : node.attrs.value || ''),
+    parseDOM: [
+      {
+        tag: 'span[data-form]',
+        getAttrs: (dom) => {
+          const el = dom as HTMLElement
+          const kind = el.dataset.form ?? 'text'
+          if (!['text', 'dropdown', 'date', 'checkbox'].includes(kind)) return false
+          let options: string[] = []
+          try {
+            const o = JSON.parse(el.dataset.options ?? '[]') as unknown
+            if (Array.isArray(o)) options = o.filter((x): x is string => typeof x === 'string').slice(0, 50).map((x) => x.slice(0, 200))
+          } catch {
+            options = []
+          }
+          return { kind, name: (el.dataset.name ?? '').slice(0, 64), value: (el.dataset.value ?? '').slice(0, 1000), options, checked: el.dataset.checked === 'true', placeholder: (el.dataset.placeholder ?? '').slice(0, 200) }
+        },
+      },
+    ],
+    toDOM: (node) => {
+      const a = node.attrs
+      return ['span', { class: 'fp-form', 'data-form': a.kind, 'data-name': a.name, 'data-value': a.value, 'data-options': JSON.stringify(a.options), 'data-checked': String(!!a.checked), 'data-placeholder': a.placeholder }, a.kind === 'checkbox' ? (a.checked ? '☒' : '☐') : a.value || a.placeholder || '_____']
+    },
+  },
+  /**
+   * Fichier joint : une pastille à son nom ; ses octets dans `src` (URI
+   * data:application/octet-stream, jamais affichée ni exécutée), `assetId` sa ressource d'origine.
+   */
+  attachment: {
+    inline: true,
+    group: 'inline',
+    atom: true,
+    selectable: true,
+    draggable: true,
+    marks: '',
+    attrs: { src: { default: '' }, assetId: { default: null }, name: { default: '' }, size: { default: null }, mime: { default: '' } },
+    leafText: (node) => `[${node.attrs.name}]`,
+    parseDOM: [
+      {
+        tag: 'span[data-attachment]',
+        getAttrs: (dom) => {
+          const el = dom as HTMLElement
+          const src = el.getAttribute('data-src') ?? ''
+          const name = cleanFileName(el.getAttribute('data-name') ?? '')
+          if (!name || src.length > LIMITS.asset || dataUriType(src) !== 'file') return false
+          const size = Number(el.getAttribute('data-size'))
+          return { src, name, size: Number.isFinite(size) && size >= 0 && el.hasAttribute('data-size') ? Math.round(size) : null, mime: cleanMime(el.getAttribute('data-mime') ?? '') }
+        },
+      },
+    ],
+    toDOM: (node) => {
+      const a = node.attrs
+      return ['span', { class: 'fp-attach', 'data-attachment': '', 'data-src': a.src, 'data-name': a.name, ...(a.size !== null ? { 'data-size': String(a.size) } : {}), ...(a.mime ? { 'data-mime': a.mime } : {}) }, a.name]
+    },
+  },
   cite: {
     inline: true,
     group: 'inline',
@@ -684,6 +875,29 @@ const marks: Record<string, MarkSpec> = {
     parseDOM: [{ tag: 'ins.fp-ins', getAttrs: (el) => changeAttrs(el as HTMLElement) }],
     toDOM: (m) => ['ins', { class: 'fp-ins', 'data-author': m.attrs.author, 'data-date': m.attrs.date, title: changeTitle(m.attrs) }, 0],
   },
+  /**
+   * Suivi des modifications : mise en forme changée ; `before` garde la mise en
+   * forme d'avant (format Folio : marques). Accepter retire la marque, refuser remet `before`.
+   */
+  formatchange: {
+    attrs: { author: { default: '' }, date: { default: '' }, before: { default: {} } },
+    inclusive: false,
+    parseDOM: [
+      {
+        tag: 'span.fp-fmt',
+        getAttrs: (el) => {
+          let before: unknown = {}
+          try {
+            before = JSON.parse((el as HTMLElement).getAttribute('data-before') ?? '{}')
+          } catch {
+            before = {}
+          }
+          return { ...changeAttrs(el as HTMLElement), before: before && typeof before === 'object' && !Array.isArray(before) ? before : {} }
+        },
+      },
+    ],
+    toDOM: (m) => ['span', { class: 'fp-fmt', 'data-author': m.attrs.author, 'data-date': m.attrs.date, 'data-before': JSON.stringify(m.attrs.before) }, 0],
+  },
   deletion: {
     attrs: { author: { default: '' }, date: { default: '' } },
     inclusive: false,
@@ -750,7 +964,7 @@ const marks: Record<string, MarkSpec> = {
   },
   code: {
     parseDOM: [{ tag: 'code' }],
-    toDOM: () => ['code', 0],
+    toDOM: () => ['code', { spellcheck: 'false' }, 0],
   },
   sup: {
     excludes: 'sup sub',

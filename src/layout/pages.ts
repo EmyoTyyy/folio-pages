@@ -20,6 +20,10 @@ import { collectNotes, noteLabels, type NoteRef } from '../editor/notes'
 import { resolveStyle } from '../format/theme'
 import type { NoteSettings, PageSetup, StyleDef } from '../format/types'
 import { paginate, type Box, type Line } from './paginate'
+import { displayScale } from './scale'
+
+/** Événement envoyé par la feuille après chaque mise en page. */
+export const PAGINATED = 'fp-paginated'
 
 export const PX_PER_MM = 96 / 25.4
 export const GAP = 28
@@ -401,7 +405,12 @@ function collectBoxes(view: EditorView, styles: Record<string, StyleDef>, frame:
       node.forEach((child, off) => visit(child, pos + 1 + off, { inQuote: true, itemStart: null }))
       return
     }
-    if (name === 'bullet_list' || name === 'ordered_list') {
+    if (name === 'callout') {
+      // Un saut de page avant le premier bloc d'un encadré passe avant l'encadré (son titre le suit).
+      node.forEach((child, off, i) => visit(child, pos + 1 + off, { inQuote: false, itemStart: i === 0 ? pos : null }))
+      return
+    }
+    if (name === 'bullet_list' || name === 'ordered_list' || name === 'check_list') {
       node.forEach((item, off) => {
         const itemPos = pos + 1 + off
         item.forEach((child, coff, i) => visit(child, itemPos + 1 + coff, { inQuote: ctx.inQuote, itemStart: i === 0 ? itemPos : null }))
@@ -571,8 +580,7 @@ export class Paginator {
 
   private frame(): Frame {
     const r = this.host.paper.getBoundingClientRect()
-    const scale = this.host.paper.offsetWidth ? r.width / this.host.paper.offsetWidth : 1
-    return { originTop: r.top, scale: scale || 1 }
+    return { originTop: r.top, scale: displayScale(this.host.paper) }
   }
 
   run(): void {
@@ -661,6 +669,8 @@ export class Paginator {
       this.notes = this.placeNotes(refs, labels, heights, frame)
       this.host.onPages(this.pages, g, this.notes)
       scroller.scrollTop = scrollTop
+      // Le texte a pu bouger (pages ajoutées) : ce qui suit la ligne du curseur se recale.
+      paper.dispatchEvent(new CustomEvent(PAGINATED, { bubbles: true }))
     } finally {
       this.running = false
       this.lastMs = performance.now() - t0

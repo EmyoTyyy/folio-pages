@@ -81,7 +81,7 @@ export const ONLINE_DICT = {
   'pic.search': { fr: 'Rechercher', en: 'Search' },
   'pic.results': { fr: 'Résultats', en: 'Results' },
   'pic.hint': { fr: 'Images libres de Wikimedia Commons. Seuls les mots cherchés sont envoyés.', en: 'Free pictures from Wikimedia Commons. Only the search words are sent.' },
-  'pic.count': { fr: { one: '{n} image libre.', other: '{n} images libres. Choisissez-en une.' }, en: { one: '{n} free picture.', other: '{n} free pictures. Pick one.' } },
+  'pic.count': { fr: { one: '{n} résultat', other: '{n} résultats' }, en: { one: '{n} result', other: '{n} results' } },
   'pic.none': { fr: 'Aucune image libre trouvée.', en: 'No free picture found.' },
   'pic.license': {
     fr: 'Licences Creative Commons ou domaine public : l’auteur et la licence sont mis en légende, avec un lien vers la source.',

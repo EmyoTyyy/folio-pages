@@ -11,7 +11,8 @@
 export const FORMAT = 'folio/doc'
 export const FORMAT_VERSION = 1
 
-export type ListStyle = 'bullet' | 'number'
+/** Puces, numéros, ou cases à cocher (liste de tâches). */
+export type ListStyle = 'bullet' | 'number' | 'check'
 
 /** Couleurs du thème, utilisables partout où une couleur est attendue. */
 export const THEME_COLORS = ['text', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'] as const
@@ -81,6 +82,25 @@ export interface Marks {
   inserted?: Change
   /** Suivi des modifications : texte supprimé (encore visible jusqu'à acceptation). */
   deleted?: Change
+  /** Suivi des modifications : mise en forme changée ; `before`, celle d'avant (accepter garde la nouvelle). */
+  formatChange?: FormatChange
+}
+
+/** Mise en forme de caractères changée pendant le suivi. */
+export interface FormatChange extends Change {
+  before: Marks
+}
+
+/** Mise en forme de paragraphe d'avant une modification suivie (avec le type de bloc, le niveau et le style). */
+export interface ParaBefore extends Omit<ParaProps, 'ink' | 'formatChange'> {
+  kind?: 'paragraph' | 'heading'
+  level?: number
+  style?: string
+}
+
+/** Mise en forme de paragraphe changée pendant le suivi. */
+export interface ParaChange extends Change {
+  before: ParaBefore
 }
 
 /** Qui a fait une modification suivie, et quand (date ISO 8601, ou vide). */
@@ -246,8 +266,45 @@ export interface CiteInline extends Marks {
   locator?: string
 }
 
+/** Champs de formulaire (onglet Développeur) : texte, liste déroulante, date, case à cocher. */
+export const FORM_KINDS = ['text', 'dropdown', 'date', 'checkbox'] as const
+export type FormKind = (typeof FORM_KINDS)[number]
+
+/** Un champ de formulaire à remplir ; sa valeur est gardée dans le document. */
+export interface FormInline extends Marks {
+  type: 'formfield'
+  kind: FormKind
+  /** Nom (identifiant du champ, « Nom », « Date de naissance »…). */
+  name?: string
+  /** Texte saisi, choix de la liste, ou date AAAA-MM-JJ. */
+  value?: string
+  /** Liste déroulante : les choix. */
+  options?: string[]
+  /** Case à cocher : cochée. */
+  checked?: true
+  /** Texte d'aide quand le champ est vide. */
+  placeholder?: string
+}
+
 /** Élément en ligne : du texte, ou un objet (champ, note, formule…) qui en tient lieu. */
-export type Inline = Run | FieldInline | NoteInline | MathInline | MergeInline | SeqInline | BookmarkInline | XrefInline | IndexInline | CiteInline
+/**
+ * Fichier joint (Insertion → Objet) : ses octets dans les ressources du document,
+ * toujours en « application/octet-stream » (jamais affiché ni exécuté, seulement
+ * enregistré sur l'ordinateur) ; son type d'origine à part, pour l'information.
+ */
+export interface AttachmentInline {
+  type: 'attachment'
+  /** « asset:<id> » (ou, à l'entrée, une URI data:application/octet-stream;base64,…). */
+  src: string
+  /** Nom du fichier, sans chemin. */
+  name: string
+  /** Taille en octets. */
+  size?: number
+  /** Type d'origine (« application/pdf »…). */
+  mime?: string
+}
+
+export type Inline = Run | FieldInline | NoteInline | MathInline | MergeInline | SeqInline | BookmarkInline | XrefInline | IndexInline | CiteInline | FormInline | AttachmentInline
 
 /** Éléments en ligne qui ne montrent rien d'eux-mêmes (signet, entrée d'index). */
 export const isHiddenInline = (x: Inline): boolean => 'type' in x && (x.type === 'bookmark' || x.type === 'xe')
@@ -272,9 +329,28 @@ export interface ParaProps {
   border?: string
   /** Lettrine : la première lettre occupe ce nombre de lignes (2 à 10). */
   dropCap?: number
+  /** Dessin à main levée (onglet Dessin), placé par rapport au coin haut gauche du paragraphe. */
+  ink?: InkStroke[]
+  /** Sens d'écriture : de droite à gauche (arabe, hébreu…) ou forcé de gauche à droite ; absent : selon le texte. */
+  dir?: 'rtl' | 'ltr'
+  /** Sans numéros de ligne (ses lignes ne comptent pas). */
+  noLineNumbers?: true
+  /** Suivi des modifications : mise en forme du paragraphe changée. */
+  formatChange?: ParaChange
 }
 
-export const PARA_KEYS = ['align', 'indent', 'spacing', 'line', 'keepNext', 'keepLines', 'pageBreakBefore', 'shading', 'border', 'dropCap'] as const
+/** Un trait de dessin : stylo ou surligneur ; points en points typographiques (x, y, x, y…). */
+export interface InkStroke {
+  tool: 'pen' | 'highlighter'
+  color: string
+  /** Épaisseur en points. */
+  width: number
+  points: number[]
+}
+
+export const INK_LIMITS = { strokes: 200, points: 4000, coord: 3000 }
+
+export const PARA_KEYS = ['align', 'indent', 'spacing', 'line', 'keepNext', 'keepLines', 'pageBreakBefore', 'shading', 'border', 'dropCap', 'ink', 'dir', 'noLineNumbers'] as const
 
 export interface ListItem extends ParaProps {
   content: Inline[]
@@ -282,6 +358,8 @@ export interface ListItem extends ParaProps {
   level: number
   /** Style de la liste à laquelle appartient l'élément. */
   style: ListStyle
+  /** Liste à cocher : la case est cochée. */
+  checked?: true
 }
 
 /** Numérotation : « default » alterne 1. a. i. selon le niveau ; « outline » donne 1.1.1. */
@@ -298,6 +376,8 @@ export interface TableCell {
   /** Couleur de fond. */
   bg?: string
   valign?: 'top' | 'middle' | 'bottom'
+  /** Texte vertical : de haut en bas (tbrl) ou de bas en haut (btlr). */
+  textDir?: 'tbrl' | 'btlr'
 }
 
 export interface Crop {
@@ -321,6 +401,11 @@ export type Block =
       continue?: true
     }
   | { type: 'quote'; blocks: Block[] }
+  /**
+   * Encadré : une remarque mise à part (note, astuce, important, avertissement,
+   * attention), avec un titre (celui du type s'il est absent).
+   */
+  | { type: 'callout'; kind: CalloutKind; title?: string; blocks: Block[] }
   | { type: 'code'; language: string; text: string }
   | {
       type: 'table'
@@ -339,6 +424,9 @@ export type Block =
       repeatHeader?: true
     }
   | { type: 'divider' }
+  /** Graphique (barres, courbes, secteurs), avec ses propres données. */
+  | ChartBlock
+  | DiagramBlock
   /** Équation centrée ($$…$$) ; numérotée (1), (2)… si `numbered`. */
   | { type: 'equation'; tex: string; numbered?: true }
   | { type: 'pagebreak' }
@@ -355,6 +443,10 @@ export type Block =
   | { type: 'authorities'; category: AuthorityCategory | 'all'; title: string }
   /** Bibliographie : les sources citées (ou toutes), dans le style de citation du document. */
   | { type: 'bibliography'; title: string; all?: true }
+  /** Glossaire : les termes (FolioDoc.terms) employés dans le texte (ou tous), avec leur définition. */
+  | { type: 'glossary'; title: string; all?: true }
+  /** Liste des abréviations : les abréviations employées (ou toutes) et leur forme longue. */
+  | { type: 'abbreviations'; title: string; all?: true }
   /**
    * Saut de section : la suite commence une nouvelle page (ou la prochaine page
    * impaire ou paire) et peut avoir sa numérotation, ses en-têtes et pieds de
@@ -381,8 +473,11 @@ export type Block =
       /** Hauteur en points, seulement si l'image est déformée exprès (sinon ses proportions sont gardées). */
       height?: number
       align: 'left' | 'center' | 'right'
-      /** none : seule sur sa ligne ; left / right : flottante, le texte l'habille. */
-      wrap: 'none' | 'left' | 'right'
+      /**
+       * none : seule sur sa ligne ; left / right : flottante, le texte l'habille ;
+       * tight / through : le texte suit son contour (côté : align) ; behind / front : derrière ou devant le texte.
+       */
+      wrap: 'none' | 'left' | 'right' | 'tight' | 'through' | 'behind' | 'front'
       caption: Inline[]
       /** Rognage en pourcentage de chaque côté. */
       crop?: Crop
@@ -413,7 +508,52 @@ export interface PictureAdjust {
   glow?: string
   /** Bords adoucis, en points. */
   softEdges?: number
+  /** Reflet sous l'image : la part de sa hauteur reflétée, 10 à 100 %. */
+  reflection?: number
 }
+
+/** Types d'encadré (les mêmes que les alertes Markdown de GitHub). */
+export const CHART_KINDS = ['bar', 'line', 'pie'] as const
+export type ChartKind = (typeof CHART_KINDS)[number]
+/** Une série : un nom (la légende) et une valeur par étiquette (null : pas de valeur). */
+export interface ChartSeries {
+  name: string
+  values: (number | null)[]
+}
+/** Graphique : des étiquettes (catégories), et une ou plusieurs séries de valeurs. Secteurs : la première série. */
+export interface ChartBlock {
+  type: 'chart'
+  kind: ChartKind
+  title?: string
+  labels: string[]
+  series: ChartSeries[]
+  /** Légende (par défaut : oui, quand il y a plusieurs séries ou des secteurs). */
+  legend?: false
+  /** Barres horizontales (sinon verticales). */
+  horizontal?: true
+}
+
+/** Un élément de diagramme : son texte et son niveau (0 : premier niveau). */
+export interface DiagramItem {
+  text: string
+  level: number
+}
+
+/** Diagramme : une liste mise en forme (liste, processus, cycle, hiérarchie, pyramide, radial). */
+export interface DiagramBlock {
+  type: 'diagram'
+  kind: import('./diagram').DiagramKind
+  items: DiagramItem[]
+  title?: string
+  /** 'colorful' (une couleur du thème par élément, par défaut) ou une couleur du thème pour tous. */
+  color?: (typeof import('./diagram').DIAGRAM_COLORS)[number]
+}
+
+export const CALLOUT_KINDS = ['note', 'tip', 'important', 'warning', 'caution'] as const
+export type CalloutKind = (typeof CALLOUT_KINDS)[number]
+
+/** Blocs contenus dans un bloc conteneur (citation, encadré, colonnes), sinon null. */
+export const innerBlocks = (b: Block): Block[] | null => (b.type === 'quote' || b.type === 'callout' || b.type === 'columns' ? b.blocks : null)
 
 export type BlockType = Block['type']
 export type BlockOf<T extends BlockType> = Extract<Block, { type: T }>
@@ -655,8 +795,21 @@ export interface Source {
   note?: string
 }
 
-export const CITATION_STYLES = ['apa', 'mla', 'chicago', 'harvard', 'ieee', 'iso690'] as const
+export const CITATION_STYLES = ['apa', 'mla', 'chicago', 'chicago-notes', 'harvard', 'ieee', 'vancouver', 'iso690'] as const
 export type CitationStyle = (typeof CITATION_STYLES)[number]
+
+/** Numéros de ligne dans la marge de gauche. */
+export interface LineNumbers {
+  /** Recommencer la numérotation : jamais, à chaque page, à chaque section. */
+  restart: 'continuous' | 'page' | 'section'
+  /** Premier numéro. */
+  start: number
+  /** Un numéro affiché toutes les n lignes (5 : 5, 10, 15…), les autres lignes comptent. */
+  countBy: number
+  /** Distance au texte en points ; absent : automatique (18 pt). */
+  distance?: number
+}
+export const LINE_NUMBER_RESTARTS = ['continuous', 'page', 'section'] as const
 
 export interface FolioDoc {
   format: typeof FORMAT
@@ -683,8 +836,12 @@ export interface FolioDoc {
   trackChanges: boolean
   /** Césure automatique (coupure des mots en fin de ligne, selon la langue). */
   hyphenate?: true
+  /** Numéros de ligne dans la marge (vue page, impression, PDF). */
+  lineNumbers?: LineNumbers
   /** Filigrane derrière le texte de chaque page. */
   watermark?: Watermark
+  /** Objectif d'écriture : un nombre de mots, et une date limite (AAAA-MM-JJ) facultative. */
+  goal?: WritingGoal
   /** Modèle : chaque ouverture commence un nouveau document à partir de celui-ci. */
   template: boolean
   /** Copie en lecture seule : s'ouvre en lecture, sans modification. */
@@ -695,6 +852,25 @@ export interface FolioDoc {
   sources?: Source[]
   /** Style des citations et de la bibliographie. */
   citationStyle?: CitationStyle
+  /** Termes du glossaire et abréviations, définis une fois, retrouvés dans le texte. */
+  terms?: Term[]
+  /** Formulaire protégé : seuls les champs de formulaire se remplissent. */
+  formsOnly?: true
+}
+
+/** Un terme du glossaire (avec sa définition) ou une abréviation (avec sa forme longue). */
+export interface Term {
+  id: string
+  term: string
+  definition: string
+  kind: 'glossary' | 'abbreviation'
+  /** Pluriel, s'il ne suit pas la règle (« critères », « données »). */
+  plural?: string
+}
+
+export interface WritingGoal {
+  words: number
+  deadline?: string
 }
 
 /** Filigrane : un texte (BROUILLON, CONFIDENTIEL…) ou une image, derrière le texte de chaque page. */

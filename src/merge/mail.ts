@@ -12,6 +12,7 @@
 import { cssHighlight, HIGHLIGHT_VALUES } from '../format/color'
 import type { Block, Inline, Theme } from '../format/types'
 import { isRun } from '../format/types'
+import { CALLOUT_COLORS, calloutLabel } from '../format/callout'
 import type { EmailMessage } from './engine'
 
 /** Au-delà, un lien mailto: risque d'être tronqué ou refusé par le système. */
@@ -77,6 +78,8 @@ export interface HtmlContext {
   assets?: Record<string, string>
   /** Images utilisées : identifiant de ressource → cid. */
   images?: Map<string, string>
+  /** Langue du document (titres par défaut des encadrés). */
+  lang?: string
 }
 
 function color(c: string, theme?: Theme): string {
@@ -162,6 +165,11 @@ export function blocksHtml(blocks: Block[], ctx: HtmlContext = {}): string {
       case 'quote':
         out += `<blockquote style="margin:0 0 10px;padding-left:12px;border-left:3px solid #ccc">${blocksHtml(b.blocks, ctx)}</blockquote>`
         break
+      case 'callout': {
+        const c = CALLOUT_COLORS[b.kind]
+        out += `<div style="margin:0 0 10px;padding:8px 12px;border-left:4px solid ${c.bar};background:${c.fill}"><p style="margin:0 0 4px;font-weight:bold;color:${c.bar}">${esc(b.title || calloutLabel(b.kind, ctx.lang ?? ''))}</p>${blocksHtml(b.blocks, ctx)}</div>`
+        break
+      }
       case 'columns':
         out += blocksHtml(b.blocks, ctx)
         break

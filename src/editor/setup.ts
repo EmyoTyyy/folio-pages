@@ -25,6 +25,7 @@ import {
   stepFontSize,
   toggleFlag,
   toggleList,
+  checklistPlugin,
   type CaseMode,
 } from './commands'
 import { findPlugin } from './find'
@@ -44,6 +45,16 @@ import { linksPlugin, type LinkHooks } from './links'
 import { mergePlugin } from './merge'
 import { refsPlugin, type RefsHooks } from './refs'
 import { FigureView, FolioTableView, captionFocusPlugin, fieldsKey, fieldsPlugin, tocPlugin, type FieldContextProvider, type FigureHooks } from './views'
+import { CalloutView, type CalloutHooks } from './callout'
+import { ChartView, chartKeyPlugin, chartThemePlugin, type ChartHooks } from './chart'
+import { DiagramView, diagramPlugin, type DiagramHooks } from './diagram'
+import { currentBlockPlugin } from './current'
+import { longSentencesPlugin } from './longsentences'
+import { redactPlugin } from './redact'
+import { FormView, formsOnlyPlugin, type FormHooks } from './forms'
+import { AttachmentView, attachmentKeys, type AttachmentHooks } from './attachment'
+import { outlinePlugin } from './outlineview'
+import { inkPlugin } from './ink'
 
 const n = schema.nodes
 
@@ -92,7 +103,7 @@ function columnClickGuard(): Plugin {
         },
       },
     },
-    filterTransaction: (tr) => !(Date.now() < until && tr.docChanged && tr.steps.every((s) => s instanceof ReplaceAroundStep)),
+    filterTransaction: (tr) => !!tr.getMeta('collab$') || !(Date.now() < until && tr.docChanged && tr.steps.every((s) => s instanceof ReplaceAroundStep)),
   })
 }
 
@@ -125,17 +136,30 @@ export interface EditorContext {
   links?: LinkHooks
   /** Références : légendes, renvois, index, citations, listes générées. */
   refs?: RefsHooks
+  /** Encadrés : menu du type, libellés. */
+  callout?: CalloutHooks
+  /** Champs de formulaire : libellés. */
+  forms?: FormHooks
+  /** Diagrammes : modifier, infobulle. */
+  diagram?: DiagramHooks
+  /** Fichiers joints : taille lisible, bulle. */
+  attachment?: AttachmentHooks
+  /** Graphiques : modification. */
+  chart?: ChartHooks
   /** Raccourcis de l'application traités hors de l'éditeur (Ctrl+K, Ctrl+F…). */
-  onShortcut?: (name: 'link' | 'find' | 'replace' | 'painter-copy' | 'painter-paste' | 'footnote' | 'endnote' | 'comment' | 'equation' | 'mark-entry' | 'mark-citation' | 'bookmark' | 'thesaurus' | 'goto') => boolean
+  onShortcut?: (name: 'link' | 'find' | 'replace' | 'painter-copy' | 'painter-paste' | 'footnote' | 'endnote' | 'comment' | 'equation' | 'mark-entry' | 'mark-citation' | 'bookmark' | 'thesaurus' | 'goto' | 'snippet' | 'define-term') => boolean
 }
 
 export function editorPlugins(ctx?: EditorContext): Plugin[] {
   const shortcut = (name: Parameters<NonNullable<EditorContext['onShortcut']>>[0]): Command => () => ctx?.onShortcut?.(name) ?? false
-  const plugins: Plugin[] = []
+  // Entrée sur un fichier joint sélectionné : avant les raccourcis, qui remplaceraient la pastille.
+  const plugins: Plugin[] = [attachmentKeys(), outlinePlugin()]
   // Les notes d'abord : Entrée sur un appel sélectionné ouvre la note (sinon Entrée le remplacerait).
   if (ctx?.notes) plugins.push(notesPlugin(ctx.notes))
   // Entrée sur une formule sélectionnée l'ouvre (avant le remplacement par Entrée).
   if (ctx?.math) plugins.push(mathPlugin(ctx.math))
+  // De même pour un graphique ; ses couleurs suivent le thème.
+  plugins.push(chartKeyPlugin(ctx?.chart), chartThemePlugin(), diagramPlugin(ctx?.diagram))
   // Le suivi des modifications retient la touche (Retour arrière ou Suppr) avant qu'elle agisse.
   if (ctx?.track) plugins.push(trackPlugin(ctx.track))
   const rules = markdownInputRules()
@@ -195,9 +219,13 @@ export function editorPlugins(ctx?: EditorContext): Plugin[] {
       'Alt-Shift-X': shortcut('mark-entry'),
       'Alt-Shift-i': shortcut('mark-citation'),
       'Alt-Shift-I': shortcut('mark-citation'),
+      'Alt-Shift-g': shortcut('define-term'),
+      'Alt-Shift-G': shortcut('define-term'),
       'Mod-Shift-F5': shortcut('bookmark'),
       'Shift-F7': shortcut('thesaurus'),
       'Mod-g': shortcut('goto'),
+      // F3 : le mot avant le curseur devient l'extrait qu'il désigne.
+      F3: shortcut('snippet'),
       F5: shortcut('goto'),
       Enter: splitListItem(n.list_item),
       'Shift-Enter': chainCommands(exitCode, insertHardBreak),
@@ -212,6 +240,12 @@ export function editorPlugins(ctx?: EditorContext): Plugin[] {
     dropCursor({ color: 'var(--fp-accent)', width: 2 }),
     gapCursor(),
     numberingPlugin(),
+    checklistPlugin(),
+    currentBlockPlugin(),
+    longSentencesPlugin(),
+    redactPlugin(),
+    formsOnlyPlugin(ctx?.forms),
+    inkPlugin(),
     multiSelectionPlugin(),
     findPlugin(),
     highlightPlugin(),
@@ -240,5 +274,10 @@ export function nodeViews(ctx: EditorContext) {
   return {
     figure: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) =>
       new FigureView(node, view, getPos, ctx.figure),
+    callout: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new CalloutView(node, view, getPos, ctx.callout),
+    formfield: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new FormView(node, view, getPos, ctx.forms),
+    attachment: (node: import('prosemirror-model').Node) => new AttachmentView(node, ctx.attachment),
+    chart: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new ChartView(node, view, getPos, ctx.chart),
+    diagram: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new DiagramView(node, view, getPos, ctx.diagram),
   }
 }

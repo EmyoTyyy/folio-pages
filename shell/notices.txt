@@ -7,7 +7,7 @@
       saved by Folio Pages carries this block.
 
       Bento (github.com/nyblnet/bento): file format, self-saving, loader,
-        base86 codec, DEFLATE decoder and LaTeX equation engine. MIT License.
+        DEFLATE decoder and LaTeX equation engine. MIT License.
         Copyright (c) 2026 The Bento authors.
       ProseMirror (prosemirror-model, -state, -view, -transform, -commands,
         -keymap, -history, -schema-list, -gapcursor, -dropcursor,
@@ -15,12 +15,18 @@
         Copyright (C) 2015-2017 by Marijn Haverbeke and others.
       prosemirror-tables: MIT License.
         Copyright (C) 2015-2016 by Marijn Haverbeke and others.
+      prosemirror-collab: MIT License.
+        Copyright (C) 2015-2017 by Marijn Haverbeke and others.
+      Character widths of the 14 standard PDF fonts, from Adobe's Core 14
+        AFM files. Copyright (c) 1985-1997 Adobe Systems Incorporated.
       orderedmap, rope-sequence, w3c-keyname: MIT License.
         Copyright (C) 2016 by Marijn Haverbeke and others.
       docx (writing .docx files): MIT License. Copyright (c) 2016 Dolan.
       fflate (reading and writing ZIP archives): MIT License.
         Copyright (c) 2026 Arjun Barrett.
       nanoid: MIT License. Copyright 2017 Andrey Sitnik.
+      Tabler Icons (Insert, Icons): MIT License.
+        Copyright (c) 2020-2026 Pawel Kuna.
       Fonts Hanken Grotesk, Newsreader and JetBrains Mono: SIL Open Font
         License 1.1 (full text in the app: Help, About). Copyright 2021 The
         Hanken Grotesk Project Authors; Copyright 2020 The Newsreader Project

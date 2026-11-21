@@ -1,7 +1,9 @@
 // Vues de nœuds : images (redimensionnement, rognage, rotation, légende),
 // champs (valeur calculée), tableaux (attributs de style sur <table>).
 
-import { adjustCss } from '../format/picture'
+import { adjustCss, contourWrap, floatSide, REFLECTION_MASK } from '../format/picture'
+import { contourShape } from './contour'
+import { displayScale } from '../layout/scale'
 import { closeHistory } from 'prosemirror-history'
 import type { Node as PMNode } from 'prosemirror-model'
 import { NodeSelection, Plugin, PluginKey, type EditorState } from 'prosemirror-state'
@@ -39,6 +41,10 @@ export class FigureView implements NodeView {
   private cropping = false
   private cropUi: HTMLElement | null = null
   private cropOff: (() => void) | null = null
+  /** Habillage rapproché : le contour est recalculé quand la figure change de taille. */
+  private shapeObs: ResizeObserver | null = null
+  /** Reflet : une copie retournée du cadre, qui s'efface vers le bas. */
+  private reflect: HTMLElement | null = null
 
   constructor(
     private node: PMNode,
@@ -260,6 +266,7 @@ export class FigureView implements NodeView {
     const a = this.node.attrs
     this.dom.dataset.align = a.align
     this.dom.dataset.wrap = a.wrap
+    this.dom.dataset.side = floatSide(a.wrap, a.align) ?? ''
     this.dom.classList.toggle('is-empty-caption', this.node.content.size === 0)
     this.contentDOM.dataset.placeholder = this.hooks.label('captionPlaceholder')
     const src = a.src as string
@@ -345,6 +352,75 @@ export class FigureView implements NodeView {
     // Retouches (couleurs, transparence, ombre, halo, bords adoucis) : sur le cadre, qui découpe l'image rognée.
     const fx = adjustCss(a.adjust as PictureAdjust | null, cssColor)
     for (const k of ['filter', 'opacity', 'mask-image', '-webkit-mask-image', 'mask-composite', '-webkit-mask-composite']) this.frame.style.setProperty(k, fx[k] ?? '')
+    this.drawReflection((a.adjust as PictureAdjust | null)?.reflection ?? 0)
+    this.updateShape()
+  }
+
+  /** Reflet : la copie du cadre (rognage, rotation, retouches compris), retournée, coupée à `pct` % de sa hauteur. */
+  private drawReflection(pct: number): void {
+    const ratio = parseFloat(this.frame.style.aspectRatio)
+    if (!pct || !ratio) {
+      this.reflect?.remove()
+      this.reflect = null
+      return
+    }
+    if (!this.reflect) {
+      this.reflect = document.createElement('div')
+      this.reflect.className = 'fp-figure__reflect'
+      this.reflect.contentEditable = 'false'
+      this.reflect.setAttribute('aria-hidden', 'true')
+      this.reflect.style.setProperty('mask-image', REFLECTION_MASK)
+      this.reflect.style.setProperty('-webkit-mask-image', REFLECTION_MASK)
+      this.frame.after(this.reflect)
+    }
+    const copy = this.frame.cloneNode(true) as HTMLElement
+    copy.className = 'fp-figure__mirror' + (this.frame.classList.contains('has-border') ? ' has-border' : '')
+    for (const el of Array.from(copy.querySelectorAll('[data-handle], .fp-figure__placeholder, .fp-cropper'))) el.remove()
+    copy.style.width = '100%'
+    copy.style.maxWidth = 'none'
+    this.reflect.replaceChildren(copy)
+    this.reflect.style.width = this.frame.style.width
+    this.reflect.style.aspectRatio = String(ratio / (pct / 100))
+  }
+
+  /** Habillage rapproché ou au travers : le texte suit le contour (sinon, la boîte de l'image). */
+  private updateShape(): void {
+    if (!contourWrap(this.node.attrs.wrap)) {
+      this.shapeObs?.disconnect()
+      this.shapeObs = null
+      this.dom.style.shapeOutside = ''
+      return
+    }
+    if (!this.shapeObs) {
+      this.shapeObs = new ResizeObserver(() => this.drawShape())
+      this.shapeObs.observe(this.dom)
+    }
+    requestAnimationFrame(() => this.drawShape())
+  }
+
+  private drawShape(): void {
+    const a = this.node.attrs
+    const side = floatSide(a.wrap, a.align)
+    if (!contourWrap(a.wrap) || !side || !this.dom.isConnected) return
+    const scale = displayScale(this.dom)
+    const fr = this.frame.getBoundingClientRect()
+    const dr = this.dom.getBoundingClientRect()
+    const cs = getComputedStyle(this.dom)
+    const m = (v: string) => parseFloat(v) || 0
+    const shape = contourShape({
+      img: this.img,
+      frameW: fr.width / scale,
+      frameH: fr.height / scale,
+      offX: (fr.left - dr.left) / scale + m(cs.marginLeft),
+      offY: (fr.top - dr.top) / scale + m(cs.marginTop),
+      boxW: dr.width / scale + m(cs.marginLeft) + m(cs.marginRight),
+      boxH: dr.height / scale + m(cs.marginTop) + m(cs.marginBottom),
+      side,
+      crop: a.crop,
+      rotate: a.rotate,
+      flip: a.flip,
+    })
+    this.dom.style.shapeOutside = shape ?? ''
   }
 
   private startResize(e: PointerEvent, corner: string): void {
@@ -402,6 +478,7 @@ export class FigureView implements NodeView {
 
   destroy(): void {
     this.endCrop()
+    this.shapeObs?.disconnect()
   }
 
   selectNode(): void {
@@ -567,7 +644,7 @@ export function tocPlugin(pageOf: (pos: number) => string | null, onJump: (pos: 
     const decos: Decoration[] = []
     let headings: { level: number; text: string; pos: number }[] | null = null
     state.doc.descendants((node, pos) => {
-      if (node.type.name !== 'toc') return node.type.name === 'doc' || node.type.name === 'blockquote' || node.type.name === 'columns'
+      if (node.type.name !== 'toc') return node.type.name === 'doc' || node.type.name === 'blockquote' || node.type.name === 'callout' || node.type.name === 'columns'
       headings ??= collectHeadings(state)
       const levels = node.attrs.levels as number
       const entries: TocEntry[] = headings.filter((h) => h.level <= levels).map((h) => ({ ...h, page: pageOf(h.pos) }))
@@ -596,7 +673,7 @@ function collectHeadings(state: EditorState) {
       out.push({ level: node.attrs.level, text: node.textContent.trim(), pos })
       return false
     }
-    return ['doc', 'blockquote', 'columns'].includes(node.type.name)
+    return ['doc', 'blockquote', 'callout', 'columns'].includes(node.type.name)
   })
   return out
 }

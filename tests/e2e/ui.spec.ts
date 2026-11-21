@@ -44,7 +44,7 @@ test('barre d’onglets : Fichier d’abord, les onglets, puis Commentaires, Mod
   const tabs = await page.locator('.fp-ribbon__bar').evaluate((bar) =>
     Array.from(bar.querySelectorAll<HTMLElement>('[data-menu], .fp-ribbon__tab:not([hidden])')).map((b) => b.dataset.menu ?? b.dataset.tab),
   )
-  expect(tabs).toEqual(['file', 'home', 'insert', 'design', 'layout', 'references', 'mailings', 'review', 'view', 'ai', 'help'])
+  expect(tabs).toEqual(['file', 'home', 'insert', 'design', 'layout', 'references', 'mailings', 'review', 'draw', 'view', 'developer', 'ai', 'help'])
   await expect(page.locator('.fp-ribbon__side #fp-comments-btn')).toContainText('Commentaires')
   await expect(page.locator('#fp-mode')).toContainText('Édition')
   await expect(page.locator('#fp-share')).toContainText('Partager')

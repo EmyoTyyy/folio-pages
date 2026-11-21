@@ -2,6 +2,9 @@
 // onglets contextuels Tableau et Image. Chaque contrôle sait se mettre à jour
 // d'après l'état de l'éditeur (gras actif, police courante, style…).
 
+import * as WIN from './windows'
+import * as CH from './chart'
+import { textDirectionMenu } from './direction'
 import {
   addColumnAfter,
   addColumnBefore,
@@ -37,6 +40,9 @@ import {
   markValue,
   paraAttr,
   setAlign,
+  paraDir,
+  setDirection,
+  visualAlign,
   setCodeBlock,
   setLineSpacing,
   setListAttrs,
@@ -65,6 +71,14 @@ import { h, icon, shortcut } from './dom'
 import { RIBBON_ICONS as I } from './icons'
 import { colorPalette, highlightPalette } from './palette'
 import * as P from './panels'
+import * as WT from './writetools'
+import * as SN from './snippets'
+import * as GL from './glossary'
+import * as PR from './privacy'
+import * as FM from './forms'
+import * as DR from './draw'
+import { applyFocusClasses } from './typewriter'
+import { WRAP_MENU, alignAttrs, wrapAttrs, type Wrap } from '../format/picture'
 import * as R from './refs'
 import * as O from './online'
 import { convertTex, macrosDialog, newEquation } from './equation'
@@ -79,7 +93,14 @@ import * as IT from './inserttools'
 import { aboutDialog, aiHelpDialog, copyJson, replaceFromJsonDialog, reportDialog } from './actions'
 import { availableLanguages, lang, setLang } from '../i18n/i18n'
 import { addLanguageUi, languagesDialog } from './packs'
-import { checkUpdatesUi, toggleOffline, whatsNewDialog } from './updates'
+import * as OB from './objects'
+import * as MK from './markup'
+import * as CMP from './compare'
+import * as ICN from './insert-icons'
+import * as DG from './diagram'
+import * as OL from '../editor/outlineview'
+import { openImmersive } from './immersive'
+import { checkUpdatesUi, toggleAutoUpdate, toggleOffline, whatsNewDialog } from './updates'
 import { isOffline } from '../net'
 import { Popover, closePopovers, popItem } from './popover'
 import { toast } from './dialog'
@@ -99,7 +120,7 @@ export interface Ctl {
   parts?: Ctl[]
 }
 
-interface Group {
+export interface Group {
   id: string
   label: string
   controls: Ctl[]
@@ -428,7 +449,7 @@ type Item = Ctl | null | false | undefined
 const live = (items: Item[]): Ctl[] => items.filter((c): c is Ctl => !!c)
 
 /** Une colonne de petits contrôles (trois au plus). */
-function col(...items: Item[]): Ctl {
+export function col(...items: Item[]): Ctl {
   const ctls = live(items)
   return { el: h('div', { class: 'fp-rb-stack fp-rb-col' }, ...ctls.map((c) => c.el)), update: () => ctls.forEach((c) => c.update?.()), parts: ctls }
 }
@@ -725,6 +746,13 @@ function homeGroups(app: FolioApp): Group[] {
                 popItem(t('rb.multilevelPlain'), () => numbered(null), { 'data-multilevel': 'default' }),
               ),
           }),
+          button({
+            id: 'checklist',
+            label: t('rb.checklist'),
+            icon: I.checklist,
+            active: () => listAt(app.state)?.node.type === schema.nodes.check_list,
+            run: () => app.run(toggleList('check')),
+          }),
           button({ id: 'indent-less', label: t('ribbon.indentLess'), icon: I.indentLess, run: () => app.run(indent(-1)) }),
           button({ id: 'indent-more', label: t('ribbon.indentMore'), icon: I.indentMore, run: () => app.run(indent(1)) }),
           dropdown({
@@ -753,13 +781,18 @@ function homeGroups(app: FolioApp): Group[] {
               label: t(`ribbon.align.${a}` as Key),
               icon: I[`align${a[0].toUpperCase()}${a.slice(1)}` as 'alignLeft'],
               keys: shortcut(`Maj+${{ left: 'L', center: 'E', right: 'R', justify: 'J' }[a]}`).replace('Maj', t('key.shift')),
-              active: () => {
-                const v = paraAttr(app.state, 'align')
-                return a === 'left' ? v === null || v === 'left' : v === a
-              },
+              active: () => visualAlign(app.state) === a,
               run: () => app.run(setAlign(a)),
             }),
           ),
+          // De droite à gauche : un interrupteur (le menu Orientation du texte donne les deux sens).
+          button({
+            id: 'dir-rtl',
+            label: t('dir.rtl'),
+            icon: I.dirRtl,
+            active: () => paraDir(app.state) === 'rtl',
+            run: () => app.run(setDirection(paraDir(app.state) === 'rtl' ? 'ltr' : 'rtl')),
+          }),
           dropdown({ id: 'line-spacing', label: t('ribbon.lineSpacing'), icon: I.lineSpacing, menu: lineMenu }),
           split({
             id: 'shading',
@@ -934,6 +967,9 @@ function insertGroups(app: FolioApp): Group[] {
     h(
       'div',
       { class: 'fp-pop__list' },
+      heading(t('snip.heading')),
+      ...SN.snippetMenuItems(app),
+      sep(),
       heading(t('rb.fieldHeading')),
       ...FIELD_NAMES.map((f) =>
         popItem(h('span', {}, h('span', { class: 'fp-pop__main' }, t(`field.${f}` as Key)), h('span', { class: 'fp-pop__hint' }, `{{${f}}}`)), () => app.run(insertField(f as FieldName)), { 'data-field': f }),
@@ -983,12 +1019,12 @@ function insertGroups(app: FolioApp): Group[] {
         }),
         col(
           soon({ id: 'insert-shapes', label: t('rb.shapes'), icon: I.shapes, text: true, drop: true }),
-          soon({ id: 'insert-icons', label: t('rb.icons'), icon: I.iconsIcon, text: true }),
+          button({ id: 'insert-icons', label: t('rb.icons'), icon: I.iconsIcon, text: true, run: () => ICN.iconsDialog(app) }),
           soon({ id: 'insert-3d', label: t('rb.models3d'), icon: I.cube3d, text: true, drop: true }),
         ),
         col(
-          soon({ id: 'insert-diagram', label: t('rb.diagram'), icon: I.diagram, text: true }),
-          soon({ id: 'insert-chart', label: t('rb.chart'), icon: I.chart, text: true }),
+          button({ id: 'insert-diagram', label: t('rb.diagram'), icon: I.diagram, text: true, run: () => DG.diagramDialog(app) }),
+          button({ id: 'insert-chart', label: t('rb.chart'), icon: I.chart, text: true, run: () => CH.insertChartUi(app) }),
           IT.screenshot(app),
         ),
       ],
@@ -1065,7 +1101,7 @@ function insertGroups(app: FolioApp): Group[] {
         col(
           IT.signatureLine(app),
           button({ id: 'insert-date', label: t('ribbon.dateTime'), icon: I.date, text: true, run: () => P.dateTimeDialog(app) }),
-          soon({ id: 'insert-object', label: t('rb.object'), icon: I.object, text: true, drop: true }),
+          OB.objectMenu(app),
         ),
       ],
     },
@@ -1108,7 +1144,7 @@ function insertGroups(app: FolioApp): Group[] {
           button({ id: 'insert-quote', label: t('ribbon.quote'), icon: I.quote, text: true, active: () => styleIdAt(app.state) === 'quote', run: () => app.run(toggleQuote) }),
           button({ id: 'insert-code', label: t('ribbon.codeBlock'), icon: I.codeBlock, text: true, active: () => styleIdAt(app.state) === 'code', run: () => app.run(setCodeBlock()) }),
         ),
-        col(button({ id: 'inline-code', label: t('ribbon.inlineCode'), icon: I.code, text: true, active: () => markActive(app.state, m.code), run: () => app.run(toggleFlag('code')) })),
+        col(button({ id: 'inline-code', label: t('ribbon.inlineCode'), icon: I.code, text: true, active: () => markActive(app.state, m.code), run: () => app.run(toggleFlag('code')) }), WT.calloutButton(app)),
       ],
     },
   ]
@@ -1276,14 +1312,31 @@ const MARGIN_KEYS = ['normal', 'narrow', 'moderate', 'wide'] as const
 function wrapMenu(app: FolioApp): HTMLElement {
   const f = figureAt(app.state)
   const set = (attrs: Record<string, unknown>) => app.run(setFigureAttrs(attrs))
+  const align = (f?.node.attrs.align as string) ?? 'center'
   return h(
     'div',
     { class: 'fp-pop__list' },
-    ...(['none', 'left', 'right'] as const).map((w) =>
-      popItem(h('span', { class: 'fp-pop__icon-row' }, icon(I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone']), t(`image.wrap.${w}` as Key)), () => set({ wrap: w, ...(w !== 'none' ? { align: w } : {}) }), {
+    ...WRAP_MENU.map((w) =>
+      popItem(h('span', { class: 'fp-pop__icon-row' }, icon(I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone']), t(`image.wrap.${w}` as Key)), () => set(wrapAttrs(w, align)), {
         'data-wrap': w,
         'aria-checked': String(f?.node.attrs.wrap === w),
       }),
+    ),
+    h('hr', { class: 'fp-pop__sep' }),
+    soonItem(t('image.wrap.editPoints')),
+    // L'image suit toujours son paragraphe ; une position fixe sur la page viendra avec les objets libres.
+    popItem(t('image.wrap.moveWithText'), () => undefined, { 'data-wrap-option': 'move', 'aria-checked': 'true' }),
+    soonItem(t('image.wrap.fixPosition')),
+    h('hr', { class: 'fp-pop__sep' }),
+    popItem(
+      t('image.wrap.setDefault'),
+      () => {
+        if (!f) return
+        const w = wrapAttrs(f.node.attrs.wrap as Wrap, f.node.attrs.align as string)
+        updateSettings({ imageWrap: w.wrap, imageAlign: w.align ?? (f.node.attrs.align as string) })
+        toast(t('image.wrap.defaultSet'), { kind: 'success' })
+      },
+      { 'data-wrap-option': 'default', ...(f ? {} : { 'aria-disabled': 'true' }) },
     ),
   )
 }
@@ -1294,7 +1347,7 @@ function alignMenu(app: FolioApp): HTMLElement {
     'div',
     { class: 'fp-pop__list' },
     ...(['left', 'center', 'right'] as const).map((a) =>
-      popItem(h('span', { class: 'fp-pop__icon-row' }, icon(I[`align${a[0].toUpperCase()}${a.slice(1)}` as 'alignLeft']), t(`ribbon.align.${a}` as Key)), () => app.run(setFigureAttrs({ align: a, wrap: 'none' })), {
+      popItem(h('span', { class: 'fp-pop__icon-row' }, icon(I[`align${a[0].toUpperCase()}${a.slice(1)}` as 'alignLeft']), t(`ribbon.align.${a}` as Key)), () => app.run(setFigureAttrs(alignAttrs(a, (f?.node.attrs.wrap as string) ?? 'none'))), {
         'data-image-align': a,
         'aria-checked': String(f?.node.attrs.align === a),
       }),
@@ -1342,7 +1395,7 @@ function layoutGroups(app: FolioApp): Group[] {
       label: t('ribbon.pageSetup'),
       launcher: () => P.pageSetupDialog(app),
       controls: [
-        soon({ id: 'text-direction', label: t('rb.textDirection'), icon: I.textDirection, large: true, drop: true }),
+        dropdown({ id: 'text-direction', label: t('rb.textDirection'), icon: I.textDirection, large: true, menu: () => textDirectionMenu(app) }),
         dropdown({
           id: 'margins',
           label: t('page.margins'),
@@ -1427,7 +1480,7 @@ function layoutGroups(app: FolioApp): Group[] {
                 ...(['page', 'odd', 'even'] as const).map((st) => popItem(t(`section.start.${st}` as Key), () => app.run(insertSectionBreak(st)), { 'data-break': `section-${st}` })),
               ),
           }),
-          soon({ id: 'line-numbers', label: t('rb.lineNumbers'), icon: I.lineNumbers, text: true, drop: true }),
+          PT.lineNumbers(app),
           PT.hyphenation(app),
         ),
       ],
@@ -1625,6 +1678,7 @@ function referenceGroups(app: FolioApp): Group[] {
         ),
       ],
     },
+    GL.glossaryGroup(app),
     {
       id: 'authorities',
       label: t('rb.authorities'),
@@ -1670,7 +1724,7 @@ function hfGroups(app: FolioApp): Group[] {
     {
       id: 'hf-close',
       label: t('ribbon.hfClose'),
-      controls: [button({ id: 'hf-close', label: t('hf.close'), icon: I.close, large: true, run: () => pv()?.closeEditor() })],
+      controls: [button({ id: 'hf-close', label: t('hf.close'), icon: I.close, large: true, run: () => pv()?.leaveEditor() })],
     },
   ]
 }
@@ -1698,15 +1752,32 @@ function viewGroups(app: FolioApp): Group[] {
         button({ id: 'view-read', label: t('read.mode'), icon: I.reading, large: true, active: () => app.reading, run: () => app.setReading(!app.reading) }),
         button({ id: 'view-page', label: t('ribbon.viewPage'), icon: I.pageSize, large: true, active: () => pv()?.mode === 'page' && !app.reading, run: () => pv()?.setMode('page') }),
         button({ id: 'view-web', label: t('ribbon.viewWeb'), icon: I.web, large: true, active: () => pv()?.mode === 'web' && !app.reading, run: () => pv()?.setMode('web') }),
-        col(soon({ id: 'view-outline', label: t('rb.outline'), icon: I.outline, text: true }), button({ id: 'view-draft', label: t('rb.draft'), icon: I.draft, text: true, active: () => pv()?.mode === 'draft' && !app.reading, run: () => pv()?.setMode('draft') })),
+        col(button({ id: 'view-outline', label: t('rb.outline'), icon: I.outline, text: true, active: () => pv()?.mode === 'outline' && !app.reading, run: () => pv()?.setMode('outline') }), button({ id: 'view-draft', label: t('rb.draft'), icon: I.draft, text: true, active: () => pv()?.mode === 'draft' && !app.reading, run: () => pv()?.setMode('draft') })),
       ],
     },
     {
       id: 'immersive',
       label: t('rb.immersive'),
       controls: [
-        button({ id: 'focus-mode', label: t('rb.focus'), icon: I.focus, large: true, active: () => isFocusMode(), run: () => setFocusMode(app, !isFocusMode()) }),
-        soon({ id: 'immersive-reader', label: t('rb.immersiveReader'), icon: I.immersive, large: true }),
+        split({
+          id: 'focus-mode',
+          label: t('rb.focus'),
+          icon: I.focus,
+          large: true,
+          active: () => isFocusMode(),
+          run: () => setFocusMode(app, !isFocusMode()),
+          menu: () => {
+            const toggle = (key: 'typewriter' | 'dimOthers', label: string) =>
+              popItem(label, () => {
+                updateSettings({ [key]: !settings()[key] })
+                applyFocusClasses()
+                app.notifyUi()
+                app.focus()
+              }, { 'data-focus-opt': key, role: 'menuitemcheckbox', 'aria-checked': String(settings()[key]) })
+            return h('div', { class: 'fp-pop__list' }, popItem(isFocusMode() ? t('rb.focusExit') : t('rb.focus'), () => setFocusMode(app, !isFocusMode()), { 'data-focus-opt': 'mode' }), sep(), toggle('typewriter', t('focus.typewriter')), toggle('dimOthers', t('focus.dimOthers')))
+          },
+        }),
+        button({ id: 'immersive-reader', label: t('rb.immersiveReader'), icon: I.immersive, large: true, run: () => openImmersive(app) }),
       ],
     },
     {
@@ -1804,13 +1875,13 @@ function viewGroups(app: FolioApp): Group[] {
       id: 'window',
       label: t('rb.window'),
       controls: [
-        soon({ id: 'new-window', label: t('rb.newWindow'), icon: I.newWindow, large: true }),
+        button({ id: 'new-window', label: t('rb.newWindow'), icon: I.newWindow, large: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), run: () => WIN.windowsUi()?.newWindow() }),
         soon({ id: 'arrange-all', label: t('rb.arrangeAll'), icon: I.arrangeAll, large: true }),
-        soon({ id: 'split-window', label: t('rb.split'), icon: I.splitWindow, large: true }),
+        button({ id: 'split-window', label: t('rb.split'), icon: I.splitWindow, large: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), active: () => WIN.windowsUi()?.mode() === 'rows', run: () => WIN.windowsUi()?.split('rows') }),
         col(
-          soon({ id: 'side-by-side', label: t('rb.viewSideBySide'), icon: I.sideToSide, text: true }),
-          soon({ id: 'sync-scroll', label: t('rb.syncScroll'), icon: I.syncScroll, text: true }),
-          soon({ id: 'reset-window', label: t('rb.resetWindow'), icon: I.arrangeAll, text: true }),
+          button({ id: 'side-by-side', label: t('rb.viewSideBySide'), icon: I.sideToSide, text: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), active: () => WIN.windowsUi()?.mode() === 'columns', run: () => WIN.windowsUi()?.split('columns') }),
+          button({ id: 'sync-scroll', label: t('rb.syncScroll'), icon: I.syncScroll, text: true, enabled: () => !!WIN.windowsUi()?.mode(), active: () => !!WIN.windowsUi()?.syncScroll(), run: () => WIN.windowsUi()?.toggleSyncScroll() }),
+          button({ id: 'reset-window', label: t('rb.resetWindow'), icon: I.arrangeAll, text: true, enabled: () => !!WIN.windowsUi()?.mode(), run: () => WIN.windowsUi()?.resetPosition() }),
         ),
       ],
     },
@@ -1891,7 +1962,13 @@ function helpGroups(app: FolioApp): Group[] {
       label: t('update.group'),
       controls: [
         button({ id: 'check-update', label: t('update.check'), icon: I.share, large: true, enabled: () => !isOffline(), run: () => void checkUpdatesUi(app) }),
-        col(button({ id: 'offline', label: t('offline.label'), icon: I.offline, text: true, active: () => isOffline(), run: () => toggleOffline(app) })),
+        col(
+          button({ id: 'offline', label: t('offline.label'), icon: I.offline, text: true, active: () => isOffline(), run: () => toggleOffline(app) }),
+          check({ id: 'auto-update', label: t('update.auto'), get: () => settings().autoUpdate, set: (v) => {
+              if (v !== settings().autoUpdate) toggleAutoUpdate(app)
+            },
+          }),
+        ),
       ],
     },
   ]
@@ -2019,7 +2096,7 @@ function reviewGroups(app: FolioApp): Group[] {
       id: 'markup',
       label: t('rb.markup'),
       controls: [
-        soon({ id: 'filter-markup', label: t('rb.filterMarkup'), icon: I.filterMarkup, large: true, drop: true }),
+        dropdown({ id: 'filter-markup', label: t('rb.filterMarkup'), icon: I.filterMarkup, large: true, active: () => MK.isFiltered(), menu: () => MK.markupMenu(app) }),
         col(
           dropdown({
             id: 'track-view',
@@ -2030,7 +2107,7 @@ function reviewGroups(app: FolioApp): Group[] {
               h(
                 'div',
                 { class: 'fp-pop__list' },
-                ...(['all', 'final', 'original'] as const).map((v) =>
+                ...(['simple', 'all', 'final', 'original'] as const).map((v) =>
                   popItem(
                     t(`track.view.${v}` as Key),
                     () => {
@@ -2043,8 +2120,25 @@ function reviewGroups(app: FolioApp): Group[] {
                 ),
               ),
           }),
-          soon({ id: 'show-markup', label: t('rb.showMarkup'), icon: I.showMarkup, text: true, drop: true }),
-          soon({ id: 'review-pane', label: t('rb.reviewPane'), icon: I.reviewPane, text: true, drop: true }),
+          dropdown({ id: 'show-markup', label: t('rb.showMarkup'), icon: I.showMarkup, text: () => t('rb.showMarkup'), active: () => MK.isFiltered(), menu: () => MK.markupMenu(app) }),
+          dropdown({
+            id: 'review-pane',
+            label: t('rb.reviewPane'),
+            icon: I.reviewPane,
+            text: () => t('rb.reviewPane'),
+            active: () => (P.getReviewPane()?.side ?? 'off') !== 'off',
+            menu: () =>
+              h(
+                'div',
+                { class: 'fp-pop__list', role: 'menu' },
+                ...(['vertical', 'horizontal'] as const).map((side) =>
+                  popItem(t(`review.${side}`), () => {
+                    const pane = P.getReviewPane()
+                    pane?.show(pane.side === side ? 'off' : side)
+                  }, { 'data-review-side': side, role: 'menuitemcheckbox', 'aria-checked': String(P.getReviewPane()?.side === side) }),
+                ),
+              ),
+          }),
         ),
       ],
     },
@@ -2096,13 +2190,14 @@ function reviewGroups(app: FolioApp): Group[] {
     {
       id: 'compare',
       label: t('rb.compare'),
-      controls: [soon({ id: 'compare', label: t('rb.compare'), icon: I.compare, large: true, drop: true })],
+      controls: [CMP.compareMenu(app)],
     },
     {
       id: 'protect',
       label: t('protect.group'),
       controls: [button({ id: 'protect', label: t('protect.button'), icon: I.lock, large: true, active: () => app.isProtected, enabled: () => !app.lockedReadOnly, run: () => protectDialog(app) })],
     },
+    PR.redactGroup(app),
   ]
 }
 
@@ -2202,6 +2297,7 @@ function tableGroups(app: FolioApp): Group[] {
         tb('valign-top', t('table.vtop'), I.vtop, setCellAttr('valign', null)),
         tb('valign-middle', t('table.vmiddle'), I.vmiddle, setCellAttr('valign', 'middle')),
         tb('valign-bottom', t('table.vbottom'), I.vbottom, setCellAttr('valign', 'bottom')),
+        dropdown({ id: 'cell-text-direction', label: t('rb.textDirection'), icon: I.textDirection, enabled: inTable, menu: () => textDirectionMenu(app) }),
         dropdown({
           id: 'table-position',
           label: t('table.position'),
@@ -2221,6 +2317,7 @@ function tableGroups(app: FolioApp): Group[] {
       id: 'table-data',
       label: t('ribbon.tableData'),
       controls: [
+        button({ id: 'table-chart', label: t('chart.fromTable'), icon: I.chart, large: true, enabled: inTable, run: () => CH.insertChartUi(app) }),
         dropdown({
           id: 'table-sort',
           label: t('table.sort'),
@@ -2416,13 +2513,62 @@ export const TABS: TabDef[] = [
   { id: 'references', label: () => t('ribbon.tab.references'), groups: referenceGroups },
   { id: 'mailings', label: () => t('ribbon.tab.mailings'), groups: mailingsGroups },
   { id: 'review', label: () => t('ribbon.tab.review'), groups: reviewGroups },
+  { id: 'draw', label: () => t('draw.tab'), groups: (app: FolioApp) => DR.drawGroups(app) },
   { id: 'view', label: () => t('ribbon.tab.view'), groups: viewGroups },
+  { id: 'developer', label: () => t('form.tab'), groups: (app: FolioApp) => FM.developerGroups(app) },
   { id: 'ai', label: () => t('ribbon.tab.ai'), groups: aiGroups },
   { id: 'help', label: () => t('ribbon.tab.help'), groups: helpGroups },
   { id: 'table', label: () => t('ribbon.tab.table'), groups: tableGroups, when: (app) => isInTable(app.state) },
   { id: 'image', label: () => t('ribbon.tab.image'), groups: imageGroups, when: (app) => !!figureAt(app.state) },
   { id: 'hf', label: () => t('ribbon.tab.hf'), groups: hfGroups, when: () => !!P.getPageView()?.editing },
+  { id: 'outline', label: () => t('ol.tab'), groups: outlineGroups, when: () => P.getPageView()?.mode === 'outline' },
 ]
+
+/** Onglet Mode Plan (affiché en vue Plan) : niveaux, déplacements, repli, niveaux montrés. */
+function outlineGroups(app: FolioApp): Group[] {
+  const st = () => OL.outlineState(app.state)
+  return [
+    {
+      id: 'outline-tools',
+      label: t('ol.tools'),
+      controls: [
+        col(
+          button({ id: 'ol-promote', label: t('ol.promote'), icon: I.indentLess, text: true, keys: 'Alt+Maj+←'.replace('Maj', t('key.shift')), run: () => app.run(OL.promote) }),
+          button({ id: 'ol-demote', label: t('ol.demote'), icon: I.indentMore, text: true, keys: 'Alt+Maj+→'.replace('Maj', t('key.shift')), run: () => app.run(OL.demote) }),
+          button({ id: 'ol-body', label: t('ol.toBody'), icon: I.outline, text: true, run: () => app.run(OL.toBody) }),
+        ),
+        col(
+          button({ id: 'ol-up', label: t('ol.moveUp'), icon: I.arrowUp, text: true, keys: 'Alt+Maj+↑'.replace('Maj', t('key.shift')), run: () => app.run(OL.moveSection(-1)) }),
+          button({ id: 'ol-down', label: t('ol.moveDown'), icon: I.arrowDown, text: true, keys: 'Alt+Maj+↓'.replace('Maj', t('key.shift')), run: () => app.run(OL.moveSection(1)) }),
+        ),
+        col(
+          button({ id: 'ol-expand', label: t('ol.expand'), icon: I.plus, text: true, run: () => app.run(OL.collapse(false)) }),
+          button({ id: 'ol-collapse', label: t('ol.collapse'), icon: I.minus, text: true, run: () => app.run(OL.collapse(true)) }),
+          button({ id: 'ol-expand-all', label: t('ol.expandAll'), icon: I.chevronRight, text: true, run: () => app.run(OL.collapse(false, true)) }),
+        ),
+        col(
+          dropdown({
+            id: 'ol-level',
+            label: t('ol.showLevel'),
+            text: () => (st()?.level ? t('ol.levelN', { n: st()!.level }) : t('ol.allLevels')),
+            menu: () =>
+              h(
+                'div',
+                { class: 'fp-pop__list', role: 'menu' },
+                ...[1, 2, 3, 4, 5, 6, 0].map((n) => popItem(n ? t('ol.levelN', { n }) : t('ol.allLevels'), () => app.run(OL.showLevel(n)), { 'data-ol-level': String(n), role: 'menuitemradio', 'aria-checked': String((st()?.level ?? 0) === n) })),
+              ),
+          }),
+          check({ id: 'ol-first-line', label: t('ol.firstLine'), get: () => !!st()?.firstLine, set: (v) => app.run(OL.setFirstLine(v)) }),
+        ),
+      ],
+    },
+    {
+      id: 'outline-close',
+      label: t('ol.closeGroup'),
+      controls: [button({ id: 'ol-close', label: t('ol.close'), icon: I.close, large: true, run: () => P.getPageView()?.setMode('page') })],
+    },
+  ]
+}
 
 // --- barre de mise en forme rapide (menu contextuel) -------------------------
 

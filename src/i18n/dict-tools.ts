@@ -69,7 +69,7 @@ export const TOOLS_DICT = {
   'exp.odt': { fr: 'OpenDocument (.odt)', en: 'OpenDocument (.odt)' },
   'exp.odt.desc': { fr: 'Le format de LibreOffice : styles, notes, sommaire, formules.', en: 'The LibreOffice format: styles, notes, contents, formulas.' },
   'exp.pdf': { fr: 'PDF', en: 'PDF' },
-  'exp.pdf.desc': { fr: 'Par l’impression : choisissez « Enregistrer au format PDF ».', en: 'Through printing: pick “Save as PDF”.' },
+  'exp.pdf.desc': { fr: 'Fabriqué ici, sans la fenêtre d’impression (polices standard du PDF).', en: 'Made here, without the print window (standard PDF fonts).' },
   'exp.epub': { fr: 'Livre numérique (.epub)', en: 'E-book (.epub)' },
   'exp.epub.desc': { fr: 'Pour liseuse et téléphone : un chapitre par titre de niveau 1.', en: 'For e-readers and phones: one chapter per level-1 heading.' },
   'exp.html': { fr: 'Page web (.html)', en: 'Web page (.html)' },

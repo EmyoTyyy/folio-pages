@@ -2,7 +2,7 @@
 // des morceaux voisins identiques, pour une forme canonique unique.
 
 import { parseColor, parseHighlight } from './color'
-import { mathMarks, COMMENT_ID, RUN_FLAGS, RUN_VALUES, UNDERLINE_STYLES, isRun, type BookmarkInline, type CiteInline, type IndexInline, type Inline, type Marks, type Run, type SeqInline, type XrefInline } from './types'
+import { mathMarks, COMMENT_ID, RUN_FLAGS, RUN_VALUES, UNDERLINE_STYLES, isRun, type BookmarkInline, type CiteInline, type FormInline, type IndexInline, type Inline, type Marks, type Run, type SeqInline, type XrefInline } from './types'
 
 export type { Marks }
 
@@ -10,7 +10,8 @@ export function sameMarks(a: Marks, b: Marks): boolean {
   for (const f of RUN_FLAGS) if (!!a[f] !== !!b[f]) return false
   for (const v of RUN_VALUES) if ((a[v] ?? null) !== (b[v] ?? null)) return false
   const change = (c?: { author: string; date: string }) => (c ? `${c.author}\u0000${c.date}` : '')
-  return (a.comments ?? []).join(' ') === (b.comments ?? []).join(' ') && change(a.inserted) === change(b.inserted) && change(a.deleted) === change(b.deleted)
+  const fmt = (c?: Marks['formatChange']) => (c ? JSON.stringify(c) : '')
+  return (a.comments ?? []).join(' ') === (b.comments ?? []).join(' ') && change(a.inserted) === change(b.inserted) && change(a.deleted) === change(b.deleted) && fmt(a.formatChange) === fmt(b.formatChange)
 }
 
 /**
@@ -51,7 +52,19 @@ export function cleanMarks(m: Marks | Record<string, unknown>): Marks {
     const c = src[k]
     if (c && typeof c === 'object') out[k] = cleanChange(c as Record<string, unknown>)
   }
+  const fc = src.formatChange
+  if (fc && typeof fc === 'object' && !out.inserted && !out.deleted) {
+    const raw = (fc as Record<string, unknown>).before
+    out.formatChange = { ...cleanChange(fc as Record<string, unknown>), before: formatOnly(raw && typeof raw === 'object' ? cleanMarks(raw as Record<string, unknown>) : {}) }
+  }
   return out
+}
+
+/** La mise en forme seule (sans lien, commentaires ni marques de suivi). */
+export function formatOnly(m: Marks): Marks {
+  const { link, comments, inserted, deleted, formatChange, ...rest } = m
+  void link, comments, inserted, deleted, formatChange
+  return rest
 }
 
 /** Auteur et date d'une modification suivie, sous forme canonique. */
@@ -78,6 +91,8 @@ export function mergeRuns(items: Inline[]): Inline[] {
       else if (r.type === 'math') out.push({ type: 'math', tex: r.tex, ...mathMarks(r) })
       else if (r.type === 'mergefield') out.push({ type: 'mergefield', name: r.name, ...(r.opts ? { opts: { ...r.opts } } : {}), ...cleanMarks(r) })
       else if (r.type === 'field') out.push({ type: r.type, name: r.name, format: r.format, ...cleanMarks(r) })
+      else if (r.type === 'formfield') out.push(formCopy(r))
+      else if (r.type === 'attachment') out.push({ ...r })
       else out.push(refInline(r))
       continue
     }
@@ -87,6 +102,26 @@ export function mergeRuns(items: Inline[]): Inline[] {
     else out.push(makeRun(r.text, r))
   }
   return out
+}
+
+/** Copie canonique d'un champ de formulaire. */
+export function formCopy(r: FormInline): FormInline {
+  return {
+    type: 'formfield',
+    kind: r.kind,
+    ...(r.name ? { name: r.name } : {}),
+    ...(r.value ? { value: r.value } : {}),
+    ...(r.options ? { options: [...r.options] } : {}),
+    ...(r.checked ? { checked: true as const } : {}),
+    ...(r.placeholder ? { placeholder: r.placeholder } : {}),
+    ...cleanMarks(r),
+  }
+}
+
+/** Ce qu'un champ de formulaire montre en texte : sa valeur, une case, ou des tirets s'il est vide. */
+export function formText(r: FormInline): string {
+  if (r.kind === 'checkbox') return r.checked ? '☒' : '☐'
+  return r.value || '_____'
 }
 
 export type RefInline = SeqInline | BookmarkInline | XrefInline | IndexInline | CiteInline
@@ -118,7 +153,7 @@ export function refInline(r: RefInline): Inline {
 
 /** Texte brut d'éléments en ligne (un champ compte comme son jeton {{nom}}). */
 export const runsText = (items: Inline[]): string =>
-  items.map((r) => (isRun(r) ? r.text : r.type === 'field' ? `{{${r.name}${r.format ? ':' + r.format : ''}}}` : r.type === 'math' ? `$${r.tex}$` : r.type === 'mergefield' ? `«${r.name}»` : '')).join('')
+  items.map((r) => (isRun(r) ? r.text : r.type === 'field' ? `{{${r.name}${r.format ? ':' + r.format : ''}}}` : r.type === 'math' ? `$${r.tex}$` : r.type === 'mergefield' ? `«${r.name}»` : r.type === 'formfield' ? formText(r) : r.type === 'attachment' ? `[${r.name}]` : '')).join('')
 
 export const plainRuns = (text: string): Run[] => (text ? [{ text }] : [])
 

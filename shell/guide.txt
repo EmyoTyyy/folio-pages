@@ -10,9 +10,10 @@
   · The document is the ONE script block of type "application/folio+json"
     with the id folio-doc, just below this comment. Edit THAT block in
     place. Never regenerate or retype the whole file.
-  · The script blocks of type "folio/deflate-b86" further down are the
+  · The script blocks of type "folio/deflate-b122" further down are the
     compressed application. They hold no user content: leave them alone,
-    byte for byte.
+    byte for byte. They contain non-ASCII and control characters: read and
+    write the file as UTF-8, and change only the bytes of the folio-doc block.
   · Write every "<" inside the JSON as <, so the JSON can never close
     its own script tag.
   · An empty block means "no document yet" (the app shows a demo). To make
@@ -47,8 +48,9 @@
   BLOCKS
   · paragraph: "type" may be left out; a plain string is a paragraph too.
   · heading: "level" 1 to 6 (default 1).
-  · list: "style" "bullet" (default) or "number", "start" (default 1),
-    "items": strings, or objects with a "level" from 0 to 8 for nesting.
+  · list: "style" "bullet" (default), "number" or "check", "start"
+    (default 1), "items": strings, or objects with a "level" from 0 to 8
+    for nesting ("checked": true ticks a check list item).
   · quote: one paragraph (text/md) or "blocks".
   · code: "language", "text" with \n between lines.
   · table: "header" (true by default: the first row is the header),
@@ -57,12 +59,22 @@
   · equation: a centred formula in LaTeX, { "type": "equation", "tex":
     "\\int_0^1 x^2\\,dx = \\frac{1}{3}" }; "numbered": true numbers it (1),
     (2)… Put \\label{name} in it and write \\eqref{name} elsewhere.
+  · chart: "kind" "bar", "line" or "pie", "title", "labels" (the
+    categories) and "series": [{ "name", "values": one number per label }];
+    or "rows" like a table (first row: series names, first column: labels).
+  · diagram: "kind" list, process, cycle, hierarchy, pyramid or radial,
+    "title", "items": strings, or { "text", "level" } for sub-items (an
+    organisation chart uses levels 0, 1, 2…).
+  · callout: "kind" note, tip, important, warning or caution, "title",
+    then text/md or "blocks".
   · divider: a horizontal line.   · pagebreak: start a new page.
   · image: "src" is "asset:<id>" with the picture in the top-level
     "assets": { "<id>": "data:image/png;base64,…" } (a data: URI in "src"
     works too). Add "alt" (what it shows), "caption", "width" in points
     (the text is about 470 pt wide), "align", "wrap": "none" (own line),
-    "left" or "right" (text flows around it).
+    "left" or "right" (text flows around it), "tight" (text follows the
+    outline of a transparent PNG; side from "align"), "behind" or "front"
+    (over the text, taking no room).
   TEXT of a paragraph, heading, list item or cell, one of:
   · "text": plain text, used as is; \n is a line break;
   · "md": Markdown: **bold**, *italic*, ++underline++, ~~strike~~,
@@ -135,7 +147,7 @@
   · Structure with real headings: one level-1 heading for the title, then
     levels 2 and 3. Never fake a heading with bold text or capitals.
   · Data, comparisons, schedules, prices: a table with a header row, not a
-    list of numbers or tab-separated text.
+    list of numbers or tab-separated text. Trends and shares: add a chart.
   · Steps in order: a numbered list. Points in no order: a bulleted list.
     Nest only as deep as the ideas really go.
   · Short, complete paragraphs. No filler and no placeholders such as

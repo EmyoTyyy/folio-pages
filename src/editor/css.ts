@@ -1,6 +1,7 @@
 // Traductions format → CSS (et CSS collé → format), partagées par le schéma,
 // la feuille de styles du document et l'impression.
 
+import { cssAlign } from '../format/bidi'
 import { cssColor, parseColor } from '../format/color'
 import { THEME_FONTS } from '../format/types'
 
@@ -72,14 +73,18 @@ export interface ParaAttrs {
   shading: string | null
   border: string | null
   dropCap: number | null
+  ink?: unknown
+  dir?: string | null
+  noLineNumbers?: boolean
 }
 
 /** Attributs de paragraphe → déclarations CSS en ligne. */
 export function paraCss(a: ParaAttrs): string {
   const out: string[] = []
-  if (a.align) out.push(`text-align:${a.align}`)
-  if (a.indentLeft !== null) out.push(`margin-left:${a.indentLeft}pt`)
-  if (a.indentRight !== null) out.push(`margin-right:${a.indentRight}pt`)
+  // Gauche et droite sont logiques (début et fin du paragraphe) : ils s'inversent de droite à gauche.
+  if (a.align) out.push(`text-align:${cssAlign(a.align)}`)
+  if (a.indentLeft !== null) out.push(`margin-inline-start:${a.indentLeft}pt`)
+  if (a.indentRight !== null) out.push(`margin-inline-end:${a.indentRight}pt`)
   if (a.indentFirst !== null) out.push(`text-indent:${a.indentFirst}pt`)
   if (a.spaceBefore !== null) out.push(`margin-top:${a.spaceBefore}pt`)
   if (a.spaceAfter !== null) out.push(`margin-bottom:${a.spaceAfter}pt`)

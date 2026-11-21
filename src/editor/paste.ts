@@ -16,6 +16,8 @@ const n = schema.nodes
 
 export interface PasteHooks {
   reduceImages: () => boolean
+  /** Disposition par défaut des images insérées (habillage, alignement). */
+  layout?: () => { wrap: string; align: string }
   /** Une image n'a pas pu être insérée (fichier trop lourd, illisible…). */
   onImageError: (reason: string) => void
 }
@@ -64,7 +66,7 @@ export async function insertImageFiles(view: EditorView, files: File[], hooks: P
   for (const f of files) {
     try {
       const img = await prepareFile(f, hooks.reduceImages())
-      prepared.push(n.figure.create({ src: img.src, alt: '', width: 0 }))
+      prepared.push(n.figure.create({ src: img.src, alt: '', width: 0, ...(hooks.layout?.() ?? {}) }))
     } catch (e) {
       hooks.onImageError(e instanceof Error ? e.message : String(e))
     }

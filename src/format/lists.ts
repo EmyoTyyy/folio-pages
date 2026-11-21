@@ -15,12 +15,18 @@ import type { Inline, ListItem, ListStyle, ParaProps } from './types'
 
 export const MAX_LEVEL = 8
 
+/** Cases des listes à cocher, là où il faut un caractère (texte, .docx, .odt). */
+export const EMPTY_BOX = '☐'
+export const CHECKED_BOX = '☒'
+
 export interface FlatInput {
   content: Inline[]
   level: number
   style?: ListStyle
   /** Mise en forme du paragraphe de l'élément. */
   props?: ParaProps
+  /** Case cochée (liste à cocher). */
+  checked?: boolean
 }
 
 export interface TreeList {
@@ -32,6 +38,7 @@ export interface TreeItem {
   content: Inline[]
   props: ParaProps
   sublists: TreeList[]
+  checked?: boolean
 }
 
 export type AdjustFn = (index: number, kind: 'level' | 'style', from: string, to: string) => void
@@ -71,7 +78,7 @@ export class ListBuilder {
     const l = this.effectiveLevel(item.level)
     while (this.stack.length - 1 > l) this.stack.pop()
     if (l === 0) {
-      this.root.items.push({ content: item.content, props: item.props ?? {}, sublists: [] })
+      this.root.items.push({ content: item.content, props: item.props ?? {}, sublists: [], ...(item.checked ? { checked: true } : {}) })
       return { level: 0, style: this.root.style }
     }
     const style = item.style ?? this.inferredStyle(l)
@@ -82,7 +89,7 @@ export class ListBuilder {
       this.stack.pop()
       this.open(style)
     }
-    this.top().items.push({ content: item.content, props: item.props ?? {}, sublists: [] })
+    this.top().items.push({ content: item.content, props: item.props ?? {}, sublists: [], ...(item.checked ? { checked: true } : {}) })
     return { level: l, style }
   }
 
@@ -110,7 +117,7 @@ export type FlatItem = ListItem
 /** Arbre → éléments plats, chacun avec son niveau et le style de sa liste. */
 export function flattenTree(tree: TreeList, level = 0, out: FlatItem[] = []): FlatItem[] {
   for (const item of tree.items) {
-    out.push({ content: item.content, level, style: tree.style, ...item.props })
+    out.push({ content: item.content, level, style: tree.style, ...item.props, ...(tree.style === 'check' && item.checked ? { checked: true as const } : {}) })
     for (const sub of item.sublists) flattenTree(sub, level + 1, out)
   }
   return out

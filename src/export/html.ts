@@ -3,13 +3,22 @@
 // n'importe quel navigateur et imprimable. Le même rendu, en XHTML, sert au
 // livre numérique (EPUB).
 
+import { chartLookOf, chartSvg } from '../format/chart'
+import { diagramSvg } from '../format/diagram'
+import { blockDir, cssAlign, TEXT_DIR_CSS } from '../format/bidi'
 import { cssHighlight, HIGHLIGHT_VALUES } from '../format/color'
 import { resolveStyle } from '../format/theme'
 import type { Block, FolioDoc, Inline, PageSetup, Run, StyleDef } from '../format/types'
 import { BUILTIN_STYLE_IDS } from '../format/theme'
+import { CALLOUT_COLORS, calloutLabel } from '../format/callout'
+import { termsToList } from '../format/terms'
+import { citePieces } from '../refs/cite'
+import { inkSvg } from '../format/ink'
+import type { InkStroke } from '../format/types'
+import { CALLOUT_KINDS } from '../format/types'
 import { hasOwn, isRun } from '../format/types'
 import { tokenize } from '../editor/highlight'
-import { adjustCss, cssText } from '../format/picture'
+import { adjustCss, cssText, floatSide, overText, REFLECTION_MASK } from '../format/picture'
 import { renderTex } from '../math'
 import { base64Bytes, generated, imageData, imageSize, inlineText, listLabels, prepareExport, resolveColor, type ExportCommonOptions, type ExportContext, type Piece } from './common'
 
@@ -68,12 +77,12 @@ function styleCss(d: StyleDef | Run | Record<string, unknown>, doc: FolioDoc, pa
   if (r.textBorder) css.push(`box-shadow:inset 0 0 0 1px ${resolveColor(r.textBorder, doc)}`, 'padding:0 .12em')
   if (r.textShading && !s.highlight) css.push(`background-color:${resolveColor(r.textShading, doc)}`)
   if (paragraph) {
-    if (s.align) css.push(`text-align:${s.align}`)
+    if (s.align) css.push(`text-align:${cssAlign(s.align)}`)
     if (s.line) css.push(`line-height:${num(s.line)}`)
     if (s.spacing?.before !== undefined) css.push(`margin-top:${num(s.spacing.before)}pt`)
     if (s.spacing?.after !== undefined) css.push(`margin-bottom:${num(s.spacing.after)}pt`)
-    if (s.indent?.left) css.push(`margin-left:${num(s.indent.left)}pt`)
-    if (s.indent?.right) css.push(`margin-right:${num(s.indent.right)}pt`)
+    if (s.indent?.left) css.push(`margin-inline-start:${num(s.indent.left)}pt`)
+    if (s.indent?.right) css.push(`margin-inline-end:${num(s.indent.right)}pt`)
     if (s.indent?.first) css.push(`text-indent:${num(s.indent.first)}pt`)
     if (s.shading) css.push(`background-color:${resolveColor(s.shading, doc, 'transparent')}`)
     if (s.border) css.push(`border:1px solid ${resolveColor(s.border, doc)};padding:4pt 6pt`)
@@ -124,16 +133,22 @@ export function documentCss(doc: FolioDoc, o: { screen: boolean; fonts?: boolean
     `.folio-page a{color:${accent}}`,
     `.folio-page img{max-width:100%;height:auto}`,
     `.folio-page figure{margin:6pt 0 10pt;text-align:center}`,
+    `.folio-page figure.chart svg,.folio-page figure.diagram svg{display:block;width:100%;height:auto}`,
     `.folio-page figure.left{text-align:left}.folio-page figure.right{text-align:right}`,
     `.folio-page figure.wrap-left{float:left;margin:0 12pt 6pt 0;max-width:50%}.folio-page figure.wrap-right{float:right;margin:0 0 6pt 12pt;max-width:50%}`,
+    `.folio-page{isolation:isolate}.folio-page figure.wrap-behind,.folio-page figure.wrap-front{position:relative;height:0;margin:0;overflow:visible}.folio-page figure.wrap-behind{z-index:-1}.folio-page figure.wrap-front{z-index:1}`,
     `.folio-page .crop{display:inline-block;overflow:hidden;vertical-align:top}`,
     `.folio-page .crop img{display:block;max-width:none}`,
     `.folio-page blockquote{margin:6pt 0 10pt 0;padding-left:14pt;border-left:3px solid ${accent}}`,
+    `.folio-page aside.callout{margin:6pt 0 10pt;padding:6pt 10pt 4pt 12pt;border-left:4px solid var(--cb);background:var(--cf);border-radius:3px;break-inside:avoid}.folio-page aside.callout>p.callout-title{margin:0 0 3pt;font-weight:700;color:var(--cb)}`,
+    ...CALLOUT_KINDS.map((k) => `.folio-page aside.callout.${k}{--cb:${CALLOUT_COLORS[k].bar};--cf:${CALLOUT_COLORS[k].fill}}`),
+    `.folio-page .generated dl{margin:0}.folio-page .generated dt{font-weight:700;margin-top:4pt}.folio-page .generated dd{margin:0 0 2pt 18pt}.folio-page .abbreviations dl{display:grid;grid-template-columns:max-content 1fr;gap:2pt 14pt}.folio-page .abbreviations dt,.folio-page .abbreviations dd{margin:0}.folio-page abbr{text-decoration:none}`,
+    `.folio-page ul.checklist{list-style:none;padding-left:1.6em}.folio-page ul.checklist>li>input{margin:0 .45em 0 -1.5em;vertical-align:-.1em}`,
     `.folio-page pre{margin:4pt 0 10pt;padding:8pt 10pt;border-radius:4px;background:${resolveColor(code.background, doc, '#f6f6f4')};color:${resolveColor(code.text, doc)};font-family:${fontStack('mono', doc)};font-size:${num(resolveStyle(doc.styles, 'code').size ?? 9.5)}pt;line-height:1.5;white-space:pre-wrap}`,
     ...(['keyword', 'string', 'number', 'comment', 'function', 'type'] as const).map((k) => `.folio-page .tok-${k}{color:${resolveColor(code[k], doc)}${k === 'comment' ? ';font-style:italic' : ''}}`),
     `.folio-page code{font-family:${fontStack('mono', doc)};font-size:.92em}`,
     `.folio-page table{border-collapse:collapse;margin:4pt 0 10pt}`,
-    `.folio-page td,.folio-page th{padding:3pt 6pt;vertical-align:top;text-align:left}`,
+    `.folio-page td,.folio-page th{padding:3pt 6pt;vertical-align:top;text-align:start}`,
     `.folio-page td>p:last-child,.folio-page th>p:last-child{margin-bottom:0}.folio-page td>p:first-child,.folio-page th>p:first-child{margin-top:0}`,
     `.folio-page table.grid td,.folio-page table.grid th,.folio-page table.boxed th{border:1px solid var(--tb,#b9beb9)}`,
     `.folio-page table.boxed{border:1px solid var(--tb,#b9beb9)}`,
@@ -155,8 +170,8 @@ export function documentCss(doc: FolioDoc, o: { screen: boolean; fonts?: boolean
     `.folio-page .bib .gen-line .text{padding-left:2em;text-indent:-2em}`,
     `.folio-page hr{border:0;border-top:1px solid #b9beb9;margin:10pt 0}`,
     `.folio-page .page-break{break-after:page}`,
-    `.folio-page [data-dropcap]::first-letter{float:left;font-size:calc(var(--fp-dropcap,3) * 1.32em);line-height:.82;margin:.05em .08em 0 0;font-weight:600}`,
-    `@supports (initial-letter:2){.folio-page [data-dropcap]::first-letter{float:none;font-size:inherit;line-height:inherit;margin:0 .08em 0 0;initial-letter:var(--fp-dropcap,3)}}`,
+    `.folio-page [data-dropcap]::first-letter{float:inline-start;font-size:calc(var(--fp-dropcap,3) * 1.32em);line-height:.82;margin:.05em 0 0;margin-inline-end:.08em;font-weight:600}`,
+    `@supports (initial-letter:2){.folio-page [data-dropcap]::first-letter{float:none;font-size:inherit;line-height:inherit;margin:0;margin-inline-end:.08em;initial-letter:var(--fp-dropcap,3)}}`,
     `.folio-page .notes{margin-top:24pt;border-top:1px solid #b9beb9;padding-top:8pt;font-size:.9em}`,
     `.folio-page .notes .note{display:flex;gap:6pt}`,
     `.folio-page .notes .note>div>p{margin:0 0 3pt}`,
@@ -228,10 +243,21 @@ export class HtmlWriter {
         continue
       }
       switch (x.type) {
+        case 'cite':
+          // Titres en italique (notes Chicago) : un morceau par style.
+          for (const p of citePieces(this.ctx.refs.text.get(x) ?? '')) out += this.run({ ...(x as unknown as Run), text: p.text, link: undefined, ...(p.italic ? { italic: true } : {}) } as Run)
+          break
+        case 'attachment': {
+          // Page web : un lien qui enregistre le fichier ; livre numérique : son nom seulement.
+          const data = x.src.startsWith('asset:') ? this.ctx.doc.assets[x.src.slice(6)] : x.src
+          if (!this.x && data?.startsWith('data:application/octet-stream;base64,')) out += `<a class="attachment"${this.attr('href', data)}${this.attr('download', x.name)}>${this.text(x.name)}</a>`
+          else out += this.text(`[${x.name}]`)
+          break
+        }
         case 'field':
         case 'seq':
         case 'mergefield':
-        case 'cite':
+        case 'formfield':
           // Leur mise en forme est celle d'un texte : on les écrit comme un texte.
           out += this.run({ ...(x as unknown as Run), text: inlineText([x], this.ctx), link: undefined } as Run)
           break
@@ -261,11 +287,19 @@ export class HtmlWriter {
     const css = styleCss(b, this.ctx.doc, true)
     const drop = typeof b.dropCap === 'number' ? b.dropCap : 0
     if (drop) css.push(`--fp-dropcap:${drop}`)
-    return `${this.attr('class', cls)}${this.attr('style', css.join(';'))}${drop ? this.attr('data-dropcap', String(drop)) : ''}`
+    if (Array.isArray(b.ink) && b.ink.length) css.push('position:relative')
+    // Sens d'écriture : écrit seulement s'il diffère de celui de la page (de gauche à droite).
+    const dir = blockDir(b as { dir?: 'rtl' | 'ltr'; content?: Inline[] })
+    return `${this.attr('class', cls)}${this.attr('style', css.join(';'))}${drop ? this.attr('data-dropcap', String(drop)) : ''}${dir === 'rtl' ? this.attr('dir', 'rtl') : ''}`
+  }
+
+  /** Dessin à main levée du paragraphe : un SVG placé dans son coin. */
+  private ink(b: { ink?: InkStroke[] }): string {
+    return b.ink?.length ? inkSvg(b.ink, (c) => resolveColor(c, this.ctx.doc), { className: 'ink' }) : ''
   }
 
   private pieces(p: Piece[]): string {
-    return p.map((x) => (x.italic ? `<em>${this.text(x.text)}</em>` : this.text(x.text))).join('')
+    return p.map((x) => (x.bold ? `<b>${this.text(x.text)}</b>` : x.italic ? `<em>${this.text(x.text)}</em>` : this.text(x.text))).join('')
   }
 
   private image(b: Extract<Block, { type: 'image' }>): string {
@@ -284,20 +318,31 @@ export class HtmlWriter {
     const tf = flips.length ? `transform:${flips.join(' ')}` : ''
     const border = [b.border ? `border:1px solid ${resolveColor(b.border, this.ctx.doc)}` : '', cssText(adjustCss(b.adjust, (c) => resolveColor(c, this.ctx.doc)))].filter(Boolean).join(';')
     let img: string
+    let shownH = 0
     const c = b.crop
     if (c && size && (c.top || c.right || c.bottom || c.left)) {
       // Rognage : une fenêtre de la taille rognée, l'image entière décalée dedans.
       const fx = Math.max(0.05, 1 - (c.left + c.right) / 100)
       const fy = Math.max(0.05, 1 - (c.top + c.bottom) / 100)
       const h = b.height || (w * (size.height * fy)) / (size.width * fx)
+      shownH = h
       const iw = w / fx
       const ih = b.height ? h / fy : (iw * size.height) / size.width
       img = `<span class="crop"${this.attr('style', [`width:${num(w)}pt`, `height:${num(h)}pt`, tf, border].filter(Boolean).join(';'))}>${this.v('img', `${this.attr('src', src)}${this.attr('alt', b.alt)}${this.attr('style', `width:${num(iw)}pt;height:${num(ih)}pt;margin-left:${num((-iw * c.left) / 100)}pt;margin-top:${num((-ih * c.top) / 100)}pt`)}`)}</span>`
     } else {
       const style = [`width:${num(w)}pt`, b.height ? `height:${num(b.height)}pt` : '', tf, border].filter(Boolean).join(';')
       img = this.v('img', `${this.attr('src', src)}${this.attr('alt', b.alt)}${this.attr('style', style)}`)
+      shownH = b.height || (size ? (w * size.height) / size.width : 0)
     }
-    const cls = [b.align !== 'center' ? b.align : '', b.wrap !== 'none' ? `wrap-${b.wrap}` : ''].filter(Boolean).join(' ')
+    // Reflet : l'image retournée, coupée et effacée vers le bas (sans texte de remplacement : décorative).
+    const pct = b.adjust?.reflection
+    if (pct && shownH && !b.rotate) {
+      const copy = / alt="/.test(img) ? img.replace(/ alt="[^"]*"/, ' alt=""') : img.replace('<img', '<img alt=""')
+      img += `<span aria-hidden="true"${this.attr('style', `display:block;width:${num(w)}pt;height:${num((shownH * pct) / 100)}pt;overflow:hidden;margin:2pt auto 0;mask-image:${REFLECTION_MASK};-webkit-mask-image:${REFLECTION_MASK}`)}><span style="display:block;transform:scaleY(-1)">${copy}</span></span>`
+    }
+    // Rapproché, au travers : carré du même côté (le contour se calcule dans l'éditeur seulement).
+    const side = floatSide(b.wrap, b.align)
+    const cls = [b.align !== 'center' ? b.align : '', side ? `wrap-${side}` : overText(b.wrap) ? `wrap-${b.wrap}` : ''].filter(Boolean).join(' ')
     const cap = b.caption.length ? `<figcaption class="s-caption">${this.inline(b.caption)}</figcaption>` : ''
     return `<figure${this.attr('class', cls)}>${img}${cap}</figure>`
   }
@@ -306,24 +351,30 @@ export class HtmlWriter {
     const labels = listLabels(b)
     let out = ''
     const stack: string[] = []
+    // La pile garde « balise:style » : au même niveau, un autre style ouvre une autre liste.
+    const close = () => `</li></${stack.pop()!.split(':')[0]}>`
     b.items.forEach((it, i) => {
       const tag = it.style === 'number' ? 'ol' : 'ul'
+      const key = `${tag}:${it.style}`
       if (stack.length && it.level < stack.length) {
-        while (stack.length - 1 > it.level) out += `</li></${stack.pop()}>`
-        out += '</li>'
+        while (stack.length - 1 > it.level) out += close()
+        if (it.level > 0 && stack[it.level] !== key) out += close()
+        else out += '</li>'
       }
       while (stack.length <= it.level) {
         const top = stack.length === 0
         const type = it.style === 'number' ? listType(b.numbering ?? 'default', stack.length) : ''
         const start = top && tag === 'ol' && b.start > 1 ? this.attr('start', String(b.start)) : ''
         const bullet = it.style === 'bullet' && b.bullet && stack.length === 0 ? this.attr('style', `list-style-type:'${b.bullet.replace(/['\\]/g, '')} '`) : ''
-        out += `<${tag}${type ? this.attr('type', type) : ''}${start}${bullet}>`
-        stack.push(tag)
+        out += `<${tag}${type ? this.attr('type', type) : ''}${start}${bullet}${it.style === 'check' ? this.attr('class', 'checklist') : ''}>`
+        stack.push(key)
       }
       const css = styleCss(it as unknown as Record<string, unknown>, this.ctx.doc, true)
-      out += `<li${this.attr('style', css.join(';'))}${b.numbering === 'outline' && it.style === 'number' ? this.attr('value', labels[i].split('.').filter(Boolean).pop()) : ''}>${this.inline(it.content)}`
+      if (it.ink?.length) css.push('position:relative')
+      const box = it.style === 'check' ? this.v('input', ` type="checkbox" disabled="disabled"${it.checked ? ' checked="checked"' : ''}`) : ''
+      out += `<li${this.attr('style', css.join(';'))}${b.numbering === 'outline' && it.style === 'number' ? this.attr('value', labels[i].split('.').filter(Boolean).pop()) : ''}>${box}${this.ink(it)}${this.inline(it.content)}`
     })
-    while (stack.length) out += `</li></${stack.pop()}>`
+    while (stack.length) out += close()
     return out
   }
 
@@ -339,7 +390,7 @@ export class HtmlWriter {
       out += '<tr>'
       for (const c of row) {
         const tag = head ? 'th' : 'td'
-        const cs = [c.bg ? `background-color:${resolveColor(c.bg, this.ctx.doc, 'transparent')}` : '', c.valign && c.valign !== 'top' ? `vertical-align:${c.valign}` : '', b.rowHeight ? `height:${num(b.rowHeight)}pt` : ''].filter(Boolean).join(';')
+        const cs = [c.bg ? `background-color:${resolveColor(c.bg, this.ctx.doc, 'transparent')}` : '', c.valign && c.valign !== 'top' ? `vertical-align:${c.valign}` : '', c.textDir ? TEXT_DIR_CSS[c.textDir] : '', b.rowHeight ? `height:${num(b.rowHeight)}pt` : ''].filter(Boolean).join(';')
         out += `<${tag}${c.colspan > 1 ? this.attr('colspan', String(c.colspan)) : ''}${c.rowspan > 1 ? this.attr('rowspan', String(c.rowspan)) : ''}${this.attr('style', cs)}>${this.blocks(c.blocks)}</${tag}>`
       }
       out += '</tr>'
@@ -362,7 +413,8 @@ export class HtmlWriter {
     return `<pre><code${this.attr('class', b.language ? `language-${b.language.replace(/[^\w+#-]/g, '')}` : '')}>${body}</code></pre>`
   }
 
-  private generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' }>): string {
+  private generated(b: Extract<Block, { type: 'toc' | 'figures' | 'index' | 'authorities' | 'bibliography' | 'glossary' | 'abbreviations' }>): string {
+    if (b.type === 'glossary' || b.type === 'abbreviations') return this.termList(b)
     const g = generated(b, this.ctx, this.o)
     const tag = b.type === 'toc' ? 'nav' : 'section'
     const role = b.type === 'toc' ? (this.x ? ' epub:type="toc"' : ' role="doc-toc"') : b.type === 'bibliography' ? (this.x ? ' epub:type="bibliography"' : ' role="doc-bibliography"') : b.type === 'index' && this.x ? ' epub:type="index"' : ''
@@ -381,6 +433,19 @@ export class HtmlWriter {
     return out + `</${tag}>`
   }
 
+  /** Glossaire (<dfn>) et abréviations (<abbr>) : une liste de définitions. */
+  private termList(b: Extract<Block, { type: 'glossary' | 'abbreviations' }>): string {
+    const glossary = b.type === 'glossary'
+    const list = termsToList(this.ctx.doc, glossary ? 'glossary' : 'abbreviation', !!b.all, this.ctx.locale)
+    const role = glossary ? (this.x ? ' epub:type="glossary"' : ' role="doc-glossary"') : ''
+    let out = `<section${this.attr('class', `generated ${glossary ? 'glossary' : 'abbreviations'}`)}${role}>`
+    if (b.title) out += `<p class="gen-title">${this.text(b.title)}</p>`
+    if (!list.length) return out + `<p class="gen-empty">${this.text(generated(b, this.ctx, this.o).empty)}</p></section>`
+    out += '<dl>'
+    for (const x of list) out += `<dt>${glossary ? `<dfn>${this.text(x.term)}</dfn>` : `<abbr${this.attr('title', x.definition)}>${this.text(x.term)}</abbr>`}</dt><dd>${this.text(x.definition)}</dd>`
+    return out + '</dl></section>'
+  }
+
   blocks(blocks: Block[], inQuote = false): string {
     let out = ''
     for (const b of blocks) {
@@ -388,13 +453,13 @@ export class HtmlWriter {
         case 'paragraph': {
           const style = b.style && b.style !== 'normal' ? `s-${b.style}` : inQuote ? 's-quote' : ''
           const { type: _t, content: _c, style: _s, ...props } = b
-          out += `<p${this.paraAttrs(props, style)}>${this.inline(b.content) || (this.x ? '<br/>' : '<br>')}</p>`
+          out += `<p${this.paraAttrs({ ...props, content: b.content }, style)}>${this.ink(b)}${this.inline(b.content) || (this.x ? '<br/>' : '<br>')}</p>`
           break
         }
         case 'heading': {
           const n = Math.min(6, Math.max(1, b.level))
           const { type: _t, content: _c, level: _l, ...props } = b
-          out += `<h${n}${this.attr('id', this.ctx.headingId.get(b))}${this.paraAttrs(props)}>${this.inline(b.content)}</h${n}>`
+          out += `<h${n}${this.attr('id', this.ctx.headingId.get(b))}${this.paraAttrs({ ...props, content: b.content })}>${this.ink(b)}${this.inline(b.content)}</h${n}>`
           break
         }
         case 'list':
@@ -402,6 +467,9 @@ export class HtmlWriter {
           break
         case 'quote':
           out += `<blockquote>${this.blocks(b.blocks, true)}</blockquote>`
+          break
+        case 'callout':
+          out += `<aside${this.attr('class', `callout ${b.kind}`)} role="note"><p class="callout-title">${this.text(b.title || calloutLabel(b.kind, this.ctx.doc.meta.lang))}</p>${this.blocks(b.blocks, true)}</aside>`
           break
         case 'code':
           out += this.code(b)
@@ -411,6 +479,12 @@ export class HtmlWriter {
           break
         case 'divider':
           out += this.v('hr')
+          break
+        case 'chart':
+          out += `<figure class="chart">${chartSvg(b, chartLookOf(this.ctx.doc))}</figure>`
+          break
+        case 'diagram':
+          out += `<figure class="diagram">${diagramSvg(b, chartLookOf(this.ctx.doc))}</figure>`
           break
         case 'equation': {
           const n = this.ctx.eqNumber.get(b)
@@ -435,6 +509,8 @@ export class HtmlWriter {
         case 'index':
         case 'authorities':
         case 'bibliography':
+        case 'glossary':
+        case 'abbreviations':
           out += this.generated(b)
           break
       }

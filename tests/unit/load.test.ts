@@ -75,9 +75,9 @@ describe('validation tolérante', () => {
   })
 
   it('ne perd jamais le texte d’un bloc de type inconnu', () => {
-    const r = ok(load({ format: 'folio/doc', version: 1, blocks: [{ type: 'callout', text: 'Attention !' }, { type: 'checklist', items: ['un', 'deux'] }] }))
+    const r = ok(load({ format: 'folio/doc', version: 1, blocks: [{ type: 'marquee', text: 'Attention !' }, { type: 'checklist', items: ['un', 'deux'] }] }))
     expect(r.doc.blocks.map((b) => b.type)).toEqual(['paragraph', 'list'])
-    expect(codes(load({ blocks: [{ type: 'callout', text: 'x' }] }))).toContain('block-converted')
+    expect(codes(load({ blocks: [{ type: 'marquee', text: 'x' }] }))).toContain('block-converted')
   })
 
   it('reconnaît les alias de type courants', () => {

@@ -20,9 +20,9 @@ test('chaque onglet a les groupes habituels, dans l’ordre', async ({ page }, i
     insert: ['pages', 'tables', 'illustrations', 'links', 'insert-comments', 'headers-footers', 'text', 'symbols', 'blocks'],
     design: ['themes', 'page-background'],
     layout: ['page-setup', 'layout-paragraph', 'arrange', 'sections'],
-    references: ['toc', 'notes', 'research', 'citations', 'captions', 'index', 'authorities'],
+    references: ['toc', 'notes', 'research', 'citations', 'captions', 'index', 'glossary', 'authorities'],
     mailings: ['mm-send', 'mm-create', 'mm-start', 'mm-write', 'mm-preview', 'mm-finish'],
-    review: ['proofing', 'speech', 'accessibility', 'review-language', 'comments', 'markup', 'tracking', 'compare', 'protect'],
+    review: ['proofing', 'speech', 'accessibility', 'review-language', 'comments', 'markup', 'tracking', 'compare', 'protect', 'redact'],
     view: ['views', 'immersive', 'dark-mode', 'page-movement', 'show', 'zoom', 'window', 'document', 'options'],
     help: ['help', 'updates'],
   }
@@ -40,7 +40,7 @@ test('une fonction à venir est grisée, sa bulle le dit, et le clic ne fait rie
   const errors = watchErrors(page)
   await open(page, info, ['Texte'])
   await tab(page, 'insert')
-  const chart = page.locator('.fp-ribbon [data-cmd="insert-chart"]')
+  const chart = page.locator('.fp-ribbon [data-cmd="insert-shapes"]')
   await expect(chart).toHaveAttribute('aria-disabled', 'true')
   await expect(chart).toHaveAttribute('title', /bientôt dans Folio Pages/)
   const before = JSON.stringify(await blocks(page))
