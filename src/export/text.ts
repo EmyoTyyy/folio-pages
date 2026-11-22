@@ -5,14 +5,42 @@
 
 import { chartRows } from '../format/chart'
 import { diagramBullets } from '../format/diagram'
+import { picturesBullets } from '../format/pictures'
 import { chartMarkdown } from '../format/markdown-out'
-import type { Block, FolioDoc, Inline, Run } from '../format/types'
+import type { Block, FolioDoc, Inline, Run, ShapeInline } from '../format/types'
 import { isRun } from '../format/types'
 import { calloutLabel } from '../format/callout'
 import { base64Bytes, generated, imageData, inlineText, isEmptyContent, listLabels, prepareExport, type ExportCommonOptions, type ExportContext } from './common'
 import { safeHref } from './html'
 
 const escapeMd = (s: string) => s.replace(/([\\*_`~[\]$<>|#])/g, '\\$1')
+
+/** Le texte des formes d'un paragraphe (groupes compris), dans l'ordre. */
+export function shapeTexts(content: Inline[]): Block[][] {
+  const out: Block[][] = []
+  const walk = (d: ShapeInline) => {
+    if (d.hidden) return
+    if (d.blocks?.length) out.push(d.blocks)
+    d.children?.forEach(walk)
+  }
+  for (const x of content) if (!isRun(x) && x.type === 'shape') walk(x)
+  return out
+}
+
+/** Les images libres d'un paragraphe (et celles de ses groupes), dans l'ordre. */
+export function shapePictures(content: Inline[]): ShapeInline[] {
+  const out: ShapeInline[] = []
+  const walk = (d: ShapeInline) => {
+    if (d.hidden) return
+    if (d.shape === 'picture' && d.src) out.push(d)
+    d.children?.forEach(walk)
+  }
+  for (const x of content) if (!isRun(x) && x.type === 'shape') walk(x)
+  return out
+}
+
+/** Une image libre, comme une image du texte (pour les exports qui ne placent rien). */
+const asImage = (d: ShapeInline): Extract<Block, { type: 'image' }> => ({ type: 'image', src: d.src ?? '', alt: d.alt ?? '', width: d.width, align: 'center', wrap: 'none', caption: [] })
 
 export interface MarkdownResult {
   markdown: string
@@ -82,7 +110,14 @@ class MdWriter {
         case 'paragraph':
           if (b.style === 'title') out.push(`# ${this.inline(b.content)}`)
           else if (b.style === 'subtitle') out.push(`*${this.inline(b.content).trim()}*`)
-          else out.push(this.inline(b.content))
+          else if (this.inline(b.content).trim() || !shapeTexts(b.content).length) out.push(this.inline(b.content))
+          // Le texte des zones de texte du paragraphe, à sa suite (en citation).
+          for (const t of shapeTexts(b.content)) out.push(...this.blocks(t).map((l) => l.split('\n').map((x) => `> ${x}`).join('\n')))
+          // Les images libres, à la suite.
+          for (const pic of shapePictures(b.content)) {
+            const img = this.image(asImage(pic))
+            if (img) out.push(img)
+          }
           break
         case 'heading':
           out.push(`${'#'.repeat(Math.min(6, Math.max(1, b.level)))} ${this.inline(b.content)}`)
@@ -143,6 +178,17 @@ class MdWriter {
         case 'diagram':
           out.push([b.title ? `**${b.title}**` : '', ...diagramBullets(b)].filter(Boolean).join('\n'))
           break
+        case 'pictures': {
+          // Chaque image avec sa légende (en italique) et son texte.
+          if (b.title) out.push(`**${b.title}**`)
+          for (const it of b.items) {
+            const img = it.src ? this.image({ type: 'image', src: it.src, alt: it.caption ?? '', caption: [], width: 0, align: 'center', wrap: 'none' }) : ''
+            const words = [it.caption ? `*${it.caption}*` : '', it.text ?? ''].filter(Boolean).join(' — ')
+            const part = [img, words].filter(Boolean).join('\n\n')
+            if (part) out.push(part)
+          }
+          break
+        }
         case 'image':
           out.push(this.image(b))
           break
@@ -220,7 +266,9 @@ class TextWriter {
     for (const b of blocks) {
       switch (b.type) {
         case 'paragraph':
-          if (!isEmptyContent(b.content)) add(this.inline(b.content))
+          if (!isEmptyContent(b.content) && this.inline(b.content).trim()) add(this.inline(b.content))
+          for (const t of shapeTexts(b.content)) out.push(...this.blocks(t, indent))
+          for (const pic of shapePictures(b.content)) add(`[${pic.alt || 'Image'}]`)
           break
         case 'heading': {
           const t = this.inline(b.content)
@@ -262,6 +310,9 @@ class TextWriter {
           break
         case 'diagram':
           add([b.title ?? '', ...diagramBullets(b)].filter(Boolean).join('\n'))
+          break
+        case 'pictures':
+          add([b.title ?? '', ...picturesBullets(b)].filter(Boolean).join('\n'))
           break
         case 'image': {
           const cap = this.inline(b.caption).trim()

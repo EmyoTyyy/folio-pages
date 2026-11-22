@@ -9,6 +9,11 @@ import { chartAt } from '../editor/chart'
 import { saveAttachment, selectedAttachment } from '../editor/attachment'
 import { diagramAt, listItemsAt } from '../editor/diagram'
 import { diagramDialog, editDiagramAt } from './diagram'
+import { figuresInSelection, picturesAt } from '../editor/pictures'
+import { holdsText, restack, selectedShapes, setWrap, shapeView } from '../editor/shapes'
+import { SHAPE_WRAPS } from '../format/types'
+import { altDialog, backInText, groupNow, placeFreely, toggleSelectionPane, ungroupNow } from './shapes'
+import { editPicturesAt, picturesDialog } from './piclayout'
 import { editChartAt } from './chart'
 import { NodeSelection, TextSelection } from 'prosemirror-state'
 import type { EditorView } from 'prosemirror-view'
@@ -339,6 +344,51 @@ function entriesFor(app: FolioApp, view: EditorView): Entry[] {
   if (diagram) out.push('sep', { id: 'edit-diagram', label: t('dg.edit'), icon: I.diagram, keys: '↵', disabled: !editable, run: () => editDiagramAt(app, diagram.pos) })
   else if (main && editable && listItemsAt(s)) out.push('sep', { id: 'list-to-diagram', label: t('dg.convert'), icon: I.diagram, run: () => diagramDialog(app) })
 
+  // Disposition d'images sélectionnée.
+  const layout = main ? picturesAt(s) : null
+  if (layout) out.push('sep', { id: 'edit-pictures', label: t('pl.edit'), icon: I.pictureLayout, keys: '↵', disabled: !editable, run: () => editPicturesAt(app, layout.pos) })
+  // Plusieurs images dans la sélection : en faire une disposition.
+  else if (main && editable && !pic && figuresInSelection(s).length > 1) out.push('sep', { id: 'picture-layout', label: t('pl.menu'), icon: I.pictureLayout, run: () => picturesDialog(app) })
+
+  // Formes sélectionnées : écrire dedans, habillage, premier plan, grouper, texte de remplacement.
+  const shapes = main ? selectedShapes(s) : []
+  if (shapes.length) {
+    const one = shapes.length === 1 ? shapes[0].data : null
+    out.push(
+      'sep',
+      ...(one && holdsText(one) ? [{ id: 'shape-edit-text', label: t('shape.editText'), icon: I.textBox, keys: '↵', disabled: !editable, run: () => shapeView(one.id)?.startEditing() }] : []),
+      {
+        id: 'shape-wrap',
+        label: t('rb.wrapText'),
+        icon: I.wrapRight,
+        disabled: !editable,
+        sub: [
+          ...SHAPE_WRAPS.map((w) => ({ id: `shape-wrap-${w}`, label: t(`shape.wrap.${w}` as Key), run: () => setWrap(app.view, selectedShapes(app.view.state), w) })),
+          // Une image libre peut revenir dans le texte.
+          ...(one?.shape === 'picture' ? [{ id: 'picture-back-in-text', label: t('pic.backInText'), run: () => backInText(app) }] : []),
+        ],
+      },
+      {
+        id: 'shape-order',
+        label: t('shape.toFront'),
+        icon: I.bringForward,
+        disabled: !editable,
+        sub: (
+          [
+            ['front', 'shape.toFront'],
+            ['forward', 'shape.forward'],
+            ['backward', 'shape.backward'],
+            ['back', 'shape.toBack'],
+          ] as const
+        ).map(([k, key]) => ({ id: `shape-${k}`, label: t(key), run: () => restack(app.view, selectedShapes(app.view.state), k) })),
+      },
+      ...(shapes.length > 1 ? [{ id: 'shape-group', label: t('shape.group'), icon: I.groupObj, disabled: !editable, run: () => groupNow(app) }] : []),
+      ...(one?.shape === 'group' ? [{ id: 'shape-ungroup', label: t('shape.ungroup'), icon: I.groupObj, disabled: !editable, run: () => ungroupNow(app) }] : []),
+      { id: 'shape-pane', label: t('rb.selectionPane'), icon: I.selectionPane, run: () => toggleSelectionPane(app, true) },
+      ...(one ? [{ id: 'shape-alt', label: t('ctx.viewAlt'), icon: I.alt, disabled: !editable, run: () => altDialog(app) }] : []),
+    )
+  }
+
   // Graphique sélectionné.
   const chart = chartAt(s)
   if (chart) out.push('sep', { id: 'edit-chart', label: t('ctx.editChart'), icon: I.chart, keys: '↵', disabled: !editable, run: () => editChartAt(app, chart.pos) })
@@ -390,12 +440,16 @@ function entriesFor(app: FolioApp, view: EditorView): Entry[] {
       { id: 'save-picture', label: t('ctx.savePicture'), disabled: !src.startsWith('data:'), run: () => savePicture(src, (fig.node.attrs.alt as string) || app.title()) },
       'sep',
       { id: 'caption', label: t('ctx.insertCaption'), icon: I.caption, disabled: !editable, run: () => P.focusCaption(app) },
+      { id: 'picture-layout', label: t('pl.menu'), icon: I.pictureLayout, disabled: !editable, run: () => picturesDialog(app) },
       {
         id: 'wrap',
         label: t('ctx.wrap'),
         icon: I.wrapRight,
         disabled: !editable,
-        sub: WRAP_MENU.map((w) => ({ id: `wrap-${w}`, label: t(`image.wrap.${w}` as Key), icon: I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone'], run: () => set(wrapAttrs(w, fig.node.attrs.align as string)) })),
+        sub: [
+          ...WRAP_MENU.map((w) => ({ id: `wrap-${w}`, label: t(`image.wrap.${w}` as Key), icon: I[`wrap${w[0].toUpperCase()}${w.slice(1)}` as 'wrapNone'], run: () => set(wrapAttrs(w, fig.node.attrs.align as string)) })),
+          { id: 'wrap-free', label: t('pic.placeFreely'), icon: I.wrapFront, run: () => placeFreely(app) },
+        ],
       },
       'sep',
       { id: 'alt-text', label: t('ctx.viewAlt'), icon: I.alt, disabled: !editable, run: () => P.altTextDialog(app) },
@@ -501,13 +555,13 @@ function chromeEntries(app: FolioApp): Entry[] {
 /** Place le curseur là où l'on a cliqué (sauf dans la sélection), ou sélectionne l'objet cliqué. */
 function selectAt(view: EditorView, e: MouseEvent): void {
   const target = e.target as Element
-  const atom = target.closest('.fp-math, .fp-equation, .fp-figure, .fp-chart, .fp-diagram, .fp-attach')
+  const atom = target.closest('.fp-math, .fp-equation, .fp-figure, .fp-chart, .fp-diagram, .fp-pictures, .fp-shape, .fp-attach')
   if (atom && view.dom.contains(atom)) {
     const pos = view.posAtDOM(atom, 0)
     // posAtDOM donne une position dans ou juste avant l'atome : on cherche le nœud autour.
     for (const p of [pos - 1, pos, pos - 2]) {
       const node = p >= 0 ? view.state.doc.nodeAt(p) : null
-      if (node && (node.type === schema.nodes.math || node.type === schema.nodes.equation || node.type === schema.nodes.figure || node.type === schema.nodes.chart || node.type === schema.nodes.diagram || node.type === schema.nodes.attachment)) {
+      if (node && (node.type === schema.nodes.math || node.type === schema.nodes.equation || node.type === schema.nodes.figure || node.type === schema.nodes.chart || node.type === schema.nodes.diagram || node.type === schema.nodes.pictures || node.type === schema.nodes.shape || node.type === schema.nodes.attachment)) {
         view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, p)))
         return
       }

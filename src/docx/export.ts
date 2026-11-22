@@ -9,7 +9,7 @@
 
 import { chartRunXml, withCharts, type DocxChart } from './chart'
 import { chartLookOf } from '../format/chart'
-import { diagramsAsImages } from '../format/diagram'
+import { graphicsAsImages } from '../format/pictures'
 import { blockDir } from '../format/bidi'
 import {
   ColumnBreak,
@@ -71,6 +71,7 @@ import {
   CAPTION_LABELS,
   CALLOUT_KINDS,
   type InkStroke,
+  type ShapeInline,
 } from '../format/types'
 import {
   INLINE_CODE_STYLE,
@@ -91,6 +92,8 @@ import {
   twipsOfMm,
 } from './maps'
 import { escapeXml } from './xml'
+import { SHAPE_MARK, TEXT_MARK, withShapes } from './shapes'
+import { textColorOf } from '../format/shapedraw'
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate'
 import type { MathContext } from '../math'
 import { MATH_PART_NS, mathKitInUse, ommlPrint, treeToOmml, type X } from './omml'
@@ -203,6 +206,10 @@ class Exporter {
   private footnotes: Record<string, { children: Paragraph[] }> = {}
   private endnotes: Record<string, { children: Paragraph[] }> = {}
   private noteId = { foot: 0, end: 0 }
+  /** Les formes du document (dans l'ordre) et, pour chacune, le numéro du texte de ses zones. */
+  private shapes: { data: ShapeInline; texts: Map<string, number> }[] = []
+  /** Le texte des zones de texte, écrit à part (rangé dans sa zone après coup). */
+  private boxTexts: Kids[] = []
   private changeId = 0
   private comments: ICommentOptions[] = []
   /** Identifiants numériques d'un fil (le commentaire puis ses réponses). */
@@ -587,6 +594,29 @@ class Exporter {
       link = null
     }
     for (const x of content) {
+      if (!isRun(x) && x.type === 'shape') {
+        flush()
+        if (ctx.note || ctx.hf) continue
+        // Une image libre : une vraie image ancrée de Word.
+        if (x.shape === 'picture') {
+          out.push(this.freePicture(x))
+          continue
+        }
+        // Une marque à la place de la forme ; le texte de ses zones, écrit à part.
+        const n = this.shapes.length
+        const texts = new Map<string, number>()
+        const collect = (d: ShapeInline) => {
+          if (d.blocks?.length) {
+            texts.set(d.id, this.boxTexts.length)
+            this.boxTexts.push(this.blocks(d.blocks, { width: Math.max(36, d.width - 14) }))
+          }
+          d.children?.forEach(collect)
+        }
+        collect(x)
+        this.shapes.push({ data: x, texts })
+        out.push(new TextRun({ text: `${SHAPE_MARK}${n}#` }))
+        continue
+      }
       if (!isRun(x) && x.type === 'note') {
         flush()
         if (ctx.note || ctx.hf) continue
@@ -865,6 +895,9 @@ class Exporter {
     walkBlocks(allBlocks(this.doc), (b) => {
       if (b.type === 'image') srcs.add(b.src)
     })
+    // Les images libres aussi.
+    const free = freePictureBlocks(this.doc.blocks)
+    for (const b of free) srcs.add(b.src)
     for (const src of srcs) this.pictures.set(src, await this.loadPicture(src))
     // Images retouchées : redessinées avec leurs retouches (une par réglage différent).
     const adjusted = new Map<string, BlockOf<'image'>>()
@@ -872,6 +905,7 @@ class Exporter {
       if (b.type !== 'image' || !b.adjust) return
       if (hasColorAdjust(b.adjust)) adjusted.set(pictureKey(b), b)
     })
+    for (const b of free) if (hasColorAdjust(b.adjust)) adjusted.set(pictureKey(b), b)
     // Dessin à main levée : une image PNG par paragraphe dessiné (les traits relus depuis son texte de remplacement).
     const inks: InkStroke[][] = []
     walkBlocks(allBlocks(this.doc), (b) => {
@@ -949,6 +983,57 @@ class Exporter {
     }
     if (got && kind === 'svg+xml') return { type: 'svg', data: got.bytes, fallback: png, width: w || pngSize.width, height: h || pngSize.height }
     return { type: 'png', data: png, width: pngSize.width, height: pngSize.height }
+  }
+
+  /** Le plan de chaque forme et image libre du corps : z, puis ordre du document (0 : tout au fond). */
+  private ranks: Map<string, number> | null = null
+  private rankOf(id: string): number {
+    if (!this.ranks) {
+      const list: { id: string; z: number }[] = []
+      walkInlines(this.doc.blocks, (x) => {
+        if (!isRun(x) && x.type === 'shape') list.push({ id: x.id, z: x.z ?? 0 })
+      })
+      const order = list.map((s, i) => ({ ...s, i })).sort((a, b) => a.z - b.z || a.i - b.i)
+      this.ranks = new Map(order.map((o, k) => [o.id, k]))
+    }
+    return this.ranks.get(id) ?? 0
+  }
+
+  /** Une image libre : image ancrée dans son paragraphe (position depuis la colonne et le paragraphe). */
+  private freePicture(d: ShapeInline): ParagraphChild {
+    const b = pictureBlock(d)
+    const pic = (hasColorAdjust(b.adjust) ? this.pictures.get(pictureKey(b)) : undefined) ?? this.pictures.get(b.src)
+    if (!pic) return new TextRun({ text: `[${d.alt || 'image'}]`, italics: true })
+    const emu = (v: number) => Math.round(v * 12700)
+    const over = d.wrap === 'behind' || d.wrap === 'front'
+    const fx = d.shadow ? { ...(d.adjust ?? {}), shadow: true as const } : d.adjust
+    const base = {
+      transformation: {
+        width: Math.max(1, Math.round(pxOfPt(d.width) * 9525) / 9525),
+        height: Math.max(1, Math.round(pxOfPt(d.height) * 9525) / 9525),
+        ...(d.rotate ? { rotation: d.rotate } : {}),
+        ...(d.flip ? { flip: { horizontal: d.flip.includes('h'), vertical: d.flip.includes('v') } } : {}),
+      },
+      altText: { name: (d.name ?? d.id).slice(0, 80), description: d.alt ?? '', title: pictureFxMark(fx, (c) => hexOf(this.hex(c))) },
+      ...(d.crop ? { crop: { left: d.crop.left, top: d.crop.top, right: d.crop.right, bottom: d.crop.bottom } } : {}),
+      ...(d.line && d.line !== 'none' ? { outline: { type: 'solidFill', solidFillType: 'rgb', value: hexOf(this.hex(d.line)), width: Math.round((d.lineWidth ?? 1) * 12700) } } : {}),
+      ...(d.wrap === 'inline'
+        ? {}
+        : {
+            floating: {
+              horizontalPosition: { relative: 'column', offset: emu(d.x) },
+              verticalPosition: { relative: 'paragraph', offset: emu(d.y) },
+              // 0 : aucun (derrière, devant) ; 1 : carré ; 3 : haut et bas.
+              wrap: { type: over ? 0 : d.wrap === 'topBottom' ? 3 : 1, side: 'bothSides' },
+              behindDocument: d.wrap === 'behind',
+              allowOverlap: true,
+              zIndex: 251659264 + this.rankOf(d.id) * 1024,
+              margins: over ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 45720, bottom: 45720, left: 114300, right: 114300 },
+            },
+          }),
+    }
+    const options = (pic.type === 'svg' ? { ...base, type: 'svg', data: pic.data, fallback: { type: 'png', data: pic.fallback! } } : { ...base, type: pic.type, data: pic.data }) as unknown as IImageOptions
+    return new ImageRun(options)
   }
 
   private image(b: BlockOf<'image'>, ctx: Ctx): Paragraph[] {
@@ -1522,6 +1607,12 @@ class Exporter {
     this.prepareComments()
     if (d.fonts.length) this.lose('font-embedded')
     const sections = this.sections()
+    // Le texte des zones de texte : en fin de document, entre deux marques (withShapes l'y reprend).
+    if (this.boxTexts.length) {
+      const last = sections[sections.length - 1]
+      const extra = this.boxTexts.flatMap((kids, k) => [new Paragraph({ children: [new TextRun(`${TEXT_MARK}${k}S`)] }), ...kids, new Paragraph({ children: [new TextRun(`${TEXT_MARK}${k}E`)] })])
+      sections[sections.length - 1] = { ...last, children: [...last.children, ...extra] }
+    }
     const orphans = this.orphanAnchors()
     if (orphans.length) {
       const first = sections[0]
@@ -1573,6 +1664,23 @@ class Exporter {
     bytes = withPictureEffects(bytes)
     if (d.formsOnly) bytes = withFormProtection(bytes)
     bytes = withCharts(bytes, this.charts)
+    if (this.shapes.length) {
+      // Ordre de superposition : z, puis ordre du document (avec les images libres).
+      const paint = { color: (c: string) => this.hex(c), hex: (c: string) => this.hex(c) }
+      bytes = withShapes(
+        bytes,
+        this.shapes.map((s) => ({ ...s, rank: this.rankOf(s.data.id) })),
+        (sh) => textColorOf(sh, paint) === '#ffffff',
+        // Les images libres des groupes : l'image écrite (retouchée s'il le faut), en PNG au besoin.
+        (sh) => {
+          const b = pictureBlock(sh)
+          const pic = (hasColorAdjust(b.adjust) ? this.pictures.get(pictureKey(b)) : undefined) ?? this.pictures.get(b.src)
+          if (!pic) return null
+          if (pic.type === 'svg') return pic.fallback ? { data: pic.fallback, ext: 'png' } : null
+          return { data: pic.data, ext: pic.type === 'jpg' ? 'jpeg' : (pic.type as 'png' | 'gif') }
+        },
+      )
+    }
     if (d.watermark) bytes = withWatermark(bytes, d.watermark, hexOf(this.hex(d.watermark.color)), d.watermark.image ? d.assets[d.watermark.image.slice(6)] : undefined, this.family('heading'))
     return { bytes, losses: [...this.losses].map(([code, count]) => ({ code, count })) }
   }
@@ -1684,6 +1792,22 @@ export function withWatermark(bytes: Uint8Array, w: import('../format/types').Wa
 
 /** Clé d'une image retouchée : sa source et ses retouches de couleur. */
 const pictureKey = (b: BlockOf<'image'>) => `${b.src}|${JSON.stringify(b.adjust ?? {})}`
+
+/** Une image libre, vue comme une image du texte (pour la charger et la retoucher comme elle). */
+const pictureBlock = (d: ShapeInline): BlockOf<'image'> => ({ type: 'image', src: d.src ?? '', alt: d.alt ?? '', width: d.width, height: d.height, align: 'center', wrap: 'none', caption: [], ...(d.crop ? { crop: d.crop } : {}), ...(d.adjust ? { adjust: d.adjust } : {}) })
+
+/** Les images libres du corps (et celles des groupes). */
+function freePictureBlocks(blocks: Block[]): BlockOf<'image'>[] {
+  const out: BlockOf<'image'>[] = []
+  const walk = (d: ShapeInline) => {
+    if (d.shape === 'picture' && d.src) out.push(pictureBlock(d))
+    d.children?.forEach(walk)
+  }
+  walkInlines(blocks, (x) => {
+    if (!isRun(x) && x.type === 'shape') walk(x)
+  })
+  return out
+}
 
 /** Éléments de w:rPr qui viennent après w:outline et w:shadow (ordre du schéma OOXML). */
 const AFTER_SHADOW = new Set(['w:emboss', 'w:imprint', 'w:noProof', 'w:snapToGrid', 'w:vanish', 'w:webHidden', 'w:color', 'w:spacing', 'w:w', 'w:kern', 'w:position', 'w:sz', 'w:szCs', 'w:highlight', 'w:u', 'w:effect', 'w:bdr', 'w:shd', 'w:fitText', 'w:vertAlign', 'w:rtl', 'w:cs', 'w:em', 'w:lang', 'w:eastAsianLayout', 'w:specVanish', 'w:oMath'])
@@ -1866,8 +1990,8 @@ export function walkInlines(blocks: Block[], fn: (x: Inline) => void): void {
 
 /** Document Folio Pages (forme complète) → fichier .docx. */
 export async function exportDocx(doc: FolioDoc, opts: ExportOptions = {}): Promise<ExportResult> {
-  // Les diagrammes : des images SVG (avec une image PNG de repli), relues comme diagrammes à l'import.
-  return new Exporter(diagramsAsImages(doc, chartLookOf(doc)), opts).run()
+  // Les diagrammes et dispositions d'images : des images SVG (avec une image PNG de repli), relues comme tels à l'import.
+  return new Exporter(graphicsAsImages(doc, chartLookOf(doc)), opts).run()
 }
 
 export { PAPER_SIZES }

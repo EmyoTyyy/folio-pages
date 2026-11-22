@@ -3,6 +3,7 @@
 // (ombre, halo, bords adoucis, reflet). Chaque choix montre un aperçu de l'image.
 
 import type { FolioApp } from '../app'
+import { selectedShapes, updateShapes } from '../editor/shapes'
 import { figureAt, setFigureAttrs } from '../editor/tables'
 import { parseColor } from '../format/color'
 import { adjustCss, cleanAdjust, cssText, REFLECTION_MASK } from '../format/picture'
@@ -16,7 +17,32 @@ import { popItem } from './popover'
 import * as P from './panels'
 import { dropdown, type Ctl } from './ribbon'
 
-const current = (app: FolioApp): PictureAdjust => ({ ...((figureAt(app.state)?.node.attrs.adjust as PictureAdjust | null) ?? {}) })
+interface PictureTarget {
+  src: string
+  adjust: PictureAdjust | null
+  set: (a: PictureAdjust | null) => void
+}
+
+/** L'image à retoucher : l'image du texte sélectionnée, sinon les images libres sélectionnées. */
+export function pictureTarget(app: FolioApp): PictureTarget | null {
+  const f = figureAt(app.state)
+  if (f) return { src: (f.node.attrs.src as string) ?? '', adjust: (f.node.attrs.adjust as PictureAdjust | null) ?? null, set: (a) => app.run(setFigureAttrs({ adjust: a })) }
+  const pics = selectedShapes(app.view.state).filter((r) => r.data.shape === 'picture')
+  if (!pics.length) return null
+  return {
+    src: pics[0].data.src ?? '',
+    adjust: pics[0].data.adjust ?? null,
+    set: (a) =>
+      updateShapes(app.view, pics, (d) => {
+        const out = { ...d }
+        if (a) out.adjust = a
+        else delete out.adjust
+        return out
+      }),
+  }
+}
+
+const current = (app: FolioApp): PictureAdjust => ({ ...(pictureTarget(app)?.adjust ?? {}) })
 
 /** Change des retouches de l'image sélectionnée (undefined : retirée). */
 export function adjust(app: FolioApp, patch: Partial<Record<keyof PictureAdjust, unknown>>): void {
@@ -25,12 +51,12 @@ export function adjust(app: FolioApp, patch: Partial<Record<keyof PictureAdjust,
     if (v === undefined || v === null) delete next[k]
     else next[k] = v
   }
-  app.run(setFigureAttrs({ adjust: cleanAdjust(next, (c) => parseColor(c)) }))
+  pictureTarget(app)?.set(cleanAdjust(next, (c) => parseColor(c)))
 }
 
 /** Aperçu : l'image sélectionnée, avec ces retouches. */
 function preview(app: FolioApp, a: PictureAdjust, label: string, data: Record<string, string>, onPick: () => void, selected: boolean): HTMLElement {
-  const src = (figureAt(app.state)?.node.attrs.src as string) ?? ''
+  const src = pictureTarget(app)?.src ?? ''
   const img = h('img', { src, alt: '', class: 'fp-pfx__img', style: cssText(adjustCss(a, (c) => P.cssOf(app, c) ?? c)) })
   return popItem(h('span', { class: 'fp-pfx__cell' }, h('span', { class: 'fp-pfx__frame' }, img), h('span', { class: 'fp-pfx__label' }, label)), onPick, {
     ...data,
@@ -42,7 +68,7 @@ function preview(app: FolioApp, a: PictureAdjust, label: string, data: Record<st
 
 /** Aperçu d'un reflet : l'image en petit, et sa copie retournée coupée à `pct` %. */
 function reflectionPreview(app: FolioApp, cur: PictureAdjust, pct: number, label: string, selected: boolean): HTMLElement {
-  const src = (figureAt(app.state)?.node.attrs.src as string) ?? ''
+  const src = pictureTarget(app)?.src ?? ''
   const style = cssText(adjustCss({ ...cur, reflection: undefined }, (c) => P.cssOf(app, c) ?? c))
   const shown = h('img', { src, alt: '', class: 'fp-pfx__img fp-pfx__img--small', style })
   const parts: HTMLElement[] = [shown]
@@ -77,7 +103,7 @@ export function corrections(app: FolioApp): Ctl {
           cells.push(preview(app, { ...cur, brightness, contrast }, label, { 'data-correction': `${brightness}/${contrast}` }, () => adjust(app, { brightness, contrast }), (cur.brightness ?? 0) === brightness && (cur.contrast ?? 0) === contrast))
         }
       }
-      return h('div', { class: 'fp-pop__list' }, heading(t('pfx.brightnessContrast')), grid(5, ...cells), h('hr', { class: 'fp-pop__sep' }), popItem(t('pfx.reset'), () => app.run(setFigureAttrs({ adjust: null })), { 'data-correction': 'reset' }))
+      return h('div', { class: 'fp-pop__list' }, heading(t('pfx.brightnessContrast')), grid(5, ...cells), h('hr', { class: 'fp-pop__sep' }), popItem(t('pfx.reset'), () => pictureTarget(app)?.set(null), { 'data-correction': 'reset' }))
     },
   })
 }

@@ -2,16 +2,40 @@
 // montré une fois après une mise à jour (et à la demande, Aide → Nouveautés).
 
 export const RELEASE_NOTES: Record<string, { fr: string[]; en: string[] }> = {
+  '0.15.0': {
+    fr: [
+      'Formes et zones de texte : Insertion → Formes (plus de 140 formes : traits et flèches, rectangles, formes de base, flèches pleines, équations, organigramme, étoiles et bannières, bulles) et Insertion → Zone de texte. Une forme suit son paragraphe mais se place librement : on la déplace, la redimensionne, la fait pivoter, on écrit dedans.',
+      'Onglet Format de la forme : styles, remplissage, contour (épaisseur, tirets, flèches), ombre, transparence, habillage du texte, position, avancer et reculer, aligner et distribuer, grouper et dissocier, rotation ; volet Sélection pour renommer, masquer et réordonner. Gardées en .docx (vraies formes) et en .odt.',
+      'Images libres : une image se place n’importe où sur la page comme une forme (Habillage → Placer librement sur la page, ou Insertion → Images → Image libre). Elle garde ses proportions, ses retouches, se groupe avec des formes, et revient dans le texte en un clic.',
+      'La forme se voit pendant qu’on la dessine. L’onglet courant du ruban est rattaché au ruban.',
+    ],
+    en: [
+      'Shapes and text boxes: Insert → Shapes (over 140 shapes: lines and arrows, rectangles, basic shapes, block arrows, equation shapes, flowchart, stars and banners, speech bubbles) and Insert → Text Box. A shape follows its paragraph but sits anywhere on the page: move it, resize it, rotate it, type inside it.',
+      'Shape Format tab: styles, fill, outline (weight, dashes, arrows), shadow, transparency, text wrapping, position, bring forward and send backward, align and distribute, group and ungroup, rotate; a Selection pane to rename, hide and reorder. Kept in .docx (real shapes) and .odt.',
+      'Free pictures: a picture sits anywhere on the page like a shape (Wrap Text → Place freely on the page, or Insert → Pictures → Free picture). It keeps its proportions and corrections, groups with shapes, and goes back into the text in one click.',
+      'A shape shows while you draw it. The current ribbon tab is attached to the ribbon.',
+    ],
+  },
+  '0.14.0': {
+    fr: [
+      'Disposition d’images (Format de l’image → Disposition de l’image, ou Insertion → Images) : des images et leurs légendes en grille, en bandeau, autour d’une image mise en avant, en étapes, en liste ou en mosaïque. Les images sélectionnées deviennent la disposition ; double-clic pour ajouter, remplacer, déplacer ou retirer des images, changer les légendes ou la disposition. Gardée en .docx et .odt.',
+    ],
+    en: [
+      'Picture layouts (Picture Format → Picture Layout, or Insert → Pictures): pictures and their captions as a grid, a strip, a featured picture, steps, a list or a mosaic. The selected pictures become the layout; double-click to add, replace, reorder or remove pictures, change the captions or the layout. Kept in .docx and .odt.',
+    ],
+  },
   '0.13.0': {
     fr: [
       'Plusieurs documents dans un fichier : des onglets en bas de la fenêtre (+ pour en ajouter, double-clic pour renommer, clic droit pour dupliquer, déplacer ou supprimer). Chaque document est complet et indépendant, avec sa mise en page, son thème et son historique d’annulation.',
       'Liens et renvois d’un document à l’autre : Insertion → Lien propose les titres et signets de tous les documents du fichier, Références → Renvoi peut viser un autre document (texte, « Tableau 2 », numéro, page).',
       'Exporter et imprimer : ce document ou tous les documents à la suite, chacun commençant une nouvelle page.',
+      'Corrections : « Mettre à jour ce fichier » propose le fichier ouvert (Chrome, Edge) au lieu d’en créer un autre ; « Nouveau document vide » efface aussi l’en-tête, le pied de page et le filigrane.',
     ],
     en: [
       'Several documents in one file: tabs at the bottom of the window (+ to add one, double-click to rename, right-click to duplicate, move or delete). Each document is complete and independent, with its own page setup, theme and undo history.',
       'Links and cross-references from one document to another: Insert → Link lists the headings and bookmarks of every document in the file, References → Cross-reference can point into another document (text, “Table 2”, number, page).',
       'Export and print: this document or all of them, one after another, each starting on a new page.',
+      'Fixes: “Update this file” offers the open file (Chrome, Edge) instead of making another one; “New blank document” also clears the header, footer and watermark.',
     ],
   },
   '0.12.0': {

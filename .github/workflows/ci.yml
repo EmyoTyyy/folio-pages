@@ -12,12 +12,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+      # pdftotext / pdfimages (Poppler) : les tests vérifient le texte et les images des PDF produits.
+      - name: PDF tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - name: Build the single file
         run: npm run build
       - name: The published app and schema match the sources
@@ -32,9 +35,10 @@ jobs:
         run: npx playwright install --with-deps chromium firefox
       - name: End-to-end tests
         run: npx playwright test --project=chromium-ci --project=firefox
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-traces
           path: test-results/
+          if-no-files-found: ignore
           retention-days: 7

@@ -9,6 +9,7 @@ import { lang, t } from '../i18n/i18n'
 import { openDialog, toast } from './dialog'
 import { h } from './dom'
 import { carryPacks } from './packs'
+import { openedFileName } from '../file/save'
 
 const SEEN_KEY = 'folio-pages:seen-version'
 /** Dernière version annoncée par une bulle : une seule fois par version, pas à chaque ouverture. */
@@ -134,6 +135,14 @@ export async function checkUpdatesUi(app: FolioApp): Promise<void> {
   offerUpdate(app, res.release)
 }
 
+/** Comment la mise à jour s'écrit : en place, après avoir désigné le fichier une fois, ou en téléchargement. */
+function howText(app: FolioApp): string {
+  if (!app.writesInPlace) return t('update.howDownload')
+  const name = openedFileName()
+  if (app.hasFileHandle || !name) return t('update.howInPlace')
+  return t('update.howPick', { name })
+}
+
 function offerUpdate(app: FolioApp, release: ReleaseInfo): void {
   const notes = release.notes?.[lang()] ?? release.notes?.en ?? []
   openDialog({
@@ -142,7 +151,7 @@ function offerUpdate(app: FolioApp, release: ReleaseInfo): void {
     body: [
       h('p', {}, t('update.availableBody', { from: APP_VERSION, to: release.version })),
       notes.length ? notesList(notes) : null,
-      h('p', { class: 'fp-form__hint' }, t(app.writesInPlace ? 'update.howInPlace' : 'update.howDownload')),
+      h('p', { class: 'fp-form__hint' }, howText(app)),
       h('p', { class: 'fp-form__hint' }, t('update.trust')),
     ].filter(Boolean) as HTMLElement[],
     actions: [
@@ -158,7 +167,12 @@ function offerUpdate(app: FolioApp, release: ReleaseInfo): void {
             applied = true
             app.notifyUi()
           }
-          if (out.kind === 'saved' || out.kind === 'downloaded') toast(t(out.kind === 'saved' ? 'update.doneInPlace' : 'update.doneDownload', { name: out.name, version: release.version }), { kind: 'success', timeout: 14000 })
+          if (out.kind === 'downloaded') toast(t('update.doneDownload', { name: out.name, version: release.version }), { kind: 'success', timeout: 14000 })
+          if (out.kind === 'saved') {
+            // Le fichier affiché a été réécrit : le recharger ouvre la nouvelle version (le document est enregistré).
+            const same = out.name === openedFileName()
+            toast(t(same ? 'update.doneReload' : 'update.doneInPlace', { name: out.name, version: release.version }), { kind: 'success', timeout: same ? 30000 : 14000, action: same ? { label: t('update.reload'), run: () => location.reload() } : undefined })
+          }
         },
       },
     ],

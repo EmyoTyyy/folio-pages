@@ -10,7 +10,9 @@ import { arr, bool, either, enumOf, int, map, num, obj, ref, str, tagged, type D
 import { resolveFieldName } from './fields'
 import { CHART_LIMITS } from './chart'
 import { DIAGRAM_COLORS, DIAGRAM_KINDS, DIAGRAM_LIMITS } from './diagram'
-import { CALLOUT_KINDS, CHART_KINDS, FORM_KINDS, INK_LIMITS, UNDERLINE_STYLES, UNICODE_RANGE, AUTHORITY_CATEGORIES, BOOKMARK_NAME, DOC_KEY, CITATION_STYLES, SOURCE_ID, SOURCE_TYPES, XREF_SHOWS, CODE_COLORS, COMMENT_ID, FIELD_NAMES, ID_PATTERN, KEY_PATTERN, NOTE_FORMATS, NOTE_RESTARTS, NUMBERINGS, PAGE_NUMBER_FORMATS, PAPER_SIZES, TABLE_STYLES, THEME_COLORS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS } from './types'
+import { PICTURE_LAYOUTS, PICTURES_LIMITS, isPictureSrc } from './pictures'
+import { SHAPE_ALIASES, SHAPE_ID, SHAPE_KINDS, SHAPE_LIMITS } from './shapes'
+import { CALLOUT_KINDS, CHART_KINDS, FORM_KINDS, INK_LIMITS, UNDERLINE_STYLES, UNICODE_RANGE, AUTHORITY_CATEGORIES, BOOKMARK_NAME, DOC_KEY, CITATION_STYLES, SOURCE_ID, SOURCE_TYPES, XREF_SHOWS, CODE_COLORS, COMMENT_ID, FIELD_NAMES, ID_PATTERN, KEY_PATTERN, NOTE_FORMATS, NOTE_RESTARTS, NUMBERINGS, PAGE_NUMBER_FORMATS, PAPER_SIZES, TABLE_STYLES, THEME_COLORS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS, LINE_DASHES, LINE_ENDS, SHAPE_WRAPS } from './types'
 
 export const LIMITS = {
   /** Taille maximale du JSON du document, en caractères. */
@@ -141,6 +143,8 @@ const listStyle = (def?: string) =>
     },
   })
 
+/** Une couleur de remplissage ou de contour, ou « none ». */
+const isPaint = (s: string): boolean => s.trim().toLowerCase() === 'none' || isColor(s)
 const color = (doc = 'A colour: "#rrggbb" or a theme colour (text, accent1 … accent6).') =>
   str({ max: 30, test: isColor, doc })
 const hexColor = (doc?: string) => str({ max: 30, test: isHexColor, doc: doc ?? 'A colour "#rrggbb".' })
@@ -243,6 +247,30 @@ const mergeOpts = obj(
   { doc: 'Settings of a special merge field.' },
 )
 
+/** Rognage d'une image (bloc image ou image libre). */
+const pictureCrop = () =>
+  obj(
+    { top: num({ min: 0, max: 95, step: 0.1 }), right: num({ min: 0, max: 95, step: 0.1 }), bottom: num({ min: 0, max: 95, step: 0.1 }), left: num({ min: 0, max: 95, step: 0.1 }) },
+    { doc: 'Cropping, in percent of each side.' },
+  )
+/** Retouches d'une image (bloc image ou image libre). */
+const pictureAdjust = () =>
+  obj(
+    {
+      brightness: int({ min: -100, max: 100, doc: 'Brightness, -100 to 100 (percent).' }),
+      contrast: int({ min: -100, max: 100, doc: 'Contrast, -100 to 100 (percent).' }),
+      saturation: int({ min: 0, max: 400, doc: 'Colour saturation in percent: 0 is grey, 100 unchanged.' }),
+      recolor: enumOf(['grayscale', 'sepia', 'washout', 'blackwhite'], { aliases: { greyscale: 'grayscale', gray: 'grayscale', grey: 'grayscale', bw: 'blackwhite' } }),
+      artistic: enumOf(['blur', 'pencil', 'negative'], { aliases: { invert: 'negative', sketch: 'pencil' } }),
+      transparency: int({ min: 0, max: 95, doc: 'Transparency in percent.' }),
+      shadow: bool({ doc: 'A drop shadow.' }),
+      glow: color('A soft glow around the picture, in this colour.'),
+      softEdges: int({ min: 0, max: 50, doc: 'Soft edges, in points.' }),
+      reflection: int({ min: 0, max: 100, doc: 'A reflection below the picture: the share of its height reflected, 10 to 100 (percent).' }),
+    },
+    { doc: 'Picture corrections and effects.' },
+  )
+
 const inline = tagged({
   tag: 'type',
   fallback: 'text',
@@ -264,6 +292,10 @@ const inline = tagged({
     if (['dropdown', 'select', 'combobox', 'choice'].includes(kk)) return { variant: 'formfield', patch: { kind: 'dropdown' } }
     if (['date', 'datepicker', 'datefield'].includes(kk)) return { variant: 'formfield', patch: { kind: 'date' } }
     if (['attachment', 'attachedfile', 'file', 'embed', 'embeddedfile', 'object'].includes(kk)) return { variant: 'attachment' }
+    if (['shape', 'drawing', 'autoshape', 'forme'].includes(kk)) return { variant: 'shape' }
+    if (['textbox', 'zonedetexte', 'sidebar', 'pullquote'].includes(kk)) return { variant: 'shape', patch: { shape: 'textBox' } }
+    if (['group', 'groupe', 'shapegroup'].includes(kk)) return { variant: 'shape', patch: { shape: 'group' } }
+    if (['freepicture', 'floatingpicture', 'floatingimage', 'freeimage', 'imagelibre'].includes(kk)) return { variant: 'shape', patch: { shape: 'picture' } }
     return null
   },
   salvage: (v) => ('text' in v ? 'text' : 'tex' in v ? 'math' : null),
@@ -349,6 +381,47 @@ const inline = tagged({
         mime: str({ max: 170, doc: 'Original type, for example "application/pdf" (for information: the file is always saved as plain bytes).' }),
       },
       { required: ['src', 'name'], doc: 'An attached file, shown as a chip with its name; double-click saves it to the computer.' },
+    ),
+    shape: obj(
+      {
+        shape: enumOf(SHAPE_KINDS, {
+          def: 'rect',
+          doc: 'The shape: a preset name as in .docx files (rect, roundRect, ellipse, triangle, diamond, rightArrow, star5, wedgeRectCallout, flowChartDecision, line…), "textBox" (a box for text), "picture" (a picture placed freely, with "src") or "group" (several shapes in "children").',
+          aliases: SHAPE_ALIASES,
+        }),
+        id: str({ max: 64, pattern: SHAPE_ID, doc: 'A stable id, unique in the document (made up when missing).' }),
+        name: str({ max: 200, doc: 'Name shown in the Selection pane.' }),
+        x: pt(-2000, 4000, 'Horizontal position in points, from the left margin (the left edge of the text). In a group: from the group’s left edge.'),
+        y: pt(-4000, 4000, 'Vertical position in points, from the top of the paragraph that holds the shape. In a group: from the group’s top edge.'),
+        width: pt(0, 3000, 'Width in points (the text is about 470 pt wide on A4).'),
+        height: pt(0, 4000, 'Height in points.'),
+        rotate: num({ min: -360, max: 360, doc: 'Rotation in degrees, clockwise.' }),
+        flip: enumOf(['h', 'v', 'hv'], { doc: 'Flipped horizontally (h), vertically (v) or both.' }),
+        wrap: enumOf(SHAPE_WRAPS, {
+          doc: 'How the text goes around it: inline (a large character in the line), square (text around its box), topBottom (above and below only), behind (behind the text), front (in front of the text). Default: front for a shape, square for a text box.',
+          aliases: { inlinewithtext: 'inline', infront: 'front', infrontoftext: 'front', over: 'front', behindtext: 'behind', under: 'behind', topandbottom: 'topBottom', topbottom: 'topBottom', tight: 'square', through: 'square', around: 'square' },
+        }),
+        z: int({ min: -100000, max: 100000, doc: 'Stacking order: higher is on top.' }),
+        fill: str({ max: 30, test: isPaint, doc: 'Fill colour: "#rrggbb", a theme colour (text, accent1 … accent6) or "none".' }),
+        line: str({ max: 30, test: isPaint, doc: 'Outline colour, or "none".' }),
+        lineWidth: num({ min: 0, max: 50, step: 0.25, doc: 'Outline width in points (default 1).' }),
+        dash: enumOf(LINE_DASHES, { def: 'solid' }),
+        head: enumOf(LINE_ENDS, { def: 'none', doc: 'Start of a line: none, arrow, triangle, oval or diamond.' }),
+        tail: enumOf(LINE_ENDS, { def: 'none', doc: 'End of a line (an arrow is "tail": "triangle").' }),
+        transparency: int({ min: 0, max: 100, doc: 'Fill transparency in percent.' }),
+        shadow: bool({ def: false, doc: 'A soft drop shadow.' }),
+        text: str({ max: LIMITS.text, doc: 'The text inside the shape, as plain text.' }),
+        md: str({ max: LIMITS.text, doc: 'The text inside the shape, in Markdown.' }),
+        blocks: blockList('The text inside the shape as blocks (paragraphs, lists).'),
+        valign: enumOf(['top', 'middle', 'bottom'], { doc: 'Vertical place of the text (default: middle for a shape, top for a text box).', aliases: { center: 'middle', centre: 'middle' } }),
+        alt: str({ max: 2000, doc: 'Alternative text: what the shape shows, for readers who cannot see it.' }),
+        hidden: bool({ def: false, doc: 'Hidden (Selection pane): kept in the file but not shown or printed.' }),
+        children: arr(ref('Inline'), { max: SHAPE_LIMITS.children, doc: 'A group’s shapes (each a "shape"), placed from the group’s top-left corner.' }),
+        src: str({ max: LIMITS.asset, test: isImageSrc, refusal: 'unsafe-image', doc: 'A "picture" shape only: the picture, "asset:<id>" (see "assets") or a "data:image/…;base64," URI.' }),
+        crop: pictureCrop(),
+        adjust: pictureAdjust(),
+      },
+      { doc: 'A shape, text box, picture placed freely ("shape": "picture" with "src") or group anchored in this paragraph: it moves with the paragraph but sits anywhere on the page (x, y from the margin and the paragraph top). Put it at the start of the paragraph.' },
     ),
     cite: obj(
       {
@@ -490,6 +563,14 @@ export function resolveBlockType(tag: string): TagResolution | null {
     table: { variant: 'table' },
     chart: { variant: 'chart' },
     smartart: { variant: 'diagram' },
+    picturelayout: { variant: 'pictures' },
+    pictureslayout: { variant: 'pictures' },
+    gallery: { variant: 'pictures' },
+    galerie: { variant: 'pictures' },
+    photos: { variant: 'pictures' },
+    album: { variant: 'pictures' },
+    collage: { variant: 'pictures', patch: { layout: 'mosaic' } },
+    mosaic: { variant: 'pictures', patch: { layout: 'mosaic' } },
     orgchart: { variant: 'diagram', patch: { kind: 'hierarchy' } },
     organigramme: { variant: 'diagram', patch: { kind: 'hierarchy' } },
     process: { variant: 'diagram', patch: { kind: 'process' } },
@@ -696,6 +777,29 @@ const block = tagged({
       },
       { doc: 'A diagram drawn from a short list: process steps, a cycle, an organisation chart, a pyramid… (like SmartArt).' },
     ),
+    pictures: obj(
+      {
+        layout: enumOf(PICTURE_LAYOUTS, {
+          def: 'grid',
+          doc: 'grid (pictures with the caption and text below each), strip (tall pictures side by side, the caption in a coloured band), featured (the first picture large, the others smaller beside it), process (pictures joined by arrows, the caption in a coloured box), list (round pictures, the caption and text beside each) or mosaic (the first picture over two by two cells, the others around it).',
+          aliases: { grille: 'grid', captioned: 'grid', banner: 'strip', bandeau: 'strip', row: 'strip', feature: 'featured', hero: 'featured', avant: 'featured', steps: 'process', etapes: 'process', timeline: 'process', liste: 'list', circles: 'list', collage: 'mosaic', mosaique: 'mosaic', bento: 'mosaic' },
+        }),
+        title: str({ max: PICTURES_LIMITS.caption, doc: 'Title above the pictures.' }),
+        items: arr(
+          either([
+            str({ max: PICTURES_LIMITS.caption }),
+            obj({
+              src: str({ max: LIMITS.asset, test: isPictureSrc, refusal: 'unsafe-image', doc: 'The picture: "asset:<id>" (see "assets") or a "data:image/…;base64," URI. Leave it out for an empty frame the reader fills in later.' }),
+              caption: str({ max: PICTURES_LIMITS.caption, doc: 'Short caption, shown with the picture.' }),
+              text: str({ max: PICTURES_LIMITS.text, doc: 'A sentence or two about the picture (shown by grid, strip, featured, process and list).' }),
+            }),
+          ]),
+          { max: PICTURES_LIMITS.items, doc: 'The pictures, in order: { "src", "caption", "text" }, or just a caption string (an empty frame).' },
+        ),
+        color: enumOf(DIAGRAM_COLORS, { def: 'colorful', doc: 'colorful (one theme colour per picture) or one theme colour for all (accent1 … accent6).' }),
+      },
+      { doc: 'Pictures arranged with their captions (a picture layout): a captioned grid, a strip, a featured picture, steps, a list or a mosaic. Each picture is cropped to fill its frame.' },
+    ),
     equation: obj(
       {
         tex: str({ max: LIMITS.tex, doc: 'The formula in LaTeX, without $$, for example "\\int_0^1 x^2\\,dx = \\frac{1}{3}". Matrices, cases, aligned, \\ce{} for chemistry.' }),
@@ -826,28 +930,11 @@ const block = tagged({
           str({ max: LIMITS.text, doc: 'Caption in Markdown.' }),
           inlineList('Caption as formatted runs.'),
         ]),
-        crop: obj(
-          { top: num({ min: 0, max: 95, step: 0.1 }), right: num({ min: 0, max: 95, step: 0.1 }), bottom: num({ min: 0, max: 95, step: 0.1 }), left: num({ min: 0, max: 95, step: 0.1 }) },
-          { doc: 'Cropping, in percent of each side.' },
-        ),
+        crop: pictureCrop(),
         rotate: int({ min: -360, max: 360, doc: 'Rotation in degrees: 90, 180 or 270.' }),
         flip: enumOf(['h', 'v', 'hv'], { aliases: { horizontal: 'h', vertical: 'v', both: 'hv' } }),
         border: color('Draw a border around the picture, in this colour.'),
-        adjust: obj(
-          {
-            brightness: int({ min: -100, max: 100, doc: 'Brightness, -100 to 100 (percent).' }),
-            contrast: int({ min: -100, max: 100, doc: 'Contrast, -100 to 100 (percent).' }),
-            saturation: int({ min: 0, max: 400, doc: 'Colour saturation in percent: 0 is grey, 100 unchanged.' }),
-            recolor: enumOf(['grayscale', 'sepia', 'washout', 'blackwhite'], { aliases: { greyscale: 'grayscale', gray: 'grayscale', grey: 'grayscale', bw: 'blackwhite' } }),
-            artistic: enumOf(['blur', 'pencil', 'negative'], { aliases: { invert: 'negative', sketch: 'pencil' } }),
-            transparency: int({ min: 0, max: 95, doc: 'Transparency in percent.' }),
-            shadow: bool({ doc: 'A drop shadow.' }),
-            glow: color('A soft glow around the picture, in this colour.'),
-            softEdges: int({ min: 0, max: 50, doc: 'Soft edges, in points.' }),
-            reflection: int({ min: 0, max: 100, doc: 'A reflection below the picture: the share of its height reflected, 10 to 100 (percent).' }),
-          },
-          { doc: 'Picture corrections and effects.' },
-        ),
+        adjust: pictureAdjust(),
       },
       { required: ['src'], doc: 'A picture, with an optional caption.' },
     ),

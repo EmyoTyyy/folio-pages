@@ -72,6 +72,11 @@ export const P7_DICT = {
     en: 'Updating this file replaces the application ({from} → {to}) and keeps your document as it is.',
   },
   'update.howInPlace': { fr: 'Le fichier ouvert est réécrit à sa place.', en: 'The open file is rewritten in place.' },
+  'update.howPick': {
+    fr: 'Le navigateur demande une fois où se trouve ce fichier : choisissez « {name} » dans son dossier et acceptez de le remplacer. Ensuite, il est réécrit directement.',
+    en: 'The browser asks once where this file is: pick “{name}” in its folder and agree to replace it. After that, it is rewritten directly.',
+  },
+  'update.reload': { fr: 'Recharger', en: 'Reload' },
   'update.howDownload': { fr: 'Le fichier mis à jour est téléchargé : il remplace l’ancien.', en: 'The updated file is downloaded: it replaces the old one.' },
   'update.trust': {
     fr: 'La nouvelle version n’est acceptée que si sa signature et son empreinte sont valides.',
@@ -86,6 +91,7 @@ export const P7_DICT = {
     en: 'Folio Pages {version} is available (this file: {current}). Update the application and keep the document.',
   },
   'update.doneInPlace': { fr: '{name} est en version {version}. Rouvrez-le pour l’utiliser.', en: '{name} is now version {version}. Reopen it to use it.' },
+  'update.doneReload': { fr: '{name} est en version {version}. Rechargez pour l’utiliser.', en: '{name} is now version {version}. Reload to use it.' },
   'update.doneDownload': { fr: 'Version {version} téléchargée : {name}. Ouvrez ce fichier.', en: 'Version {version} downloaded: {name}. Open that file.' },
   'update.updated': { fr: 'Folio Pages est passé de la version {from} à {to}.', en: 'Folio Pages went from version {from} to {to}.' },
   'update.whatsNew': { fr: 'Nouveautés', en: 'What’s new' },

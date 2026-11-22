@@ -109,6 +109,14 @@ export const DOCX_DICT = {
     fr: { one: '{n} zone de texte : son texte est placé à la suite du paragraphe.', other: '{n} zones de texte : leur texte est placé à la suite du paragraphe.' },
     en: { one: '{n} text box: its text is placed after the paragraph.', other: '{n} text boxes: their text is placed after the paragraph.' },
   },
+  'docx.in.shape-geometry': {
+    fr: { one: '{n} forme dessinée à la main devient un rectangle.', other: '{n} formes dessinées à la main deviennent des rectangles.' },
+    en: { one: '{n} freeform shape becomes a rectangle.', other: '{n} freeform shapes become rectangles.' },
+  },
+  'docx.in.shape-position': {
+    fr: { one: '{n} forme placée par rapport à la page est placée par rapport à son paragraphe.', other: '{n} formes placées par rapport à la page sont placées par rapport à leur paragraphe.' },
+    en: { one: '{n} shape placed from the page is placed from its paragraph.', other: '{n} shapes placed from the page are placed from their paragraph.' },
+  },
   'docx.in.chart': {
     fr: { one: '{n} graphique n’est pas importé.', other: '{n} graphiques ne sont pas importés.' },
     en: { one: '{n} chart is not imported.', other: '{n} charts are not imported.' },

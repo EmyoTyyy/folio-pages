@@ -8,7 +8,7 @@ import { locateJsonError, repairJson, type JsonError } from './json'
 import { ensureKeys } from './documents'
 import { normalizeDoc } from './normalize'
 import { DEFS, LIMITS, VALIDATION_LIMITS } from './spec'
-import type { Block, FolioDoc, NoteInline } from './types'
+import type { Block, FolioDoc, NoteInline, ShapeInline } from './types'
 
 export type LoadResult =
   | { ok: true; doc: FolioDoc; report: Report; repaired: boolean }
@@ -107,6 +107,23 @@ export function loadDocument(input: unknown, opts: LoadOptions = {}): LoadResult
  * Contenu d'une note venu d'ailleurs (collage) : vérifié et borné comme dans un
  * document. Contenu illisible : un paragraphe avec le texte de repli.
  */
+/** Une forme venue d'ailleurs (collage) : vérifiée comme dans un fichier ; null si elle n'est pas valable. */
+export function loadShape(raw: unknown): ShapeInline | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = loadDocument({ blocks: [{ type: 'paragraph', content: [{ ...(raw as Record<string, unknown>), type: 'shape' }] }] })
+  const p = r.ok ? r.doc.blocks[0] : null
+  const sh = p && p.type === 'paragraph' ? ((p.content.find((x) => 'type' in x && x.type === 'shape') as ShapeInline | undefined) ?? null) : null
+  if (!sh || !r.ok) return sh
+  // Les images libres gardent leur URI data: (l'éditeur n'a pas de table des ressources).
+  const assets = r.doc.assets
+  const keep = (d: ShapeInline): ShapeInline => {
+    if (d.children) d.children = d.children.map(keep)
+    if (d.src?.startsWith('asset:') && Object.prototype.hasOwnProperty.call(assets, d.src.slice(6))) d.src = assets[d.src.slice(6)]
+    return d
+  }
+  return keep(sh)
+}
+
 export function loadNoteBlocks(raw: unknown, fallback = ''): Block[] {
   const r = loadDocument({ blocks: [{ type: 'paragraph', content: [{ type: 'note', blocks: Array.isArray(raw) ? raw : [] }] }] })
   const p = r.ok ? r.doc.blocks[0] : null

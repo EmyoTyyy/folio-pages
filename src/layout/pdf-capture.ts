@@ -154,7 +154,8 @@ export async function capturePdf(root: HTMLElement, info: { title?: string; auth
   }
 
   // 2. Images (celles « devant le texte » viennent après le texte, en 5 bis).
-  const inFront = (img: Element) => !!img.closest('.fp-figure[data-wrap="front"]')
+  const FRONT = '.fp-figure[data-wrap="front"] img, .fp-shape[data-wrap="front"] .fp-shape__pic img'
+  const inFront = (img: Element) => img.matches(FRONT)
   const drawImage = async (img: HTMLImageElement): Promise<void> => {
     const r = img.getBoundingClientRect()
     if (r.width < 1 || r.height < 1) return
@@ -342,7 +343,7 @@ export async function capturePdf(root: HTMLElement, info: { title?: string; auth
   }
 
   // 5 bis. Images devant le texte.
-  for (const img of Array.from(root.querySelectorAll<HTMLImageElement>('.fp-figure[data-wrap="front"] img'))) {
+  for (const img of Array.from(root.querySelectorAll<HTMLImageElement>(FRONT))) {
     if (skipped(img) || !visible(img)) continue
     await drawImage(img)
   }

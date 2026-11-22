@@ -22,7 +22,7 @@ test('window.folio : doc, serialize, loadDoc, schema, i18n', async ({ page }, in
   expect(docOfFile(html).blocks[0]).toEqual({ type: 'heading', level: 1, content: [{ text: 'Chargé par script' }] })
 
   const schema = await page.evaluate(() => (window as any).folio.schema())
-  expect(schema.$defs.Block.oneOf.map((v: any) => v.properties.type.const)).toEqual(['paragraph', 'heading', 'list', 'quote', 'callout', 'code', 'table', 'divider', 'chart', 'diagram', 'equation', 'pagebreak', 'columns', 'columnbreak', 'toc', 'figures', 'index', 'authorities', 'bibliography', 'glossary', 'abbreviations', 'section', 'image'])
+  expect(schema.$defs.Block.oneOf.map((v: any) => v.properties.type.const)).toEqual(['paragraph', 'heading', 'list', 'quote', 'callout', 'code', 'table', 'divider', 'chart', 'diagram', 'pictures', 'equation', 'pagebreak', 'columns', 'columnbreak', 'toc', 'figures', 'index', 'authorities', 'bibliography', 'glossary', 'abbreviations', 'section', 'image'])
   expect(JSON.stringify(schema.$defs.Inline)).toContain('"note"')
   expect(JSON.stringify(schema.$defs.Inline)).toContain('"math"')
   expect(schema.properties.notes.properties.foot.properties.format.enum).toContain('symbols')

@@ -175,6 +175,10 @@ export class FolioApp {
   /** Modifier un graphique (installé par l'interface). */
   editChart: ((pos: number) => void) | null = null
   editDiagram: ((pos: number) => void) | null = null
+  /** Modifier une disposition d'images (double-clic, Entrée) : branché par l'interface. */
+  editPictures: ((pos: number) => void) | null = null
+  /** Écrire dans une forme (l'interface ouvre un petit éditeur dans `host`). */
+  editShapeText: ((pos: number, host: HTMLElement, first?: string) => void) | null = null
   /** Modifier une formule (l'interface ouvre l'éditeur d'équation). */
   editMath: ((view: EditorView, pos: number) => void) | null = null
   /** Branchements des équations, partagés avec les éditeurs secondaires. */
@@ -185,6 +189,12 @@ export class FolioApp {
   private docListeners = new Set<(tr: Transaction) => void>()
   /** Les documents du fichier, dans l'ordre des onglets ; `active` : celui qui est affiché. */
   private slots: DocSlot[] = []
+  /**
+   * Le document de démonstration (sa clé), tant qu'il n'a pas été remplacé :
+   * « Nouveau document vide » n'en garde rien, même après l'ajout d'autres
+   * documents (qui fait que le fichier n'est plus « la démonstration »).
+   */
+  private demoKey: string | null = null
   private active = 0
   /** Ordre des documents au dernier enregistrement (ajout, suppression, déplacement : à enregistrer). */
   private savedOrder = ''
@@ -275,6 +285,14 @@ export class FolioApp {
         edit: (pos) => this.editDiagram?.(pos),
         label: () => t('dg.editHint'),
       },
+      pictures: {
+        edit: (pos) => this.editPictures?.(pos),
+        label: () => t('pl.editHint'),
+      },
+      shapes: {
+        editText: (pos, host, first) => this.editShapeText?.(pos, host, first),
+        label: (d) => d.name || t('shape.hint'),
+      },
       callout: {
         menu: (pos, anchor) => this.calloutMenu?.(pos, anchor),
         labels: () => ({ icon: t('callout.kindMenu'), title: t('callout.rename') }),
@@ -299,6 +317,7 @@ export class FolioApp {
       return { key: d.key!, state: st, saved: st && init.boot !== 'recovered-text' ? st.doc : null, scroll: 0, pages: null }
     })
     this.savedOrder = this.order()
+    if (this.isDemo) this.demoKey = this.slots[0].key
     this.docStyle = h('style', { id: 'fp-doc-style', 'data-folio-transient': '' })
     document.head.append(this.docStyle)
     this.view = new EditorView(mount, {
@@ -823,6 +842,7 @@ export class FolioApp {
 
   /** Remplace tous les documents par ceux d'un fichier ; `saved` : le fichier les contient déjà. */
   private resetSlots(file: FolioDoc, saved: boolean): void {
+    this.demoKey = null
     const docs = splitFile(file)
     ensureKeys(docs)
     const first = this.makeState(docs[0])
@@ -902,7 +922,9 @@ export class FolioApp {
       doc.template = this.editingTemplate
       doc.readOnly = this.lockedReadOnly
       const html = await buildUpdatedFile(release, await this.fileBlock(doc), carry)
-      outcome = await this.saver.save(html)
+      // C'est le fichier ouvert qu'on met à jour : son nom est proposé (pas celui du titre),
+      // pour que la fenêtre d'enregistrement le remplace.
+      outcome = await this.saver.save(html, false, openedFileName() ?? undefined)
     } catch (e) {
       outcome = { kind: 'error', message: e instanceof Error ? e.message : String(e) }
     }
@@ -1454,14 +1476,20 @@ export class FolioApp {
   // --- actions sur le document --------------------------------------------
 
   /** Remplace tout le contenu (et les propriétés), en une étape annulable. */
-  replaceDocument(doc: FolioDoc, keepMeta: boolean): void {
+  replaceDocument(doc: FolioDoc, keepMeta: boolean, also: string[] = []): void {
     if (this.reading) this.setReading(false)
     if (this.reading) return
+    if (this.demoKey === this.activeKey) this.demoKey = null
     // Remplacer tout le document n'est pas une modification suivie.
     const tr = this.state.tr.replaceWith(0, this.state.doc.content.size, blocksToPM(doc.blocks, doc.assets)).setMeta(TRACK_SKIP, true)
     if (!keepMeta) for (const [k, v] of Object.entries({ ...metaAttrs(doc.meta), ...designAttrs(doc) })) tr.setDocAttribute(k, v)
     // Les commentaires vont avec le texte, même quand le reste est gardé.
     else tr.setDocAttribute('comments', JSON.parse(JSON.stringify(doc.comments ?? [])))
+    // Réglages remplacés eux aussi quand le reste est gardé (dans la même étape d'annulation).
+    if (keepMeta && also.length) {
+      const design = designAttrs(doc)
+      for (const k of also) if (k in design) tr.setDocAttribute(k, design[k])
+    }
     tr.setSelection(Selection.atStart(tr.doc)).scrollIntoView()
     // Une étape d'annulation à elle seule, séparée de la frappe d'avant et d'après.
     this.view.dispatch(closeHistory(tr))
@@ -1475,6 +1503,7 @@ export class FolioApp {
    * contenu de façon annulable.
    */
   replaceFile(file: FolioDoc): void {
+    this.demoKey = null
     const docs = splitFile(file)
     if (docs.length === 1) return this.replaceDocument(docs[0], false)
     ensureKeys(docs)
@@ -1499,12 +1528,16 @@ export class FolioApp {
     return { quotes: s.acQuotes, frenchSpacing: s.acFrenchSpacing, replace: s.acReplace, capitalize: s.acCapitalize, list: this.acCache.list, lang: docLang }
   }
 
-  /** Nouveau document vide : efface le contenu ; la démonstration perd aussi ses propriétés. */
+  /**
+   * Nouveau document vide : efface le contenu, les en-têtes, les pieds de page
+   * et le filigrane ; un document de l'utilisateur garde sa mise en page, son
+   * thème, ses styles et ses propriétés ; la démonstration ne laisse rien.
+   */
   newBlank(): void {
     // Une copie en lecture seule ne s'efface pas : on part d'une copie modifiable.
     if (this.lockedReadOnly) this.editCopy()
     this.setReading(false)
-    const wasDemo = this.isDemo
+    const wasDemo = this.isDemo || (this.demoKey !== null && this.demoKey === this.activeKey)
     this.isDemo = false
     let blank: FolioDoc
     if (wasDemo) {
@@ -1513,11 +1546,13 @@ export class FolioApp {
       const fresh = loadDocument({ format: 'folio/doc', version: 1, blocks: [] })
       blank = { ...(fresh.ok ? fresh.doc : this.getDoc()), meta: emptyMeta(), blocks: [], comments: [] }
     } else {
-      // Un document de l'utilisateur garde sa mise en page, son thème, ses propriétés, ses listes.
-      blank = { ...this.getDoc(), blocks: [], comments: [] }
+      // Un document de l'utilisateur garde sa mise en page, son thème, ses propriétés, ses listes ;
+      // pas ce qui s'écrit sur chaque page (en-têtes, pieds de page, filigrane).
+      const none = () => ({ default: [], first: [], even: [] })
+      blank = { ...this.getDoc(), blocks: [], comments: [], headers: none(), footers: none(), watermark: undefined }
     }
     // Depuis la démonstration : le thème, les styles et la mise en page « par défaut » s'il y en a.
-    this.replaceDocument(wasDemo ? withDefaultDesign(blank) : blank, !wasDemo)
+    this.replaceDocument(wasDemo ? withDefaultDesign(blank) : blank, !wasDemo, ['headers', 'footers', 'watermark'])
     this.view.focus()
     toast(t('blank.done'), { kind: 'success' })
   }

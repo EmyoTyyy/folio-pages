@@ -8,6 +8,17 @@ import { unzipSync, strFromU8 } from 'fflate'
 import { dirToStore } from '../format/bidi'
 import { CHART_ALT, chartFromRows } from '../format/chart'
 import { diagramFromAlt } from '../format/diagram'
+import { picturesFromAlt } from '../format/pictures'
+import { SHAPE_ALT } from '../format/shapes'
+
+/** Les formes de LibreOffice (draw:type) les plus proches des nôtres. */
+const ODF_SHAPES: Record<string, string> = {
+  rectangle: 'rect', 'round-rectangle': 'roundRect', ellipse: 'ellipse', circle: 'ellipse', 'isosceles-triangle': 'triangle', 'right-triangle': 'rtTriangle', diamond: 'diamond', pentagon: 'pentagon', hexagon: 'hexagon', octagon: 'octagon',
+  'right-arrow': 'rightArrow', 'left-arrow': 'leftArrow', 'up-arrow': 'upArrow', 'down-arrow': 'downArrow', 'left-right-arrow': 'leftRightArrow', 'up-down-arrow': 'upDownArrow', star4: 'star4', star5: 'star5', star8: 'star8', star24: 'star24',
+  heart: 'heart', cloud: 'cloud', smiley: 'smileyFace', sun: 'sun', moon: 'moon', parallelogram: 'parallelogram', trapezoid: 'trapezoid', can: 'can', cube: 'cube', ring: 'donut', frame: 'frame',
+  'flowchart-process': 'flowChartProcess', 'flowchart-decision': 'flowChartDecision', 'flowchart-terminator': 'flowChartTerminator', 'flowchart-data': 'flowChartInputOutput', 'flowchart-document': 'flowChartDocument', 'flowchart-connector': 'flowChartConnector',
+  'rectangular-callout': 'wedgeRectCallout', 'round-rectangular-callout': 'wedgeRoundRectCallout', 'round-callout': 'wedgeEllipseCallout', 'cloud-callout': 'cloudCallout',
+}
 
 type Raw = Record<string, unknown>
 
@@ -363,7 +374,7 @@ class OdtReader {
     }
     // Une image seule dans son paragraphe : un bloc image.
     const frames = kids(p).filter((c) => c.tagName === 'draw:frame')
-    if (frames.length === 1 && !(p.textContent ?? '').trim() && kids(p).length === 1) {
+    if (frames.length === 1 && !(p.textContent ?? '').trim() && kids(p).length === 1 && !this.isFreePicture(frames[0])) {
       const img = this.frame(frames[0])
       if (img) return [img]
     }
@@ -440,10 +451,22 @@ class OdtReader {
           break
         }
         case 'draw:frame': {
+          // Nos images libres : une forme « picture » dans la ligne.
+          if (this.isFreePicture(c)) {
+            const sh = this.shapeOf(c)
+            if (sh) out.push(sh)
+            break
+          }
           // Formule : dans la ligne ; image : après le paragraphe (une image est un bloc).
           const x = this.frame(c)
           if (x?.type === 'math') out.push(x)
           else if (x) this.afterImages.push(x)
+          break
+        }
+        case 'draw:custom-shape':
+        case 'draw:g': {
+          const sh = this.shapeOf(c)
+          if (sh) out.push(sh)
           break
         }
         case 'text:soft-page-break':
@@ -499,11 +522,83 @@ class OdtReader {
     return { wrap: side, align: side }
   }
 
+  /**
+   * Une forme : la nôtre revient telle quelle (sa description « folio-shape: ») ;
+   * une forme de LibreOffice devient la forme la plus proche, avec son texte.
+   */
+  /** Une image libre de nos exports : un cadre d'image dont la description garde ses réglages. */
+  private isFreePicture(f: Element): boolean {
+    return !!kid(f, 'draw:image') && (kid(f, 'svg:desc')?.textContent?.trim() ?? '').startsWith(SHAPE_ALT)
+  }
+
+  /** L'image d'un cadre, rangée dans les ressources : « asset:id », ou null. */
+  private imageOf(img: Element): string | null {
+    const href = (at(img, 'xlink:href') ?? '').replace(/^\.\//, '')
+    const bytes = this.files[href]
+    if (!bytes) return null
+    const ext = href.split('.').pop()?.toLowerCase() ?? 'png'
+    const type = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : 'image/png'
+    const id = `odt${Object.keys(this.assets).length + 1}`
+    this.assets[id] = `data:${type};base64,${toBase64(bytes)}`
+    return `asset:${id}`
+  }
+
+  private shapeOf(el: Element): Raw | null {
+    const desc = kid(el, 'svg:desc')?.textContent?.trim() ?? ''
+    if (desc.startsWith(SHAPE_ALT)) {
+      try {
+        const v = JSON.parse(desc.slice(SHAPE_ALT.length)) as Raw
+        if (v && typeof v === 'object') {
+          // Les images libres (et celles d'un groupe, dans l'ordre) : les images des cadres.
+          const frames = el.tagName === 'draw:frame' ? [el] : Array.from(el.getElementsByTagName('draw:frame'))
+          let k = 0
+          const fill = (d: Raw): Raw => {
+            if (d.shape === 'picture') {
+              const img = frames[k++] ? kid(frames[k - 1], 'draw:image') : null
+              const src = img ? this.imageOf(img) : null
+              if (src) d.src = src
+              else this.lose('image')
+            }
+            if (Array.isArray(d.children)) d.children = (d.children as Raw[]).map(fill)
+            return d
+          }
+          return fill({ ...v, type: 'shape' })
+        }
+      } catch {
+        /* description abîmée : la forme telle qu'on la voit */
+      }
+    }
+    if (el.tagName !== 'draw:custom-shape') return null
+    const type = at(kid(el, 'draw:enhanced-geometry') ?? el, 'draw:type') ?? ''
+    const text = kids(el)
+      .filter((k) => k.tagName === 'text:p')
+      .map((k) => k.textContent ?? '')
+      .join('\n')
+      .trim()
+    return {
+      type: 'shape',
+      shape: ODF_SHAPES[type] ?? 'rect',
+      x: toPt(at(el, 'svg:x')) ?? 0,
+      y: toPt(at(el, 'svg:y')) ?? 0,
+      width: toPt(at(el, 'svg:width')) ?? 72,
+      height: toPt(at(el, 'svg:height')) ?? 72,
+      wrap: at(el, 'text:anchor-type') === 'as-char' ? 'inline' : 'front',
+      ...(text ? { text } : {}),
+    }
+  }
+
   private frame(f: Element): Raw | null {
     const desc = kid(f, 'svg:desc')?.textContent?.trim() ?? ''
     // Nos graphiques : une image dont la description porte les données.
     const dg = diagramFromAlt(desc)
     if (dg) return dg
+    // Nos dispositions d'images : les données dans la description, les images dans le SVG.
+    if (desc.startsWith('folio-pictures:')) {
+      const href = (at(kid(f, 'draw:image') ?? f, 'xlink:href') ?? '').replace(/^\.\//, '')
+      const bytes = this.files[href]
+      const pl = picturesFromAlt(desc, bytes && /\.svg$/i.test(href) ? `data:image/svg+xml;base64,${toBase64(bytes)}` : null)
+      if (pl) return pl
+    }
     if (desc.startsWith(CHART_ALT)) {
       try {
         return { type: 'chart', ...(JSON.parse(desc.slice(CHART_ALT.length)) as Raw) }

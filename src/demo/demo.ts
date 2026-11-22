@@ -18,6 +18,16 @@ const REPO = 'https://github.com/EmyoTyyy/folio-pages'
 const PAGE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160"><rect width="240" height="160" rx="14" fill="#e9f2ee"/><path d="M78 22h62l24 24v92a6 6 0 0 1-6 6H78a6 6 0 0 1-6-6V28a6 6 0 0 1 6-6z" fill="#fffdf8" stroke="#1e6b55" stroke-width="3"/><path d="M140 22v18a6 6 0 0 0 6 6h18" fill="#cfe3da" stroke="#1e6b55" stroke-width="3"/><path d="M90 62h56M90 76h56M90 90h40M90 104h56M90 118h34" stroke="#9fb9ae" stroke-width="5" stroke-linecap="round"/><path d="M92 22h16v34l-8-7-8 7z" fill="#d95f45"/></svg>`
 const PAGE_IMAGE = `data:image/svg+xml;base64,${btoa(PAGE_SVG)}`
 
+/** Trois petits paysages originaux (dessinés pour le projet), pour la disposition d'images. */
+const SCENES = [
+  // Collines au soleil.
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120"><rect width="160" height="120" fill="#f6d9a8"/><circle cx="118" cy="34" r="16" fill="#f4a259"/><path d="M0 84q40-34 80-8t80-12v56H0z" fill="#8cb369"/><path d="M0 100q50-22 100 0t60-6v26H0z" fill="#5b8e55"/></svg>`,
+  // Bord de mer, un voilier.
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120"><rect width="160" height="120" fill="#bde0f2"/><rect y="70" width="160" height="50" fill="#3d7ea6"/><path d="M78 30v38h-24z" fill="#fffdf8"/><path d="M82 38v30h18z" fill="#f2e8cf"/><path d="M50 70h56l-8 9H58z" fill="#7a4f2e"/><path d="M0 92q20-5 40 0t40 0 40 0 40 0" stroke="#bde0f2" stroke-width="3" fill="none"/></svg>`,
+  // Nuit en montagne.
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120"><rect width="160" height="120" fill="#24345a"/><circle cx="40" cy="30" r="11" fill="#f2e8cf"/><circle cx="46" cy="26" r="10" fill="#24345a"/><circle cx="104" cy="20" r="1.6" fill="#fff"/><circle cx="130" cy="36" r="1.3" fill="#fff"/><circle cx="76" cy="14" r="1.2" fill="#fff"/><path d="M0 120 52 52l26 32 30-44 52 80z" fill="#3c5a80"/><path d="m108 40 12 18-6-3-6 6-6-6-6 3z" fill="#e8eef5"/></svg>`,
+].map((svg) => `data:image/svg+xml;base64,${btoa(svg)}`)
+
 const JSON_SAMPLE = (title: string, day: string, items: string[]) => `<script type="application/folio+json" id="folio-doc">
 {
   "format": "folio/doc",
@@ -87,6 +97,11 @@ const FR: Texts = {
   chartTitle: 'Mots écrits cette semaine',
   diagramTip: 'Une liste peut devenir un **diagramme** : clic droit sur la liste → Convertir en diagramme, ou **Insertion → Diagramme**. Processus, cycle, hiérarchie, pyramide… double-cliquez pour changer.',
   diagramItems: ['Semer', 'Arroser', 'Récolter', 'Partager'],
+  picturesTip: 'Plusieurs images peuvent former une **disposition d’images** : sélectionnez-les → **Format de l’image → Disposition de l’image**, ou **Insertion → Images → Disposition d’images…** Grille, bandeau, mise en avant, étapes, liste, mosaïque ; double-cliquez pour changer.',
+  picturesCaptions: ['Collines', 'Bord de mer', 'Nuit en montagne'],
+  shapesTip: '**Insertion → Formes** dessine flèches, bulles, étoiles, organigrammes (plus de 140 formes) ; **Insertion → Zone de texte** pose un encadré. Glissez pour déplacer, les poignées pour la taille et la rotation, double-clic pour écrire dedans ; l’onglet **Format de la forme** règle couleurs, habillage, ordre (premier plan), alignement et groupes. Une image aussi se place librement : clic droit → **Habillage** → **Placer librement sur la page**.',
+  shapesText: 'Ce paragraphe passe autour de la bulle : son habillage est « carré ». Une forme suit son paragraphe, mais se place où l’on veut sur la page ; derrière le texte, elle devient un fond, devant, une annotation. Cliquez sur la bulle pour la sélectionner, puis essayez l’onglet Format de la forme.',
+  shapesBubble: 'Double-cliquez pour écrire ici',
   chartLabels: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven'],
   chartSeries: ['Rapport', 'Lettres'],
   refsTitle: 'Sources, renvois et index',
@@ -224,6 +239,11 @@ const EN: Texts = {
   chartTitle: 'Words written this week',
   diagramTip: 'A list can become a **diagram**: right-click the list → Convert List to Diagram, or **Insert → Diagram**. Process, cycle, hierarchy, pyramid… double-click to change it.',
   diagramItems: ['Sow', 'Water', 'Harvest', 'Share'],
+  picturesTip: 'Several pictures can make a **picture layout**: select them → **Picture Format → Picture Layout**, or **Insert → Pictures → Picture Layout…** Grid, strip, featured, steps, list, mosaic; double-click to change it.',
+  picturesCaptions: ['Hills', 'Seaside', 'Mountain night'],
+  shapesTip: '**Insert → Shapes** draws arrows, speech bubbles, stars, flowcharts (over 140 shapes); **Insert → Text Box** adds a box for text. Drag to move, use the handles to resize and rotate, double-click to type inside; the **Shape Format** tab sets colours, wrapping, order (bring to front), alignment and groups. A picture can sit freely too: right-click → **Wrap Text** → **Place freely on the page**.',
+  shapesText: 'This paragraph flows around the speech bubble: its wrapping is “square”. A shape follows its paragraph but sits anywhere on the page; behind the text it becomes a background, in front an annotation. Click the bubble to select it, then try the Shape Format tab.',
+  shapesBubble: 'Double-click to type here',
   chartLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
   chartSeries: ['Report', 'Letters'],
   refsTitle: 'Sources, cross-references and index',
@@ -385,6 +405,10 @@ function build(T: Texts, lang: Lang): unknown {
       { type: 'heading', level: 2, text: s('imageTitle') },
       { type: 'image', src: 'asset:page', alt: s('imageAlt'), caption: [{ type: 'bookmark', name: 'demo_figure' }, `${s('figureWord')} `, { type: 'seq', label: 'figure' }, `. ${s('imageCaption')}`], width: 170, align: 'right', wrap: 'right' },
       { md: s('imageText') },
+      { type: 'callout', kind: 'tip', md: s('picturesTip') },
+      { type: 'pictures', layout: 'strip', items: a('picturesCaptions').map((caption, i) => ({ src: `asset:scene${i + 1}`, caption })) },
+      { type: 'callout', kind: 'tip', md: s('shapesTip') },
+      { content: [{ type: 'shape', shape: 'wedgeRoundRectCallout', id: 'demo_bubble', name: s('shapesBubble'), x: 330, y: 2, width: 140, height: 64, wrap: 'square', fill: 'accent2', text: s('shapesBubble') }, s('shapesText')] },
       { md: s('codeLead') },
       { type: 'code', language: 'python', text: lang === 'fr' ? CODE : CODE_EN },
       { type: 'heading', level: 2, text: s('layoutTitle') },
@@ -465,7 +489,7 @@ function build(T: Texts, lang: Lang): unknown {
       { id: 'Watson1953', type: 'article', authors: ['Watson, James D.', 'Crick, Francis H. C.'], title: 'Molecular structure of nucleic acids', container: 'Nature', volume: '171', issue: '4356', pages: '737-738', year: '1953', doi: '10.1038/171737a0' },
     ],
     mailMerge: { type: 'letters', source: { name: s('mergeTitle'), fields: a('mergeFields'), records: T.mergeRecords as string[][] }, map: { first: a('mergeFields')[0], city: a('mergeFields')[1] } },
-    assets: { page: PAGE_IMAGE },
+    assets: { page: PAGE_IMAGE, scene1: SCENES[0], scene2: SCENES[1], scene3: SCENES[2] },
   }
 }
 

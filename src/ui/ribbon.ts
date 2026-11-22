@@ -71,6 +71,9 @@ import { h, icon, shortcut } from './dom'
 import { RIBBON_ICONS as I } from './icons'
 import { colorPalette, highlightPalette } from './palette'
 import * as P from './panels'
+import * as PL from './piclayout'
+import * as SH from './shapes'
+import { selectedShapes } from '../editor/shapes'
 import * as WT from './writetools'
 import * as SN from './snippets'
 import * as GL from './glossary'
@@ -1016,10 +1019,12 @@ function insertGroups(app: FolioApp): Group[] {
               { class: 'fp-pop__list' },
               popItem(t('rb.picturesDevice'), () => P.pickImage(app), { 'data-image': 'device' }),
               popItem(t('pic.online'), () => O.onlinePicturesDialog(app), { 'data-image': 'online', ...(isOffline() ? { 'aria-disabled': 'true', title: t('offline.blocked') } : {}) }),
+              popItem(t('pl.menu'), () => PL.picturesDialog(app), { 'data-image': 'layout' }),
+              popItem(t('pic.free'), () => void SH.insertFreePicture(app), { 'data-image': 'free' }),
             ),
         }),
         col(
-          soon({ id: 'insert-shapes', label: t('rb.shapes'), icon: I.shapes, text: true, drop: true }),
+          dropdown({ id: 'insert-shapes', label: t('rb.shapes'), icon: I.shapes, text: () => t('rb.shapes'), menu: () => SH.shapesGallery(app) }),
           button({ id: 'insert-icons', label: t('rb.icons'), icon: I.iconsIcon, text: true, run: () => ICN.iconsDialog(app) }),
           soon({ id: 'insert-3d', label: t('rb.models3d'), icon: I.cube3d, text: true, drop: true }),
         ),
@@ -1093,7 +1098,7 @@ function insertGroups(app: FolioApp): Group[] {
       id: 'text',
       label: t('ribbon.text'),
       controls: [
-        soon({ id: 'insert-textbox', label: t('rb.textBox'), icon: I.textBox, large: true, drop: true }),
+        dropdown({ id: 'insert-textbox', label: t('rb.textBox'), icon: I.textBox, large: true, menu: () => SH.textBoxMenu(app) }),
         col(
           dropdown({ id: 'insert-field', label: t('rb.quickParts'), icon: I.quickParts, text: () => t('rb.quickParts'), menu: fieldMenu }),
           TX.decorativeText(app),
@@ -1324,6 +1329,8 @@ function wrapMenu(app: FolioApp): HTMLElement {
       }),
     ),
     h('hr', { class: 'fp-pop__sep' }),
+    // Hors du texte : l'image devient libre (comme une forme), à la même place.
+    popItem(h('span', { class: 'fp-pop__icon-row' }, icon(I.wrapFront), t('pic.placeFreely')), () => SH.placeFreely(app), { 'data-wrap-option': 'free', ...(f ? {} : { 'aria-disabled': 'true' }) }),
     soonItem(t('image.wrap.editPoints')),
     // L'image suit toujours son paragraphe ; une position fixe sur la page viendra avec les objets libres.
     popItem(t('image.wrap.moveWithText'), () => undefined, { 'data-wrap-option': 'move', 'aria-checked': 'true' }),
@@ -1507,15 +1514,15 @@ function layoutGroups(app: FolioApp): Group[] {
       id: 'arrange',
       label: t('rb.arrange'),
       controls: [
-        soon({ id: 'position', label: t('rb.position'), icon: I.position, large: true, drop: true }),
-        dropdown({ id: 'arrange-wrap', label: t('rb.wrapText'), icon: I.wrapRight, large: true, enabled: hasFig, menu: () => wrapMenu(app) }),
-        soon({ id: 'bring-forward', label: t('rb.bringForward'), icon: I.bringForward, large: true, drop: true }),
-        soon({ id: 'send-backward', label: t('rb.sendBackward'), icon: I.sendBackward, large: true, drop: true }),
-        soon({ id: 'selection-pane', label: t('rb.selectionPane'), icon: I.selectionPane, large: true }),
+        dropdown({ id: 'position', label: t('rb.position'), icon: I.position, large: true, enabled: () => SH.hasShapes(app), menu: () => SH.positionMenu(app) }),
+        dropdown({ id: 'arrange-wrap', label: t('rb.wrapText'), icon: I.wrapRight, large: true, enabled: () => hasFig() || SH.hasShapes(app), menu: () => (SH.hasShapes(app) ? SH.wrapMenu(app) : wrapMenu(app)) }),
+        SH.arrangeSplit(app, 'bring-forward', 'shape.forward', I.bringForward, 'forward', 'front', 'shape.toFront'),
+        SH.arrangeSplit(app, 'send-backward', 'shape.backward', I.sendBackward, 'backward', 'back', 'shape.toBack'),
+        button({ id: 'selection-pane', label: t('rb.selectionPane'), icon: I.selectionPane, large: true, run: () => SH.toggleSelectionPane(app) }),
         col(
-          dropdown({ id: 'arrange-align', label: t('rb.align'), icon: I.alignObj, text: () => t('rb.align'), enabled: hasFig, menu: () => alignMenu(app) }),
-          soon({ id: 'group-objects', label: t('rb.group'), icon: I.groupObj, text: true, drop: true }),
-          dropdown({ id: 'arrange-rotate', label: t('rb.rotate'), icon: I.rotate, text: () => t('rb.rotate'), enabled: hasFig, menu: () => rotateMenu(app) }),
+          dropdown({ id: 'arrange-align', label: t('rb.align'), icon: I.alignObj, text: () => t('rb.align'), enabled: () => hasFig() || SH.hasShapes(app), menu: () => (SH.hasShapes(app) ? SH.alignMenu(app) : alignMenu(app)) }),
+          dropdown({ id: 'group-objects', label: t('rb.group'), icon: I.groupObj, text: () => t('rb.group'), enabled: () => SH.hasShapes(app), menu: () => SH.groupMenu(app) }),
+          dropdown({ id: 'arrange-rotate', label: t('rb.rotate'), icon: I.rotate, text: () => t('rb.rotate'), enabled: () => hasFig() || SH.hasShapes(app), menu: () => (SH.hasShapes(app) ? SH.rotateMenu(app) : rotateMenu(app)) }),
         ),
       ],
     },
@@ -2448,7 +2455,7 @@ function imageGroups(app: FolioApp): Group[] {
             menu: () => colorPalette({ theme: app.theme, current: (attr('border') as string | null) ?? null, noneLabel: t('color.none'), onPick: (c) => set({ border: c }) }),
           }),
           PFX.pictureEffects(app),
-          soon({ id: 'picture-layout', label: t('rb.pictureLayout'), icon: I.pictureLayout, text: true, drop: true }),
+          dropdown({ id: 'picture-layout', label: t('rb.pictureLayout'), icon: I.pictureLayout, text: () => t('rb.pictureLayout'), menu: () => PL.layoutMenu(app) }),
         ),
       ],
     },
@@ -2464,12 +2471,12 @@ function imageGroups(app: FolioApp): Group[] {
       id: 'image-arrange',
       label: t('rb.arrange'),
       controls: [
-        soon({ id: 'image-position', label: t('rb.position'), icon: I.position, large: true, drop: true }),
+        dropdown({ id: 'image-position', label: t('rb.position'), icon: I.position, large: true, menu: () => SH.positionMenu(app) }),
         dropdown({ id: 'image-wrap', label: t('rb.wrapText'), icon: I.wrapRight, large: true, menu: () => wrapMenu(app) }),
         col(
           soon({ id: 'image-forward', label: t('rb.bringForward'), icon: I.bringForward, text: true, drop: true }),
           soon({ id: 'image-backward', label: t('rb.sendBackward'), icon: I.sendBackward, text: true, drop: true }),
-          soon({ id: 'image-selection-pane', label: t('rb.selectionPane'), icon: I.selectionPane, text: true }),
+          button({ id: 'image-selection-pane', label: t('rb.selectionPane'), icon: I.selectionPane, text: true, run: () => SH.toggleSelectionPane(app) }),
         ),
         col(
           dropdown({ id: 'image-align', label: t('rb.align'), icon: I.alignObj, menu: () => alignMenu(app) }),
@@ -2521,6 +2528,7 @@ export const TABS: TabDef[] = [
   { id: 'help', label: () => t('ribbon.tab.help'), groups: helpGroups },
   { id: 'table', label: () => t('ribbon.tab.table'), groups: tableGroups, when: (app) => isInTable(app.state) },
   { id: 'image', label: () => t('ribbon.tab.image'), groups: imageGroups, when: (app) => !!figureAt(app.state) },
+  { id: 'shape', label: () => t('ribbon.shapeFormat'), groups: (app: FolioApp) => SH.shapeGroups(app), when: (app) => selectedShapes(app.view.state).length > 0 && !app.reading },
   { id: 'hf', label: () => t('ribbon.tab.hf'), groups: hfGroups, when: () => !!P.getPageView()?.editing },
   { id: 'outline', label: () => t('ol.tab'), groups: outlineGroups, when: () => P.getPageView()?.mode === 'outline' },
 ]

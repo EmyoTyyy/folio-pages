@@ -139,10 +139,12 @@ export class Saver {
     this.stamp = null
   }
 
-  async save(html: string, force = false): Promise<SaveOutcome> {
+  /** `name` : le nom proposé à la place de celui du document (mise à jour : le fichier ouvert). */
+  async save(html: string, force = false, name?: string): Promise<SaveOutcome> {
+    const suggested = name ?? this.opts.suggestedName()
     const pick = picker()
     if (!pick) {
-      const name = this.opts.suggestedName()
+      const name = suggested
       downloadFile(html, name)
       return { kind: 'downloaded', name }
     }
@@ -155,7 +157,7 @@ export class Saver {
         let handle: FsHandle
         try {
           handle = await pick({
-            suggestedName: this.opts.suggestedName(),
+            suggestedName: suggested,
             id: 'folio-pages',
             types: [{ description: 'Folio Pages', accept: { 'text/html': ['.html'] } }],
           })

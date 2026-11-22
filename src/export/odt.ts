@@ -8,12 +8,13 @@
 // commentaires. Les modifications suivies sont exportées acceptées.
 
 import { CHART_ALT, CHART_H, CHART_W, chartLookOf, chartSvg } from '../format/chart'
-import { diagramsAsImages } from '../format/diagram'
+import { graphicsAsImages } from '../format/pictures'
 import type { ChartBlock } from '../format/types'
 import { blockDir } from '../format/bidi'
 import { strToU8, zipSync, type Zippable } from 'fflate'
 import { resolveStyle } from '../format/theme'
-import type { Block, FolioDoc, HeaderSet, Inline, Marks, PageSetup, Run, StyleDef, TableCell } from '../format/types'
+import type { Block, FolioDoc, HeaderSet, Inline, Marks, PageSetup, Run, ShapeInline, StyleDef, TableCell } from '../format/types'
+import { SHAPE_ALT, isLineKind, shapeGeom } from '../format/shapes'
 import { BUILTIN_STYLE_IDS } from '../format/theme'
 import { cssHighlight, HIGHLIGHT_VALUES } from '../format/color'
 import { hasOwn, isRun } from '../format/types'
@@ -42,7 +43,7 @@ export interface OdtResult {
   losses: { code: OdtLoss; count: number }[]
 }
 
-export type OdtLoss = 'image-rotate' | 'image-format' | 'math' | 'watermark' | 'picture-adjust' | 'picture-reflection' | 'attachment'
+export type OdtLoss = 'image-rotate' | 'image-format' | 'math' | 'watermark' | 'picture-adjust' | 'picture-reflection' | 'attachment' | 'shape-line'
 
 const MIME = 'application/vnd.oasis.opendocument.text'
 
@@ -362,6 +363,9 @@ class OdtWriter {
         case 'formfield':
           out += this.span(it as unknown as Run, odfText(inlineText([it], this.ctx)), c)
           break
+        case 'shape':
+          out += this.shape(it)
+          break
         case 'attachment':
           this.loss('attachment')
           out += odfText(inlineText([it], this.ctx))
@@ -472,6 +476,86 @@ class OdtWriter {
       .join('')
   }
   private inkZ = 0
+
+  /**
+   * Une forme : une forme de LibreOffice (draw:custom-shape) ancrée au paragraphe,
+   * son contour en chemin, son texte dedans ; sa description garde la forme
+   * entière (folio-shape:…), relue telle quelle à l'import. Un groupe : draw:g.
+   */
+  private shape(d: ShapeInline, off: [number, number] = [0, 0], top = true): string {
+    if (d.hidden) return ''
+    const doc = this.ctx.doc
+    const desc = top ? `<svg:desc>${x(SHAPE_ALT + JSON.stringify({ ...d, type: undefined }))}</svg:desc>` : ''
+    const title = d.alt ? `<svg:title>${x(d.alt)}</svg:title>` : ''
+    const anchor = d.wrap === 'inline' ? 'as-char' : 'paragraph'
+    const [X, Y] = [off[0] + d.x, off[1] + d.y]
+    if (d.shape === 'group') {
+      const kids = (d.children ?? []).map((c) => this.shape(c, [X, Y], false)).join('')
+      return top ? `<draw:g draw:z-index="${++this.inkZ}" text:anchor-type="${anchor}">${title}${desc}${kids}</draw:g>` : kids
+    }
+    if (d.shape === 'picture') return this.pictureFrame(d, X, Y, top, anchor, title + desc)
+    const line = isLineKind(d.shape)
+    if (d.dash || d.head || d.tail) this.loss('shape-line')
+    const fill = !line && d.fill && d.fill !== 'none' ? `draw:fill="solid" draw:fill-color="${resolveColor(d.fill, doc)}"${d.transparency ? ` draw:opacity="${100 - d.transparency}%"` : ''}` : 'draw:fill="none"'
+    const stroke = d.line && d.line !== 'none' ? `draw:stroke="solid" svg:stroke-color="${resolveColor(d.line, doc)}" svg:stroke-width="${pt(d.lineWidth ?? 1)}"` : 'draw:stroke="none"'
+    const wrap = !top || d.wrap === 'front' ? 'style:wrap="run-through" style:run-through="foreground"' : d.wrap === 'behind' ? 'style:wrap="run-through" style:run-through="background"' : d.wrap === 'topBottom' ? 'style:wrap="none"' : d.wrap === 'inline' ? '' : 'style:wrap="parallel"'
+    const va = d.valign === 'top' ? 'top' : d.valign === 'bottom' ? 'bottom' : 'middle'
+    const style = this.autoStyle(
+      'gr',
+      'graphic',
+      `<style:graphic-properties ${fill} ${stroke} ${wrap} draw:textarea-vertical-align="${va}"${d.shadow ? ' draw:shadow="visible" draw:shadow-offset-x="0.1cm" draw:shadow-offset-y="0.1cm" draw:shadow-opacity="40%"' : ''} style:vertical-pos="from-top" style:vertical-rel="paragraph" style:horizontal-pos="from-left" style:horizontal-rel="paragraph"/>`,
+    )
+    const W = Math.max(1, Math.round(d.width * 100))
+    const H = Math.max(1, Math.round(d.height * 100))
+    const g = shapeGeom(d.shape === 'textBox' ? 'rect' : d.shape, W, H)
+    const path = (g.d + (g.x && line ? g.x : '')).replace(/([MLCZ])/g, ' $1 ').trim() + (line ? ' N' : ' N')
+    const mirror = `${d.flip?.includes('h') ? ' draw:mirror-horizontal="true"' : ''}${d.flip?.includes('v') ? ' draw:mirror-vertical="true"' : ''}`
+    const pos = this.shapePos(d, X, Y)
+    const text = !line && d.blocks?.length ? this.blocks(d.blocks) : ''
+    return `<draw:custom-shape draw:style-name="${style}" text:anchor-type="${anchor}" draw:z-index="${++this.inkZ}"${pos} svg:width="${pt(d.width)}" svg:height="${pt(d.height)}">${title}${desc}${text}<draw:enhanced-geometry svg:viewBox="0 0 ${W} ${H}" draw:type="non-primitive" draw:enhanced-path="${path}"${mirror}/></draw:custom-shape>`
+  }
+
+  /** La place d'une forme : x, y, ou une rotation autour de son centre. */
+  private shapePos(d: ShapeInline, X: number, Y: number): string {
+    if (!d.rotate) return ` svg:x="${pt(X)}" svg:y="${pt(Y)}"`
+    const a = (d.rotate * Math.PI) / 180
+    return ` draw:transform="rotate(${(-a).toFixed(4)}) translate(${pt(X + d.width / 2 - (d.width / 2) * Math.cos(a) + (d.height / 2) * Math.sin(a))} ${pt(Y + d.height / 2 - (d.width / 2) * Math.sin(a) - (d.height / 2) * Math.cos(a))})"`
+  }
+
+  /** Une image libre : un cadre d'image placé dans son paragraphe (sa description garde ses réglages). */
+  private pictureFrame(d: ShapeInline, X: number, Y: number, top: boolean, anchor: string, meta: string): string {
+    const data = d.src ? imageData(d.src, this.ctx.doc) : null
+    if (!data) return ''
+    const doc = this.ctx.doc
+    const wrap = !top || d.wrap === 'front' ? 'style:wrap="run-through" style:run-through="foreground"' : d.wrap === 'behind' ? 'style:wrap="run-through" style:run-through="background"' : d.wrap === 'topBottom' ? 'style:wrap="none"' : d.wrap === 'inline' ? '' : 'style:wrap="parallel"'
+    const graphic = [wrap, d.wrap === 'inline' ? 'style:vertical-pos="top" style:vertical-rel="baseline"' : 'style:vertical-pos="from-top" style:vertical-rel="paragraph" style:horizontal-pos="from-left" style:horizontal-rel="paragraph"']
+    if (d.flip) graphic.push(`style:mirror="${d.flip === 'h' ? 'horizontal' : d.flip === 'v' ? 'vertical' : 'horizontal vertical'}"`)
+    if (d.line && d.line !== 'none') graphic.push(`fo:border="${pt(d.lineWidth ?? 1)} solid ${resolveColor(d.line, doc)}"`)
+    if (d.shadow || d.adjust?.shadow) graphic.push('draw:shadow="visible" draw:shadow-offset-x="0.12cm" draw:shadow-offset-y="0.14cm" draw:shadow-color="#000000" draw:shadow-opacity="38%"')
+    if (d.adjust?.glow) graphic.push(`loext:glow-radius="0.2cm" loext:glow-color="${resolveColor(d.adjust.glow, doc)}" loext:glow-transparency="40%"`)
+    const c = d.crop
+    const size = c && data.mime !== 'image/svg+xml' ? imageSize(base64Bytes(data.base64.slice(0, 64_000))) : null
+    if (c && size) {
+      // fo:clip : ce qu'on retire de chaque côté, dans la taille d'origine de l'image.
+      const [nw, nh] = [size.width * 0.75, size.height * 0.75]
+      graphic.push(`fo:clip="rect(${pt((nh * c.top) / 100)}, ${pt((nw * c.right) / 100)}, ${pt((nh * c.bottom) / 100)}, ${pt((nw * c.left) / 100)})"`)
+    }
+    const style = this.autoStyle('fr', 'graphic', `<style:graphic-properties ${graphic.filter(Boolean).join(' ')}/>`, 'Graphics')
+    const n = ++this.frameN
+    const z = ++this.inkZ
+    const key = `@@IMG${n}@@`
+    const pos = d.wrap === 'inline' && top ? '' : this.shapePos(d, X, Y)
+    this.images.push(
+      this.picture(d.src!.slice(6), data, d.width, d.height, d.adjust).then((pic) => {
+        if (!pic) this.loss('image-format')
+        this.placeholders.set(
+          key,
+          pic ? `<draw:frame draw:style-name="${style}" draw:name="${x(d.name ?? d.id)}" text:anchor-type="${anchor}" draw:z-index="${z}"${pos} svg:width="${pt(d.width)}" svg:height="${pt(d.height)}"><draw:image xlink:href="${x(pic.path)}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad" draw:mime-type="${pic.mime}"/>${meta}</draw:frame>` : '',
+        )
+      }),
+    )
+    return key
+  }
 
   private propsOf(b: Record<string, unknown>): ParaLook {
     const { align, indent, spacing, line, keepNext, keepLines, pageBreakBefore, shading, border } = b as Partial<StyleDef>
@@ -1058,7 +1142,7 @@ function metaXml(doc: FolioDoc, version: string, now: Date): string {
 
 /** Le document au format OpenDocument Text. */
 export async function exportOdt(doc: FolioDoc, o: OdtOptions = {}): Promise<OdtResult> {
-  doc = diagramsAsImages(doc, chartLookOf(doc))
+  doc = graphicsAsImages(doc, chartLookOf(doc))
   const ctx = prepareExport(doc, o)
   const w = new OdtWriter(ctx, o)
   // Le filigrane n'a pas d'équivalent simple en OpenDocument : il est signalé.

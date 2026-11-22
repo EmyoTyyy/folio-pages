@@ -93,6 +93,7 @@ export function mergeRuns(items: Inline[]): Inline[] {
       else if (r.type === 'field') out.push({ type: r.type, name: r.name, format: r.format, ...cleanMarks(r) })
       else if (r.type === 'formfield') out.push(formCopy(r))
       else if (r.type === 'attachment') out.push({ ...r })
+      else if (r.type === 'shape') out.push(r)
       else out.push(refInline(r))
       continue
     }

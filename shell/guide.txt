@@ -65,6 +65,20 @@
   · diagram: "kind" list, process, cycle, hierarchy, pyramid or radial,
     "title", "items": strings, or { "text", "level" } for sub-items (an
     organisation chart uses levels 0, 1, 2…).
+  · pictures: pictures with captions, arranged; "layout" grid, strip,
+    featured, process, list or mosaic, "title", "items": [{ "src":
+    "asset:<id>", "caption", "text" }] (leave "src" out for an empty frame
+    the reader fills in later; at most 12).
+  · shapes and text boxes go INSIDE a paragraph's "content", first:
+    { "type": "shape", "shape": "roundRect" (or ellipse, rightArrow,
+    star5, wedgeRectCallout, flowChartDecision, line…), "x", "y" (points:
+    from the left margin and from the top of that paragraph), "width",
+    "height", "wrap": "front", "behind", "square", "topBottom" or "inline",
+    "fill"/"line" (theme colour, #rrggbb or "none"), "text" or "md" }.
+    A text box: "shape": "textBox" (the text goes around it by default).
+    A group: "shape": "group", "children": [shapes placed from its corner].
+    A picture placed freely: "shape": "picture", "src": "asset:<id>",
+    "alt" (an "image" block is for a picture on its own line).
   · callout: "kind" note, tip, important, warning or caution, "title",
     then text/md or "blocks".
   · divider: a horizontal line.   · pagebreak: start a new page.

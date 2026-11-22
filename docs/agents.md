@@ -149,6 +149,8 @@ fills in the defaults; the file it saves always holds the complete form.
 | `table` | `header` (default `true`), `rows`, `style`, `widths`, `align`, `firstColumn`, `border` | `rows` is an array of rows; a row is an array of cells. |
 | `chart` | `kind` (`"bar"`, `"line"`, `"pie"`), `title`, `labels`, `series`, or `rows`; `legend`, `horizontal` | A chart drawn from its own data. See *More blocks*. |
 | `diagram` | `kind` (`"list"`, `"process"`, `"cycle"`, `"hierarchy"`, `"pyramid"`, `"radial"`), `title`, `items` (strings or `{ "text", "level" }`), `color` | A diagram drawn from a short list (like SmartArt). See *More blocks*. |
+| shape (inline) | `shape` (preset name: `rect`, `roundRect`, `ellipse`, `rightArrow`, `star5`, `wedgeRectCallout`, `flowChartDecision`, `line`…, or `textBox`, `picture`, `group`), `x`, `y`, `width`, `height` (points), `wrap`, `fill`, `line`, `lineWidth`, `text`/`md`/`blocks`, `rotate`, `children`, `src` (picture) | A shape, text box, freely placed picture or group anchored in a paragraph's `content`. See *Shapes and text boxes*. |
+| `pictures` | `layout` (`"grid"`, `"strip"`, `"featured"`, `"process"`, `"list"`, `"mosaic"`), `title`, `items` (`{ "src", "caption", "text" }`, at most 12), `color` | Pictures arranged with their captions (a picture layout). See *More blocks*. |
 | `callout` | `kind` (`"note"`, `"tip"`, `"important"`, `"warning"`, `"caution"`), `title`, text or `blocks` | A box that sets a passage apart. |
 | `glossary`, `abbreviations` | `title`, `all` | The terms of `terms` used in the text, always up to date. |
 | `image` | `src`, `alt`, `caption`, `width`, `align`, `wrap`, `crop`, `rotate`, `flip`, `border` | See *Pictures*. |
@@ -303,6 +305,77 @@ to the item before it. `color` is `"colorful"` (default) or one theme colour.
   ]
 }
 ```
+
+**Shapes and text boxes** sit in a paragraph's `content` (put them first) and
+are placed freely on the page: `x` from the left margin, `y` from the top of that
+paragraph, in points (A4 text is about 470 pt wide). `wrap` is `front`
+(default for a shape), `behind`, `square` (default for a text box: the text goes
+around it), `topBottom` or `inline` (a big character in the line). The shape
+names are the preset names of .docx files (`rect`, `roundRect`, `ellipse`,
+`triangle`, `diamond`, `rightArrow`, `chevron`, `star5`, `cloud`,
+`wedgeRoundRectCallout`, `flowChartProcess`, `flowChartDecision`, `line`…; see
+the JSON Schema for all 140). Lines take `tail`/`head` (`triangle` for an
+arrow). `fill` and `line` are theme colours, `#rrggbb` or `"none"`. A group
+(`"shape": "group"`) holds `children` placed from its top-left corner. A
+picture placed freely is `"shape": "picture"` with `src` (`"asset:<id>"` or a
+`data:image/…` URI), `alt`, and optionally `crop` and `adjust` as for an
+`image` block; the text goes around it (`square`) unless `wrap` says otherwise.
+Use an `image` block for a picture that sits on its own line with a caption.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "assets": { "photo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEElEQVR4nGM4oaEBRwzIHAB22gjB9Lr9UAAAAABJRU5ErkJggg==" },
+  "blocks": [
+    { "content": [
+      { "type": "shape", "shape": "textBox", "x": 300, "y": 0, "width": 170, "height": 90, "md": "**Did you know?** Shapes follow their paragraph." },
+      "The paragraph text flows around the text box on the right."
+    ] },
+    { "content": [
+      { "type": "shape", "shape": "group", "x": 60, "y": 6, "wrap": "topBottom", "children": [
+        { "type": "shape", "shape": "flowChartDecision", "x": 0, "y": 0, "width": 110, "height": 64, "text": "Ready?" },
+        { "type": "shape", "shape": "line", "x": 110, "y": 32, "width": 60, "height": 0, "tail": "triangle" },
+        { "type": "shape", "shape": "flowChartTerminator", "x": 170, "y": 12, "width": 100, "height": 40, "fill": "accent3", "text": "Ship it" }
+      ] },
+      "A small flowchart above this line."
+    ] },
+    { "content": [
+      { "type": "shape", "shape": "picture", "src": "asset:photo", "alt": "The harbour at dawn", "x": 330, "y": 0, "width": 140, "height": 95 },
+      "This paragraph flows around a picture placed at the right of the page."
+    ] }
+  ]
+}
+```
+
+**Picture layouts** (`pictures`) arrange pictures with their captions: a grid
+with the caption and text under each picture (`grid`), tall pictures side by
+side with the caption in a coloured band (`strip`), the first picture large and
+the others beside it (`featured`), pictures joined by arrows (`process`), round
+pictures with the text beside them (`list`), or a mosaic where the first
+picture takes two by two cells (`mosaic`). Each picture is cropped to fill its
+frame. `src` works like an image's: `"asset:<id>"` with the data in `assets`.
+Without `src`, the frame stays empty (a soft placeholder) for the reader to
+fill in by double-clicking: useful when you write the captions but have no
+pictures. A plain string is a caption with an empty frame.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "blocks": [
+    { "type": "pictures", "layout": "process", "title": "Repotting a plant", "items": [
+      { "caption": "Water the day before" },
+      { "caption": "Loosen the roots", "text": "Tease them apart gently." },
+      { "caption": "Fresh soil, a size up" }
+    ] }
+  ]
+}
+```
+
+With pictures, each `src` names an asset, as for an image:
+`{ "src": "asset:market", "caption": "Market morning" }` with
+`"assets": { "market": "data:image/jpeg;base64,/9j/4AAQ…" }` at the top level.
 
 **Callouts** hold text (`text`, `md`, `content`) or `blocks`:
 `{ "type": "callout", "kind": "tip", "md": "Press **F3** to insert a snippet." }`.

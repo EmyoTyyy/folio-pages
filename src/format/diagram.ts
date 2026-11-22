@@ -14,8 +14,8 @@ export const DIAGRAM_ALT = 'folio-diagram:'
 export const DIAGRAM_LIMITS = { items: 40, text: 200, level: 3 }
 
 const W = 640
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const f = (n: number) => (Math.round(n * 10) / 10).toString()
+export const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+export const f = (n: number) => (Math.round(n * 10) / 10).toString()
 
 // --- couleurs ---------------------------------------------------------------------
 
@@ -26,9 +26,9 @@ const rgb = (hex: string): [number, number, number] => {
 }
 const hexOf = (c: [number, number, number]) => '#' + c.map((x) => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('')
 /** Mélange avec le blanc (0 : la couleur, 1 : blanc). */
-const tint = (hex: string, amount: number) => hexOf(rgb(hex).map((x) => x + (255 - x) * amount) as [number, number, number])
+export const tint = (hex: string, amount: number) => hexOf(rgb(hex).map((x) => x + (255 - x) * amount) as [number, number, number])
 /** Texte lisible sur ce fond : blanc ou presque noir. */
-function onColor(hex: string): string {
+export function onColor(hex: string): string {
   const [r, g, b] = rgb(hex).map((x) => {
     const s = x / 255
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
@@ -63,14 +63,14 @@ export function wrap(text: string, width: number, size: number, bold = false): s
 }
 
 /** Des lignes centrées autour de (cx, cy). */
-function lines(ls: string[], cx: number, cy: number, size: number, color: string, look: ChartLook, weight = 400, anchor: 'middle' | 'start' = 'middle'): string {
+export function lines(ls: string[], cx: number, cy: number, size: number, color: string, look: ChartLook, weight = 400, anchor: 'middle' | 'start' = 'middle'): string {
   const lh = size * 1.25
   const top = cy - ((ls.length - 1) * lh) / 2
   const spans = ls.map((l, i) => `<tspan x="${f(cx)}" y="${f(top + i * lh)}">${esc(l)}</tspan>`).join('')
   return `<text font-family="${esc(look.font)}" font-size="${size}" font-weight="${weight}" fill="${color}" text-anchor="${anchor}" dominant-baseline="central">${spans}</text>`
 }
 
-const rect = (x: number, y: number, w: number, h: number, fill: string, rx = 8, extra = '') => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="${rx}" fill="${fill}"${extra}/>`
+export const rect = (x: number, y: number, w: number, h: number, fill: string, rx = 8, extra = '') => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="${rx}" fill="${fill}"${extra}/>`
 
 // --- structure ----------------------------------------------------------------------
 
@@ -322,7 +322,7 @@ export function itemsFromText(text: string): DiagramItem[] {
 export const itemsToText = (items: DiagramItem[]): string => items.map((it) => `${'  '.repeat(it.level)}${it.text}`).join('\n')
 
 /** Base64 d'un texte UTF-8 (navigateur et Node). */
-function base64Utf8(text: string): string {
+export function base64Utf8(text: string): string {
   const bytes = new TextEncoder().encode(text)
   let bin = ''
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))

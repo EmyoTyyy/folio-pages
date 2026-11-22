@@ -107,6 +107,14 @@ export function comparable(doc: FolioDoc): Any {
         if (y.comments) y.comments = y.comments.map((id: string) => ids.get(id) ?? id).sort()
         for (const k of ['inserted', 'deleted']) if (y[k]) y[k] = { author: y[k].author || '—', date: y[k].date || NOW }
         if (y.type === 'note') y.blocks = blk(y.blocks, inTable)
+        // Une forme : son identifiant et son rang dans la pile ne voyagent pas (Word a les siens).
+        if (y.type === 'shape') {
+          const strip = (d: Any): Any => {
+            const { id: _id, z: _z, ...rest } = d
+            return rest.children ? { ...rest, children: rest.children.map(strip) } : rest
+          }
+          return strip(y)
+        }
         if (y.inserted && y.deleted) delete y.inserted
         if (strong) delete y.bold
         return y
@@ -177,6 +185,13 @@ export function comparable(doc: FolioDoc): Any {
         return out
       }
       if (y.type === 'columns') y.blocks = y.blocks.map((c: Any) => (c.type === 'pagebreak' ? { type: 'columnbreak' } : c))
+      // Disposition d'images : ses images comparées par leur contenu (les identifiants changent).
+      if (y.type === 'pictures') {
+        y.items = y.items.map((it: Any) => {
+          const uri = it.src?.startsWith('asset:') ? doc.assets[it.src.slice(6)] : null
+          return uri ? { ...it, src: `asset:${uri.length}:${uri.slice(-24)}` } : it
+        })
+      }
       if (y.type === 'image') {
         y.caption = inl(y.caption, inTable, strong)
         const uri = y.src.startsWith('asset:') ? doc.assets[y.src.slice(6)] : null

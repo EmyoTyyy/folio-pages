@@ -48,6 +48,8 @@ import { FigureView, FolioTableView, captionFocusPlugin, fieldsKey, fieldsPlugin
 import { CalloutView, type CalloutHooks } from './callout'
 import { ChartView, chartKeyPlugin, chartThemePlugin, type ChartHooks } from './chart'
 import { DiagramView, diagramPlugin, type DiagramHooks } from './diagram'
+import { PicturesView, picturesPlugin, type PicturesHooks } from './pictures'
+import { ShapeView, shapesPlugin, type ShapeHooks } from './shapes'
 import { currentBlockPlugin } from './current'
 import { longSentencesPlugin } from './longsentences'
 import { redactPlugin } from './redact'
@@ -142,6 +144,10 @@ export interface EditorContext {
   forms?: FormHooks
   /** Diagrammes : modifier, infobulle. */
   diagram?: DiagramHooks
+  /** Dispositions d'images : modifier, infobulle. */
+  pictures?: PicturesHooks
+  /** Formes et zones de texte : écrire dedans, infobulle. */
+  shapes?: ShapeHooks
   /** Fichiers joints : taille lisible, bulle. */
   attachment?: AttachmentHooks
   /** Graphiques : modification. */
@@ -159,7 +165,7 @@ export function editorPlugins(ctx?: EditorContext): Plugin[] {
   // Entrée sur une formule sélectionnée l'ouvre (avant le remplacement par Entrée).
   if (ctx?.math) plugins.push(mathPlugin(ctx.math))
   // De même pour un graphique ; ses couleurs suivent le thème.
-  plugins.push(chartKeyPlugin(ctx?.chart), chartThemePlugin(), diagramPlugin(ctx?.diagram))
+  plugins.push(chartKeyPlugin(ctx?.chart), chartThemePlugin(), diagramPlugin(ctx?.diagram), picturesPlugin(ctx?.pictures), shapesPlugin(ctx?.shapes))
   // Le suivi des modifications retient la touche (Retour arrière ou Suppr) avant qu'elle agisse.
   if (ctx?.track) plugins.push(trackPlugin(ctx.track))
   const rules = markdownInputRules()
@@ -279,5 +285,8 @@ export function nodeViews(ctx: EditorContext) {
     attachment: (node: import('prosemirror-model').Node) => new AttachmentView(node, ctx.attachment),
     chart: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new ChartView(node, view, getPos, ctx.chart),
     diagram: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new DiagramView(node, view, getPos, ctx.diagram),
+    pictures: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined) => new PicturesView(node, view, getPos, ctx.pictures),
+    shape: (node: import('prosemirror-model').Node, view: import('prosemirror-view').EditorView, getPos: () => number | undefined, decorations: readonly import('prosemirror-view').Decoration[]) =>
+      new ShapeView(node, view, getPos, ctx.shapes, decorations),
   }
 }

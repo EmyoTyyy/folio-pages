@@ -25,7 +25,10 @@ describe('document de démonstration', () => {
       for (const needle of ['"style":"title"', '"style":"subtitle"', '"style":"caption"', '"style":"tip"', '"numbering":"outline"', '"style":"check"', '"type":"callout"', '"type":"chart"', '"style":"zebra"', '"type":"field"', '"highlight"', '"smallcaps"', '"wrap":"right"']) {
         expect(json, needle).toContain(needle)
       }
-      expect(Object.keys(d.assets)).toEqual(['page'])
+      // L'illustration de la page, et les trois paysages de la disposition d'images (de petits SVG).
+      expect(Object.keys(d.assets).sort()).toEqual(['page', 'scene1', 'scene2', 'scene3'])
+      expect(json).toContain('"type":"pictures"')
+      for (const v of Object.values(d.assets)) expect(v.length).toBeLessThan(1500)
       // Phase 6 : des formules en ligne (dont un renvoi et de la chimie), une équation numérotée, un prix qui reste du texte.
       expect(json).toContain('"type":"math"')
       expect(json).toContain('\\\\eqref')

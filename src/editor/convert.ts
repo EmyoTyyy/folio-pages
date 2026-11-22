@@ -11,6 +11,7 @@
 
 import { chartAttrs, chartOf } from './chart'
 import { diagramAttrs, diagramOf } from './diagram'
+import type { PicturesBlock, ShapeInline } from '../format/types'
 import { Mark, Node as PMNode } from 'prosemirror-model'
 import { EditorState } from 'prosemirror-state'
 import { TableMap, fixTables } from 'prosemirror-tables'
@@ -108,6 +109,19 @@ function marksFrom(node: PMNode): Marks {
 /** Ressources du document en cours de conversion : les fichiers joints y prennent leurs octets. */
 let convAssets: Record<string, string> = {}
 
+/** Images libres (et celles d'un groupe) : « asset:id » → l'URI data:, pour l'éditeur. */
+function pictureData(d: ShapeInline): ShapeInline {
+  if (d.children) d.children = d.children.map(pictureData)
+  if (d.shape === 'picture' && d.src?.startsWith('asset:')) {
+    const id = d.src.slice(6)
+    if (hasOwn(convAssets, id)) {
+      d.src = convAssets[id]
+      d.assetId = id
+    }
+  }
+  return d
+}
+
 export function runsToInline(items: Inline[]): PMNode[] {
   const out: PMNode[] = []
   for (const r of items) {
@@ -119,6 +133,10 @@ export function runsToInline(items: Inline[]): PMNode[] {
     }
     if (!isRun(r) && r.type === 'note') {
       out.push(n.note.create({ kind: r.kind, blocks: r.blocks }))
+      continue
+    }
+    if (!isRun(r) && r.type === 'shape') {
+      out.push(n.shape.create({ data: pictureData(copy(r)) }))
       continue
     }
     if (!isRun(r) && r.type === 'bookmark') {
@@ -347,6 +365,18 @@ function blockNodes(b: Block, ctx: ToCtx): PMNode[] {
       return [n.chart.create(chartAttrs(b))]
     case 'diagram':
       return [n.diagram.create(diagramAttrs(b))]
+    case 'pictures':
+      return [
+        n.pictures.create({
+          layout: b.layout,
+          title: b.title ?? '',
+          color: b.color ?? null,
+          items: b.items.map((it) => {
+            const r = it.src ? resolveSrc(it.src, ctx) : { src: '', assetId: null }
+            return { src: r.src, assetId: r.assetId, caption: it.caption ?? '', text: it.text ?? '' }
+          }),
+        }),
+      ]
     case 'pagebreak':
       return [n.page_break.create()]
     case 'columnbreak':
@@ -543,6 +573,7 @@ export function inlineToRuns(node: PMNode): Inline[] {
     else if (child.type === n.mergefield) items.push({ type: 'mergefield', name: child.attrs.name as string, ...(child.attrs.opts ? { opts: { ...(child.attrs.opts as Record<string, string>) } } : {}), ...marks })
     else if (child.type === n.math) items.push({ type: 'math', tex: child.attrs.tex as string, ...mathMarks(marks) })
     else if (child.type === n.note) items.push({ type: 'note', kind: child.attrs.kind === 'end' ? 'end' : 'foot', blocks: copy(child.attrs.blocks as Block[]) })
+    else if (child.type === n.shape) items.push(copy(child.attrs.data as ShapeInline))
     else if (child.type === n.seq) items.push({ type: 'seq', label: child.attrs.label as string, ...marks })
     else if (child.type === n.bookmark) items.push({ type: 'bookmark', name: child.attrs.name as string })
     else if (child.type === n.xref) items.push({ type: 'xref', target: child.attrs.target as string, show: child.attrs.show as XrefShow, ...(child.attrs.doc ? { doc: child.attrs.doc as string } : {}), ...(child.attrs.last ? { last: child.attrs.last as string } : {}), ...marks })
@@ -644,6 +675,21 @@ function pmBlock(node: PMNode, ctx: FromCtx): Block | null {
       return chartOf(node)
     case n.diagram:
       return diagramOf(node)
+    case n.pictures: {
+      const a = node.attrs
+      const b: PicturesBlock = {
+        type: 'pictures',
+        layout: a.layout,
+        items: (a.items as { src: string; assetId: string | null; caption: string; text: string }[]).map((it) => ({
+          ...(it.src ? { src: storeSrc(it.src, it.assetId, ctx) } : {}),
+          ...(it.caption ? { caption: it.caption } : {}),
+          ...(it.text ? { text: it.text } : {}),
+        })),
+      }
+      if (a.title) b.title = a.title
+      if (a.color) b.color = a.color
+      return b
+    }
     case n.page_break:
       return { type: 'pagebreak' }
     case n.column_break:
@@ -760,9 +806,23 @@ interface EditorFont {
 
 /** Fichiers joints : leurs octets (URI data:) dans les ressources, remplacés par « asset:id ». Renvoie des copies. */
 export function storeAttachments(blocks: Block[], assets: AssetTable, extra: Record<string, string> = {}): Block[] {
+  // Images libres : l'URI data: va dans les ressources (sous son identifiant d'origine).
+  const picture = (d: ShapeInline): ShapeInline => {
+    const out = { ...d }
+    if (out.children) out.children = out.children.map(picture)
+    if (out.src?.startsWith('data:')) out.src = `asset:${assets.add(out.src, out.assetId)}`
+    else if (out.src?.startsWith('asset:')) {
+      const want = out.src.slice(6)
+      const id = assets.use(want) ?? (hasOwn(extra, want) ? assets.add(extra[want], want) : null)
+      if (id) out.src = `asset:${id}`
+    }
+    delete out.assetId
+    return out
+  }
   const fix = (items: Inline[]): Inline[] =>
-    items.some((x) => !isRun(x) && x.type === 'attachment')
+    items.some((x) => !isRun(x) && (x.type === 'attachment' || x.type === 'shape'))
       ? items.map((x) => {
+          if (!isRun(x) && x.type === 'shape') return picture(x)
           if (isRun(x) || x.type !== 'attachment') return x
           if (x.src.startsWith('data:')) return { ...x, src: `asset:${assets.add(x.src)}` }
           const want = x.src.slice(6)

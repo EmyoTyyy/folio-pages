@@ -12,6 +12,7 @@ import { ONLINE_DICT } from './dict-online'
 import { TOOLS_DICT } from './dict-tools'
 import { WORD2_DICT } from './dict-word2'
 import { WRITE_DICT } from './dict-write'
+import { SHAPES_DICT } from './dict-shapes'
 
 // Dictionnaire de l'interface : une entrée par phrase, une colonne par langue.
 // Ajouter une langue = ajouter une colonne (le test i18n vérifie qu'aucune
@@ -294,6 +295,6 @@ const BASE_DICT = {
 } as const satisfies Record<string, Row>
 
 /** Le dictionnaire complet : l'interface de base, l'édition (dict-edit.ts), la mise en page (dict-layout.ts). */
-export const DICT = { ...BASE_DICT, ...EDIT_DICT, ...LAYOUT_DICT, ...REFS_DICT, ...DOCX_DICT, ...MATH_DICT, ...UI_DICT, ...P7_DICT, ...MERGE_DICT, ...WORD_DICT, ...CITE_DICT, ...ONLINE_DICT, ...TOOLS_DICT, ...WORD2_DICT, ...WRITE_DICT }
+export const DICT = { ...BASE_DICT, ...EDIT_DICT, ...LAYOUT_DICT, ...REFS_DICT, ...DOCX_DICT, ...MATH_DICT, ...UI_DICT, ...P7_DICT, ...MERGE_DICT, ...WORD_DICT, ...CITE_DICT, ...ONLINE_DICT, ...TOOLS_DICT, ...WORD2_DICT, ...WRITE_DICT, ...SHAPES_DICT }
 
 export type Key = keyof typeof DICT

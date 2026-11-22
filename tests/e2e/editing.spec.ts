@@ -183,6 +183,49 @@ test('nouveau document vide garde les propriétés d’un vrai document', async 
   expect(doc.meta.author).toBe('Ana')
 })
 
+test('nouveau document vide : ni en-tête, ni pied de page, ni filigrane ; annulable', async ({ page }, info) => {
+  const hf = (text: string) => ({ default: [text], first: [], even: [] })
+  const f = makeFile(info, 'entetes.html', { ...empty, meta: { title: 'Rapport' }, headers: hf('Haut {{title}}'), footers: hf('Page {{page}}'), watermark: { text: 'BROUILLON' }, blocks: ['texte'] })
+  await openEditor(page, f.url)
+  await expect(page.locator('.fp-hf-zone').filter({ hasText: 'Haut' }).first()).toBeVisible()
+  await page.locator('[data-menu="file"]').click()
+  await page.locator('[data-item="new-blank"]').click()
+  await expect(editor(page)).toHaveText('')
+  const doc = await docJson(page)
+  expect(doc.headers?.default ?? []).toEqual([])
+  expect(doc.footers?.default ?? []).toEqual([])
+  expect(doc.watermark).toBeUndefined()
+  // Les propriétés restent.
+  expect(doc.meta.title).toBe('Rapport')
+  await expect(page.locator('.fp-hf-zone').filter({ hasText: /\S/ })).toHaveCount(0)
+  // Une seule annulation rend tout : texte, en-tête, pied de page.
+  await page.keyboard.press(`${mod}+z`)
+  await expect(editor(page)).toHaveText('texte')
+  const back = await docJson(page)
+  expect(JSON.stringify(back.headers)).toContain('Haut {{title}}')
+  expect(JSON.stringify(back.footers)).toContain('Page {{page}}')
+  expect(back.watermark?.text).toBe('BROUILLON')
+})
+
+test('nouveau document vide sur la démonstration, après l’ajout d’un autre document', async ({ page }) => {
+  await openEditor(page, pathToFileURL(BLANK).href)
+  await page.locator('#fp-doc-add').click()
+  await page.locator('[data-doc-rename]').press('Enter')
+  await page.locator('.fp-doctab').first().click()
+  await expect(page.locator('#fp-title')).toHaveValue('Bienvenue dans Folio Pages')
+  await page.locator('[data-menu="file"]').click()
+  await page.locator('[data-item="new-blank"]').click()
+  await expect(editor(page)).toHaveText('')
+  await expect(page.locator('#fp-title')).toHaveValue('')
+  const doc = await docJson(page)
+  expect(JSON.stringify(doc.headers ?? {})).not.toContain('{{')
+  expect(JSON.stringify(doc.footers ?? {})).not.toContain('{{')
+  expect(doc.styles?.tip).toBeUndefined()
+  await expect(page.locator('.fp-hf-zone').filter({ hasText: /\S/ })).toHaveCount(0)
+  // L'autre document est toujours là.
+  await expect(page.locator('.fp-doctab')).toHaveCount(2)
+})
+
 test('menu Fichier au clavier : ouvrir, parcourir, fermer ; annuler et rétablir en haut', async ({ page }, info) => {
   const f = makeFile(info, 'menus.html', { ...empty, blocks: ['un texte'] })
   await openEditor(page, f.url)

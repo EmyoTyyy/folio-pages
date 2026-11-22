@@ -48,6 +48,8 @@ import { Ruler } from './ruler'
 import { NavPane } from './navpane'
 import { ReviewPane } from './reviewpane'
 import * as DIAG from './diagram'
+import * as PLAY from './piclayout'
+import * as SHP from './shapes'
 import { isTracking } from '../editor/track'
 import { readOpened } from '../file/open'
 import { CommentsPane } from './comments'
@@ -453,7 +455,10 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   O.setLookupPane(lookup)
   // Le texte et, fractionné, son second volet.
   const splitBox = h('div', { class: 'fp-splitbox' })
-  workspace.append(nav.el, splitBox, comments.el, lookup.el)
+  // Volet Sélection (formes), à droite, ouvert depuis Format de la forme.
+  const selPane = new SHP.SelectionPane(app)
+  SHP.setSelectionPane(selPane)
+  workspace.append(nav.el, splitBox, comments.el, lookup.el, selPane.el)
   splitBox.append(canvas)
   // Volet Vérifications : à gauche du texte, ou dessous.
   const review = new ReviewPane(app, (side, el) => (side === 'vertical' ? nav.el.after(el) : splitBox.append(el)))
@@ -742,6 +747,8 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   app.calloutMenu = (pos, anchor) => WT.calloutMenu(app, pos, anchor)
   app.editChart = (pos) => CHART.editChartAt(app, pos)
   app.editDiagram = (pos) => DIAG.editDiagramAt(app, pos)
+  app.editPictures = (pos) => PLAY.editPicturesAt(app, pos)
+  app.editShapeText = (pos, host, first) => SHP.editShapeText(app, pos, host, first)
   void SN.loadSnippets()
   installContextMenu(app)
   installTooltips()

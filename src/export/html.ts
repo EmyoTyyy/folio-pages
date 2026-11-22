@@ -5,10 +5,13 @@
 
 import { chartLookOf, chartSvg } from '../format/chart'
 import { diagramSvg } from '../format/diagram'
+import { pictureUri, picturesDrawing } from '../format/pictures'
+import { pictureHtml, shapeSvg, textColorOf } from '../format/shapedraw'
+import { textBox as shapeTextBox } from '../format/shapes'
 import { blockDir, cssAlign, TEXT_DIR_CSS } from '../format/bidi'
 import { cssHighlight, HIGHLIGHT_VALUES } from '../format/color'
 import { resolveStyle } from '../format/theme'
-import type { Block, FolioDoc, Inline, PageSetup, Run, StyleDef } from '../format/types'
+import type { Block, FolioDoc, Inline, PageSetup, Run, ShapeInline, StyleDef } from '../format/types'
 import { BUILTIN_STYLE_IDS } from '../format/theme'
 import { CALLOUT_COLORS, calloutLabel } from '../format/callout'
 import { termsToList } from '../format/terms'
@@ -133,7 +136,7 @@ export function documentCss(doc: FolioDoc, o: { screen: boolean; fonts?: boolean
     `.folio-page a{color:${accent}}`,
     `.folio-page img{max-width:100%;height:auto}`,
     `.folio-page figure{margin:6pt 0 10pt;text-align:center}`,
-    `.folio-page figure.chart svg,.folio-page figure.diagram svg{display:block;width:100%;height:auto}`,
+    `.folio-page figure.chart svg,.folio-page figure.diagram svg,.folio-page figure.pictures svg{display:block;width:100%;height:auto}`,
     `.folio-page figure.left{text-align:left}.folio-page figure.right{text-align:right}`,
     `.folio-page figure.wrap-left{float:left;margin:0 12pt 6pt 0;max-width:50%}.folio-page figure.wrap-right{float:right;margin:0 0 6pt 12pt;max-width:50%}`,
     `.folio-page{isolation:isolate}.folio-page figure.wrap-behind,.folio-page figure.wrap-front{position:relative;height:0;margin:0;overflow:visible}.folio-page figure.wrap-behind{z-index:-1}.folio-page figure.wrap-front{z-index:1}`,
@@ -247,6 +250,9 @@ export class HtmlWriter {
           // Titres en italique (notes Chicago) : un morceau par style.
           for (const p of citePieces(this.ctx.refs.text.get(x) ?? '')) out += this.run({ ...(x as unknown as Run), text: p.text, link: undefined, ...(p.italic ? { italic: true } : {}) } as Run)
           break
+        case 'shape':
+          out += this.shape(x)
+          break
         case 'attachment': {
           // Page web : un lien qui enregistre le fichier ; livre numérique : son nom seulement.
           const data = x.src.startsWith('asset:') ? this.ctx.doc.assets[x.src.slice(6)] : x.src
@@ -287,10 +293,58 @@ export class HtmlWriter {
     const css = styleCss(b, this.ctx.doc, true)
     const drop = typeof b.dropCap === 'number' ? b.dropCap : 0
     if (drop) css.push(`--fp-dropcap:${drop}`)
-    if (Array.isArray(b.ink) && b.ink.length) css.push('position:relative')
+    if ((Array.isArray(b.ink) && b.ink.length) || (Array.isArray(b.content) && (b.content as Inline[]).some((x) => !isRun(x) && x.type === 'shape' && x.wrap !== 'inline'))) css.push('position:relative')
     // Sens d'écriture : écrit seulement s'il diffère de celui de la page (de gauche à droite).
     const dir = blockDir(b as { dir?: 'rtl' | 'ltr'; content?: Inline[] })
     return `${this.attr('class', cls)}${this.attr('style', css.join(';'))}${drop ? this.attr('data-dropcap', String(drop)) : ''}${dir === 'rtl' ? this.attr('dir', 'rtl') : ''}`
+  }
+
+  /**
+   * Une forme : son dessin et son texte, placés depuis le haut du paragraphe
+   * (qui sert de repère) ; dans la ligne, un bloc en ligne. Le texte de la forme
+   * est fait de lignes (span), car un paragraphe ne peut pas en contenir d'autres.
+   */
+  private shape(d: ShapeInline, inGroup = false): string {
+    if (d.hidden) return ''
+    const doc = this.ctx.doc
+    const paint = { color: (c: string) => resolveColor(c, doc), hex: (c: string) => resolveColor(c, doc) }
+    const PX = 4 / 3
+    const css = [`width:${(d.width * PX).toFixed(1)}px`, `height:${(d.height * PX).toFixed(1)}px`]
+    if (d.rotate) css.push(`transform:rotate(${d.rotate}deg)`)
+    if (inGroup || d.wrap !== 'inline') css.push('position:absolute', `left:${(d.x * PX).toFixed(1)}px`, `top:${(d.y * PX).toFixed(1)}px`, `z-index:${d.wrap === 'behind' ? -1 : 1}`)
+    else css.push('display:inline-block', 'position:relative', 'vertical-align:bottom')
+    let inner = d.shape === 'group' ? (d.children ?? []).map((c) => this.shape(c, true)).join('') : d.shape === 'picture' ? '' : shapeSvg(d, paint, ' style="position:absolute;left:0;top:0;overflow:visible"')
+    if (d.shape === 'picture') {
+      // Image libre : l'image rognée et retouchée, puis son contour éventuel.
+      const data = d.src ? imageData(d.src, doc) : null
+      const src = data ? (this.o.imageHref ? this.o.imageHref(d.src!.slice(6), data.mime) : `data:${data.mime};base64,${data.base64}`) : ''
+      if (!src) return ''
+      inner = pictureHtml(d, src, (c) => resolveColor(c, doc), 'shape-picture')
+      if (d.line && d.line !== 'none') inner += shapeSvg({ ...d, fill: 'none' }, paint, ' style="position:absolute;left:0;top:0;overflow:visible"')
+    }
+    if (d.blocks?.length && d.shape !== 'group') {
+      const [l, t, r, b] = shapeTextBox(d.shape, d.width * PX, d.height * PX)
+      const color = textColorOf(d, paint)
+      const just = d.valign === 'top' ? 'flex-start' : d.valign === 'bottom' ? 'flex-end' : 'center'
+      const lines = d.blocks
+        .flatMap((bl) => (bl.type === 'list' ? bl.items.map((it) => ({ content: it.content, bullet: true, align: undefined as string | undefined })) : bl.type === 'paragraph' || bl.type === 'heading' ? [{ content: bl.content, bullet: false, align: bl.align as string | undefined }] : []))
+        .map((ln) => `<span style="display:block${ln.align ? `;text-align:${ln.align}` : ''}">${ln.bullet ? '• ' : ''}${this.inline(ln.content)}</span>`)
+        .join('')
+      inner += `<span class="shape-text" style="position:absolute;left:${l.toFixed(1)}px;top:${t.toFixed(1)}px;right:${r.toFixed(1)}px;bottom:${b.toFixed(1)}px;display:flex;flex-direction:column;justify-content:${just};padding:3.6pt 7.2pt;box-sizing:border-box;text-align:${d.shape === 'textBox' ? 'left' : 'center'}${color ? `;color:${color}` : ''}">${lines}</span>`
+    }
+    return `<span class="shape"${this.attr('style', css.join(';'))}${d.alt ? this.attr('title', d.alt) : ''}>${inner}</span>`
+  }
+
+  /** Habillage carré, haut et bas : une zone vide qui flotte avant le paragraphe, à la place de la forme. */
+  private shapeZones(content: Inline[]): string {
+    const PX = 4 / 3
+    let out = ''
+    for (const x of content) {
+      if (isRun(x) || x.type !== 'shape' || x.hidden || (x.wrap !== 'square' && x.wrap !== 'topBottom')) continue
+      const style = x.wrap === 'topBottom' ? `float:left;width:100%;height:${(x.height * PX).toFixed(1)}px;margin-top:${(x.y * PX).toFixed(1)}px` : `float:left;width:${(x.width * PX).toFixed(1)}px;height:${(x.height * PX).toFixed(1)}px;margin:${(x.y * PX).toFixed(1)}px 8px 4px ${(x.x * PX).toFixed(1)}px`
+      out += `<div class="shape-zone"${this.attr('style', style)}${this.attr('aria-hidden', 'true')}></div>`
+    }
+    return out
   }
 
   /** Dessin à main levée du paragraphe : un SVG placé dans son coin. */
@@ -453,7 +507,7 @@ export class HtmlWriter {
         case 'paragraph': {
           const style = b.style && b.style !== 'normal' ? `s-${b.style}` : inQuote ? 's-quote' : ''
           const { type: _t, content: _c, style: _s, ...props } = b
-          out += `<p${this.paraAttrs({ ...props, content: b.content }, style)}>${this.ink(b)}${this.inline(b.content) || (this.x ? '<br/>' : '<br>')}</p>`
+          out += `${this.shapeZones(b.content)}<p${this.paraAttrs({ ...props, content: b.content }, style)}>${this.ink(b)}${this.inline(b.content) || (this.x ? '<br/>' : '<br>')}</p>`
           break
         }
         case 'heading': {
@@ -486,6 +540,11 @@ export class HtmlWriter {
         case 'diagram':
           out += `<figure class="diagram">${diagramSvg(b, chartLookOf(this.ctx.doc))}</figure>`
           break
+        case 'pictures': {
+          const assets = this.ctx.doc.assets
+          out += `<figure class="pictures">${picturesDrawing(b, chartLookOf(this.ctx.doc), (s) => pictureUri(s, assets)).svg}</figure>`
+          break
+        }
         case 'equation': {
           const n = this.ctx.eqNumber.get(b)
           out += `<div${this.attr('class', n ? 'equation numbered' : 'equation')}>${this.math(b.tex, true)}${n ? `<span class="eq-num">(${n})</span>` : ''}</div>`

@@ -14,7 +14,7 @@ Guide for AIs: [`agents.md`](docs/agents.md)
 
 The interface is in French and English. The website and the app share one
 look: white paper on a neutral green-grey, green ink, Newsreader titles. This is
-**version 0.13**, with an interface laid out the way word processors usually are.
+**version 0.15**, with an interface laid out the way word processors usually are.
 
 ---
 
@@ -38,7 +38,7 @@ While you write, a backup copy is kept **in your browser only**. If the tab or
 the browser closes before you save, reopen the file: Folio Pages offers to
 restore the changes, and warns you if the backup is older than the file.
 
-## What it does (version 0.13)
+## What it does (version 0.15)
 
 - **A ribbon**: File first, then Home, Insert, Design, Layout, References,
   Mailings, Review, View, AI and Help, with contextual Table, Picture Format and
@@ -166,6 +166,33 @@ restore the changes, and warns you if the backup is older than the file.
   the title or the colours. In `.docx` and `.odt` a diagram is an SVG picture
   that becomes an editable diagram again when the file is opened in Folio
   Pages.
+- **Shapes and text boxes (new in 0.15)**: **Insert → Shapes** has over 140
+  shapes (lines and arrows, rectangles, basic shapes, block arrows, equation
+  shapes, flowchart, stars and banners, speech bubbles), drawn on the page with
+  the mouse; **Insert → Text Box** adds a box for rich text. A shape follows its
+  paragraph but sits anywhere on the page: drag it, resize and rotate it with
+  its handles, type inside it, and choose how the text goes around it (in line,
+  square, top and bottom, behind, in front). The **Shape Format** tab has
+  styles, fill, outline (weight, dashes, arrows), shadow and transparency,
+  position presets, bring forward and send backward, align and distribute,
+  group and ungroup, rotate and flip, and the size; the **Selection pane** lists
+  every shape to rename, hide or reorder it. A shape shows its size while you
+  draw it. Pictures can be placed freely too (**Wrap Text → Place freely on the
+  page**, or **Insert → Pictures → Free picture…**): they move, resize (keeping
+  their proportions), rotate, stack and group like shapes, keep their
+  corrections, and go back into the text in one click. In `.docx` they are real
+  Word shapes, text boxes and anchored pictures (and come back as such); in
+  `.odt`, LibreOffice shapes and frames.
+- **Picture layouts (new in 0.14)** (**Picture Format → Picture Layout**, **Insert →
+  Pictures → Picture Layout…**, or right-click several selected pictures):
+  pictures with their captions arranged as a grid, a strip with coloured
+  caption bands, a featured picture with smaller ones beside it, steps joined
+  by arrows, a list of round pictures with text, or a mosaic. The selected
+  pictures become the layout (<kbd>Ctrl</kbd>+<kbd>Z</kbd> brings them back);
+  double-click to add, replace, reorder or remove pictures (or drag them into
+  the window), edit the captions, or change the layout and colours. In `.docx`
+  and `.odt` a layout is one SVG picture that becomes an editable layout again,
+  with its pictures, when the file is opened in Folio Pages.
 - **Insert → Icons**: 90 free icons built into the file (Tabler Icons, MIT),
   searchable in French and English, in any theme or custom colour; inserted as
   an SVG picture named in its alternative text. **Search more icons online**
@@ -433,7 +460,12 @@ every field is bounded. The application code is checked against a length and a
 checksum before it runs. Report vulnerabilities through GitHub's private
 advisories rather than public issues.
 
-## Known limitations (version 0.13)
+## Known limitations (version 0.15)
+
+- Shapes: pictures are not yet placed freely like shapes; shapes cannot go in
+  headers, footers or notes; the text of a shape inside a group is edited after
+  ungrouping it. In `.odt` the dashes and arrowheads of lines are not kept, and a
+  shape placed from the page in a `.docx` file is placed from its paragraph.
 
 Page layout: a block in columns, and an index in several columns, stay whole on
 one page. A landscape section in the middle of the document is printed page by

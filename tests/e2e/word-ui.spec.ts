@@ -40,7 +40,7 @@ test('une fonction à venir est grisée, sa bulle le dit, et le clic ne fait rie
   const errors = watchErrors(page)
   await open(page, info, ['Texte'])
   await tab(page, 'insert')
-  const chart = page.locator('.fp-ribbon [data-cmd="insert-shapes"]')
+  const chart = page.locator('.fp-ribbon [data-cmd="insert-3d"]')
   await expect(chart).toHaveAttribute('aria-disabled', 'true')
   await expect(chart).toHaveAttribute('title', /bientôt dans Folio Pages/)
   const before = JSON.stringify(await blocks(page))
@@ -73,7 +73,7 @@ test('menu contextuel du texte, dans l’ordre habituel ; Options de collage en 
 test('menu contextuel d’une image, dans l’ordre habituel, avec Style et Rogner dessous', async ({ page }, info) => {
   await open(page, info, [{ type: 'image', src: pngDataUri(60, 40) }, 'après'])
   await page.locator('.fp-figure__frame').click({ button: 'right' })
-  const order = ['cut', 'copy', 'paste-options', 'edit-picture', 'change-picture', 'group', 'bring-front', 'send-back', 'link', 'save-picture', 'caption', 'wrap', 'alt-text', 'size', 'format-picture']
+  const order = ['cut', 'copy', 'paste-options', 'edit-picture', 'change-picture', 'group', 'bring-front', 'send-back', 'link', 'save-picture', 'caption', 'picture-layout', 'wrap', 'alt-text', 'size', 'format-picture']
   expect(await ctxIds(page)).toEqual(order)
   await expect(page.locator('.fp-ctx-mini--image [data-cmd="mini-image-crop"]')).toBeVisible()
   // Format de l'image… ouvre l'onglet de l'image.

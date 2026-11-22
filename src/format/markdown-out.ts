@@ -6,6 +6,7 @@
 
 import { chartRows } from './chart'
 import { diagramBullets } from './diagram'
+import { picturesBullets } from './pictures'
 import type { ChartBlock } from './types'
 import type { Block, Inline } from './types'
 import { isRun } from './types'
@@ -102,6 +103,9 @@ export function blocksToMarkdown(blocks: Block[]): string {
         break
       case 'diagram':
         out.push([b.title ? `**${b.title}**` : '', ...diagramBullets(b)].filter(Boolean).join('\n'))
+        break
+      case 'pictures':
+        out.push([b.title ? `**${b.title}**` : '', ...picturesBullets(b)].filter(Boolean).join('\n'))
         break
       default:
         break

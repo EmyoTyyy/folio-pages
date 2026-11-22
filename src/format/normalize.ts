@@ -8,6 +8,8 @@
 
 import { CHART_LIMITS, chartFromRows, parseNumber } from './chart'
 import { DIAGRAM_COLORS, DIAGRAM_KINDS, DIAGRAM_LIMITS, itemsFromText } from './diagram'
+import { picturesFrom } from './pictures'
+import { SHAPE_ID, SHAPE_KINDS, SHAPE_LIMITS, isLineKind, shapeDefaults } from './shapes'
 import { parseColor, parseHighlight } from './color'
 import { cleanAdjust } from './picture'
 import { pathOf, Report } from './dsl'
@@ -80,6 +82,10 @@ import { mathMarks,
   type ParaBefore,
   type DiagramBlock,
   type DiagramItem,
+  type ShapeInline,
+  LINE_DASHES,
+  LINE_ENDS,
+  SHAPE_WRAPS,
 } from './types'
 
 type Raw = Record<string, unknown>
@@ -154,6 +160,10 @@ interface Ctx {
   sources?: Set<string>
   /** Signets déjà vus (un nom n'existe qu'une fois). */
   bookmarks?: Set<string>
+  /** Identifiants des formes déjà vus (chacun n'existe qu'une fois). */
+  shapeIds?: Set<string>
+  /** Pas de forme ici (en-têtes, pieds de page, texte d'une forme). */
+  noShapes?: boolean
 }
 
 const mdWarn =
@@ -237,6 +247,9 @@ export function runsFrom(content: unknown[], ctx: Ctx, path = ''): Inline[] {
         if (ids.length) items.push({ type: 'cite', ids, ...(typeof o.locator === 'string' && o.locator.trim() ? { locator: o.locator.trim() } : {}), ...cleanMarks(o) })
       } else if (o.type === 'formfield') {
         items.push(formFrom(o))
+      } else if (o.type === 'shape') {
+        const sh = shapeFrom(o, ctx, path)
+        if (sh) items.push(sh)
       } else if (o.type === 'attachment' && ctx.inNote) {
         ctx.report.warn(path, 'note-flattened', 'attachment')
       } else if (o.type === 'attachment') {
@@ -301,6 +314,99 @@ function normalizeComments(raw: unknown[] | undefined, report: Report): CommentT
 }
 
 /** Contenu d'une note : blocs, Markdown ou texte. Seulement des paragraphes, des listes, du code et des équations. */
+/** Le texte d'une forme : comme une note (paragraphes, listes), sans note, commentaire ni forme. */
+function shapeText(o: Raw, ctx: Ctx, path: string): Block[] {
+  const inner: Ctx = { ...ctx, nested: true, inNote: true, noComments: true, noShapes: true }
+  let blocks: Block[]
+  if (Array.isArray(o.blocks)) blocks = normalizeBlocks(o.blocks as unknown[], `${path}.blocks`, inner)
+  else if (o.md !== undefined) blocks = parseMarkdown(String(o.md), mdWarn(ctx, `${path}.md`))
+  else if (typeof o.text === 'string' && o.text) blocks = String(o.text).split(/\r?\n/).map((l) => ({ type: 'paragraph', content: plainRuns(l) }) as Block)
+  else return []
+  blocks = stripNotesDeep(flattenForNote(blocks, path, ctx), path, ctx)
+  return blocks.filter((b, i) => !(i === blocks.length - 1 && b.type === 'paragraph' && !b.content.length && blocks.length === 1))
+}
+
+/** Une forme validée → forme canonique (taille, couleurs et habillage explicites) ; null si elle n'a pas sa place. */
+function shapeFrom(o: Raw, ctx: Ctx, path: string, depth = 0): ShapeInline | null {
+  if (ctx.inNote || ctx.noShapes) {
+    ctx.report.warn(path, 'note-flattened', 'shape')
+    return null
+  }
+  const kind = typeof o.shape === 'string' && (SHAPE_KINDS as readonly string[]).includes(o.shape) ? o.shape : 'rect'
+  const ids = (ctx.shapeIds ??= new Set())
+  let id = typeof o.id === 'string' && SHAPE_ID.test(o.id) ? o.id : ''
+  if (!id || ids.has(id)) {
+    let n = ids.size + 1
+    while (ids.has(`shape${n}`)) n++
+    id = `shape${n}`
+  }
+  ids.add(id)
+  const num = (v: unknown, def: number, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(Math.min(max, Math.max(min, v)) * 10) / 10 : def)
+  const d = shapeDefaults(kind)
+  const out: ShapeInline = { type: 'shape', shape: kind, id, x: num(o.x, 0, -2000, 4000), y: num(o.y, 0, -4000, 4000), width: num(o.width, d.width, 0, 3000), height: num(o.height, d.height, 0, 4000) }
+  if (typeof o.name === 'string' && o.name.trim()) out.name = o.name.trim().slice(0, 200)
+  const rot = typeof o.rotate === 'number' && Number.isFinite(o.rotate) ? ((Math.round(o.rotate * 10) / 10) % 360 + 360) % 360 : 0
+  if (rot) out.rotate = rot
+  if (o.flip === 'h' || o.flip === 'v' || o.flip === 'hv') out.flip = o.flip
+  out.wrap = (SHAPE_WRAPS as readonly string[]).includes(o.wrap as string) ? (o.wrap as ShapeInline['wrap']) : d.wrap
+  if (typeof o.z === 'number' && Number.isFinite(o.z)) out.z = Math.round(o.z)
+  if (kind === 'group') {
+    const kids: ShapeInline[] = []
+    if (depth < SHAPE_LIMITS.depth && Array.isArray(o.children)) {
+      ;(o.children as unknown[]).forEach((c, i) => {
+        const k = c && typeof c === 'object' && (c as Raw).type === 'shape' ? shapeFrom(c as Raw, { ...ctx }, `${path}.children[${i}]`, depth + 1) : null
+        if (!k) return
+        delete k.wrap
+        kids.push(k)
+      })
+    }
+    if (!kids.length) {
+      ctx.report.ignore(path, 'chart-empty', 'children')
+      return null
+    }
+    out.children = kids
+    // Sans taille : celle de ce qu'il contient.
+    if (typeof o.width !== 'number') out.width = Math.max(...kids.map((k) => k.x + k.width))
+    if (typeof o.height !== 'number') out.height = Math.max(...kids.map((k) => k.y + k.height))
+  } else if (kind === 'picture') {
+    // Image libre : l'image (obligatoire), son rognage, ses retouches, un contour éventuel.
+    if (typeof o.src !== 'string' || !o.src) {
+      ctx.report.ignore(`${path}.src`, 'unsafe-image', 'src')
+      return null
+    }
+    out.src = imageSrc(o.src, path, ctx)
+    const paint = (v: unknown) => (typeof v === 'string' ? (v.trim().toLowerCase() === 'none' ? 'none' : (parseColor(v) ?? 'none')) : 'none')
+    out.fill = paint(o.fill)
+    out.line = paint(o.line)
+    out.lineWidth = typeof o.lineWidth === 'number' && Number.isFinite(o.lineWidth) ? Math.round(Math.min(50, Math.max(0, o.lineWidth)) * 100) / 100 : d.lineWidth
+    if ((LINE_DASHES as readonly string[]).includes(o.dash as string) && o.dash !== 'solid') out.dash = o.dash as ShapeInline['dash']
+    const crop = normalizeCrop(o.crop)
+    if (crop) out.crop = crop
+    const adjust = cleanAdjust(o.adjust, parseColor)
+    if (adjust) out.adjust = adjust
+    if (o.shadow === true) out.shadow = true
+  } else {
+    const paint = (v: unknown, def: string) => (typeof v === 'string' ? (v.trim().toLowerCase() === 'none' ? 'none' : (parseColor(v) ?? def)) : def)
+    const line = isLineKind(kind)
+    if (!line) out.fill = paint(o.fill, d.fill)
+    out.line = paint(o.line, d.line)
+    out.lineWidth = typeof o.lineWidth === 'number' && Number.isFinite(o.lineWidth) ? Math.round(Math.min(50, Math.max(0, o.lineWidth)) * 100) / 100 : d.lineWidth
+    if ((LINE_DASHES as readonly string[]).includes(o.dash as string) && o.dash !== 'solid') out.dash = o.dash as ShapeInline['dash']
+    for (const k of ['head', 'tail'] as const) if ((LINE_ENDS as readonly string[]).includes(o[k] as string) && o[k] !== 'none' && line) out[k] = o[k] as ShapeInline['head']
+    if (!line) {
+      const tr = num(o.transparency, 0, 0, 100)
+      if (tr) out.transparency = Math.round(tr)
+      const blocks = shapeText(o, ctx, path)
+      if (blocks.length) out.blocks = blocks
+      out.valign = o.valign === 'top' || o.valign === 'middle' || o.valign === 'bottom' ? o.valign : d.valign
+    }
+    if (o.shadow === true) out.shadow = true
+  }
+  if (typeof o.alt === 'string' && o.alt.trim()) out.alt = o.alt.trim().slice(0, 2000)
+  if (o.hidden === true) out.hidden = true
+  return out
+}
+
 function noteFrom(o: Raw, ctx: Ctx, path: string): Inline {
   const inner: Ctx = { ...ctx, nested: true, inNote: true, noComments: true }
   const sources = (['blocks', 'md', 'text'] as const).filter((k) => o[k] !== undefined)
@@ -559,6 +665,15 @@ function normalizeBlock(b: Raw, path: string, ctx: Ctx): Block[] {
       return normalizeTable(b, path, ctx)
     case 'divider':
       return [{ type: 'divider' }]
+    case 'pictures': {
+      // Chaque image devient une ressource du document (comme une image ordinaire).
+      const d = picturesFrom(b, (src) => (src.startsWith('data:') || isAssetRef(src) ? imageSrc(src, `${path}.items`, ctx) : null))
+      if (!d) {
+        ctx.report.ignore(path, 'chart-empty', 'items')
+        return []
+      }
+      return [d]
+    }
     case 'diagram': {
       const d = diagramFrom(b)
       if (!d) {
@@ -905,7 +1020,7 @@ function normalizeHeaders(raw: Raw | undefined, path: string, ctx: Ctx): HeaderS
   for (const k of ['default', 'first', 'even'] as const) {
     if (Array.isArray(raw[k]))
       out[k] = stripNotesDeep(
-        fixImagesDeep(flattenForCell(normalizeBlocks(raw[k] as unknown[], `${path}.${k}`, { ...ctx, nested: true, noComments: true }), `${path}.${k}`, ctx), `${path}.${k}`, ctx),
+        fixImagesDeep(flattenForCell(normalizeBlocks(raw[k] as unknown[], `${path}.${k}`, { ...ctx, nested: true, noComments: true, noShapes: true }), `${path}.${k}`, ctx), `${path}.${k}`, ctx),
         `${path}.${k}`,
         ctx,
       )
@@ -1150,7 +1265,7 @@ export function normalizeDoc(raw: Raw, report: Report, now: string, known: Recor
   const comments = normalizeComments(raw.comments as unknown[] | undefined, report)
   const sources = normalizeSources(raw.sources as unknown[] | undefined, report)
   const terms = normalizeTerms(raw.terms as unknown[] | undefined, report)
-  const ctx: Ctx = { report, assets, styles, done: new WeakSet(), comments: new Set(comments.map((c) => c.id)), sources: new Set(sources.map((x) => x.id)), bookmarks: new Set() }
+  const ctx: Ctx = { report, assets, styles, done: new WeakSet(), comments: new Set(comments.map((c) => c.id)), sources: new Set(sources.map((x) => x.id)), bookmarks: new Set(), shapeIds: new Set() }
   if (raw.format === undefined) report.warn('format', 'format-missing', FORMAT)
   else if (raw.format !== FORMAT) report.warn('format', 'format-unknown', String(raw.format).slice(0, 40))
   const version = typeof raw.version === 'number' ? raw.version : FORMAT_VERSION

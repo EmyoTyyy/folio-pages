@@ -25,13 +25,16 @@ import {
   type ParaProps,
   type TableCell,
   type Theme,
+  type ShapeInline,
 } from './types'
+import { shapeDefaults } from './shapes'
 
 type Json = Record<string, unknown>
 
 /** Un élément en ligne : chaîne pour le texte simple, note en texte quand elle est simple. */
 function item(r: Inline): unknown {
   if (isPlainRun(r)) return r.text
+  if ('type' in r && r.type === 'shape') return shape(r)
   if (!('type' in r) || r.type !== 'note') return { ...r }
   const out: Json = { type: 'note' }
   if (r.kind !== 'foot') out.kind = r.kind
@@ -39,6 +42,36 @@ function item(r: Inline): unknown {
   if (runs && !runs.length) out.text = ''
   else if (runs && runs.length === 1 && isPlainRun(runs[0])) out.text = runs[0].text
   else out.blocks = r.blocks.map(block)
+  return out
+}
+
+/** Une forme sans ce qui vaut la valeur par défaut ; un texte simple en « text ». */
+function shape(r: ShapeInline): Json {
+  const d = shapeDefaults(r.shape)
+  const out: Json = { type: 'shape', shape: r.shape, id: r.id }
+  if (r.name) out.name = r.name
+  out.x = r.x
+  out.y = r.y
+  if (r.width !== d.width || r.shape === 'group') out.width = r.width
+  if (r.height !== d.height || r.shape === 'group') out.height = r.height
+  if (r.rotate) out.rotate = r.rotate
+  if (r.flip) out.flip = r.flip
+  if (r.wrap && r.wrap !== d.wrap) out.wrap = r.wrap
+  if (r.z !== undefined) out.z = r.z
+  if (r.fill !== undefined && r.fill !== d.fill) out.fill = r.fill
+  if (r.line !== undefined && r.line !== d.line) out.line = r.line
+  if (r.lineWidth !== undefined && r.lineWidth !== d.lineWidth) out.lineWidth = r.lineWidth
+  for (const k of ['dash', 'head', 'tail', 'transparency', 'shadow', 'alt', 'hidden'] as const) if (r[k] !== undefined) out[k] = r[k]
+  if (r.valign && r.valign !== d.valign) out.valign = r.valign
+  if (r.blocks?.length) {
+    const runs = singleParagraph(r.blocks)
+    if (runs && runs.length === 1 && isPlainRun(runs[0])) out.text = runs[0].text
+    else out.blocks = r.blocks.map(block)
+  }
+  if (r.children) out.children = r.children.map(shape)
+  if (r.src) out.src = r.src
+  if (r.crop) out.crop = r.crop
+  if (r.adjust) out.adjust = r.adjust
   return out
 }
 
@@ -178,6 +211,14 @@ function block(b: Block): Json {
         ...(b.title ? { title: b.title } : {}),
         // Premier niveau seul : de simples chaînes.
         items: b.items.map((it) => (it.level ? { text: it.text, level: it.level } : it.text)),
+        ...(b.color ? { color: b.color } : {}),
+      }
+    case 'pictures':
+      return {
+        type: 'pictures',
+        ...(b.layout !== 'grid' ? { layout: b.layout } : {}),
+        ...(b.title ? { title: b.title } : {}),
+        items: b.items.map((it) => ({ ...it })),
         ...(b.color ? { color: b.color } : {}),
       }
     case 'equation':

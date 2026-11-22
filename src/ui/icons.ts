@@ -252,6 +252,8 @@ export const RIBBON_ICONS = {
   position: svg('<rect x="4" y="3.5" width="16" height="17" rx="1"/><rect x="11" y="7" width="6" height="5" fill="currentColor" opacity=".25"/><path d="M7 7h2M7 10h2M7 14h10M7 17h10"/>'),
   bringForward: svg('<rect x="4" y="10" width="10" height="10" rx="1" opacity=".5"/><rect x="10" y="4" width="10" height="10" rx="1" fill="currentColor" fill-opacity=".2"/>'),
   sendBackward: svg('<rect x="10" y="4" width="10" height="10" rx="1" fill="currentColor" fill-opacity=".2" opacity=".5"/><rect x="4" y="10" width="10" height="10" rx="1"/>'),
+  eye: svg('<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>'),
+  eyeOff: svg('<path d="M2.5 12s3.5-6.5 9.5-6.5c1.6 0 3 .4 4.2 1M21.5 12s-3.5 6.5-9.5 6.5c-1.6 0-3-.4-4.2-1"/><path d="M4 20 20 4"/>'),
   selectionPane: svg('<rect x="3.5" y="4" width="17" height="16" rx="1"/><path d="M14 4v16"/><path d="M16 8h2.5M16 11h2.5M16 14h2.5"/><path d="m6.5 8 4.5 4-2.2.4 1.3 2.6-1 .5-1.3-2.6-1.3 1.5z"/>'),
   alignObj: svg('<path d="M4 3.5v17"/><rect x="6.5" y="6" width="11" height="4" rx=".8"/><rect x="6.5" y="13.5" width="7" height="4" rx=".8"/>'),
   groupObj: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="1" stroke-dasharray="2.5 2"/><rect x="6.5" y="6.5" width="6" height="6" rx=".8"/><rect x="11.5" y="11.5" width="6" height="6" rx=".8"/>'),

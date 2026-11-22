@@ -7,13 +7,14 @@
 // interprété.
 
 import { chartFrom, diagramFrom } from '../format/normalize'
+import { isPictureSrc, picturesFrom } from '../format/pictures'
 import { Schema, type Attrs, type DOMOutputSpec, type MarkSpec, type NodeSpec } from 'prosemirror-model'
 import { tableNodes } from 'prosemirror-tables'
 import { cssColor, cssHighlight, parseHighlight } from '../format/color'
 import { LIMITS, cleanFileName, cleanMime, dataUriType, isImageSrc, isSafeLink } from '../format/spec'
 import { texOfMathDom } from '../math/dom'
 import { defaultTheme } from '../format/theme'
-import { loadNoteBlocks } from '../format/load'
+import { loadNoteBlocks, loadShape } from '../format/load'
 import { calloutLabel } from '../format/callout'
 import { AUTHORITY_CATEGORIES, BOOKMARK_NAME, CALLOUT_KINDS, DOC_KEY, FIELD_NAMES, MERGE_OPTS, SOURCE_ID, XREF_SHOWS, defaultMath, defaultNotes, defaultPage, emptyHeaders } from '../format/types'
 import { colorFromCss, cssFont, familyFromCss, paraCss, ptFromCss, type ParaAttrs } from './css'
@@ -322,6 +323,44 @@ const nodes: Record<string, NodeSpec> = {
     ],
     toDOM: (node) => ['div', { class: 'fp-diagram', 'data-diagram': JSON.stringify({ kind: node.attrs.kind, title: node.attrs.title, items: node.attrs.items, color: node.attrs.color ?? undefined }) }],
   },
+  /**
+   * Disposition d'images : ses images (data:, avec la ressource d'où elles viennent),
+   * légendes et textes sont dans ses attributs ; le dessin SVG vient de la vue.
+   */
+  pictures: {
+    group: 'block',
+    atom: true,
+    selectable: true,
+    draggable: false,
+    attrs: { layout: { default: 'grid' }, title: { default: '' }, items: { default: [] }, color: { default: null } },
+    parseDOM: [
+      {
+        tag: 'div[data-pictures]',
+        getAttrs: (dom) => {
+          try {
+            // Collé d'ailleurs : seules des images en data: sont reprises.
+            const raw = JSON.parse((dom as HTMLElement).getAttribute('data-pictures') ?? '') as Record<string, unknown>
+            const d = picturesFrom(raw, (s) => (s.startsWith('data:') && isPictureSrc(s) ? s : null))
+            return d ? { layout: d.layout, title: d.title ?? '', items: d.items.map((it) => ({ src: it.src ?? '', assetId: null, caption: it.caption ?? '', text: it.text ?? '' })), color: d.color ?? null } : false
+          } catch {
+            return false
+          }
+        },
+      },
+    ],
+    toDOM: (node) => [
+      'div',
+      {
+        class: 'fp-pictures',
+        'data-pictures': JSON.stringify({
+          layout: node.attrs.layout,
+          title: node.attrs.title,
+          items: (node.attrs.items as { src: string; caption: string; text: string }[]).map((it) => ({ src: it.src.startsWith('data:') ? it.src : undefined, caption: it.caption, text: it.text })),
+          color: node.attrs.color ?? undefined,
+        }),
+      },
+    ],
+  },
   chart: {
     group: 'block',
     atom: true,
@@ -565,6 +604,34 @@ const nodes: Record<string, NodeSpec> = {
    * Appel de note (de bas de page ou de fin) : un atome dont le contenu (blocs du
    * format) est dans ses attributs ; son numéro est calculé (décoration).
    */
+  /**
+   * Forme, zone de texte ou groupe ancré dans le paragraphe : tout est dans
+   * `data` (la forme du format Folio) ; le dessin, la place et les poignées
+   * viennent de la vue. Collée d'ailleurs, elle est vérifiée comme dans un fichier.
+   */
+  shape: {
+    inline: true,
+    group: 'inline',
+    atom: true,
+    selectable: true,
+    draggable: false,
+    attrs: { data: { default: null } },
+    leafText: () => '',
+    parseDOM: [
+      {
+        tag: 'span[data-shape]',
+        getAttrs: (dom) => {
+          try {
+            const d = loadShape(JSON.parse((dom as HTMLElement).getAttribute('data-shape') ?? ''))
+            return d ? { data: d } : false
+          } catch {
+            return false
+          }
+        },
+      },
+    ],
+    toDOM: (node) => ['span', { class: 'fp-shape', 'data-shape': JSON.stringify(node.attrs.data) }],
+  },
   note: {
     inline: true,
     group: 'inline',

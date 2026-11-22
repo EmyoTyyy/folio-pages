@@ -2846,6 +2846,85 @@
           "type": "object",
           "properties": {
             "type": {
+              "const": "pictures"
+            },
+            "layout": {
+              "description": "grid (pictures with the caption and text below each), strip (tall pictures side by side, the caption in a coloured band), featured (the first picture large, the others smaller beside it), process (pictures joined by arrows, the caption in a coloured box), list (round pictures, the caption and text beside each) or mosaic (the first picture over two by two cells, the others around it).",
+              "type": "string",
+              "enum": [
+                "grid",
+                "strip",
+                "featured",
+                "process",
+                "list",
+                "mosaic"
+              ],
+              "default": "grid"
+            },
+            "title": {
+              "description": "Title above the pictures.",
+              "type": "string",
+              "maxLength": 120
+            },
+            "items": {
+              "description": "The pictures, in order: { \"src\", \"caption\", \"text\" }, or just a caption string (an empty frame).",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "src": {
+                        "description": "The picture: \"asset:<id>\" (see \"assets\") or a \"data:image/…;base64,\" URI. Leave it out for an empty frame the reader fills in later.",
+                        "type": "string",
+                        "maxLength": 30000000
+                      },
+                      "caption": {
+                        "description": "Short caption, shown with the picture.",
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "text": {
+                        "description": "A sentence or two about the picture (shown by grid, strip, featured, process and list).",
+                        "type": "string",
+                        "maxLength": 400
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "maxItems": 12
+            },
+            "color": {
+              "description": "colorful (one theme colour per picture) or one theme colour for all (accent1 … accent6).",
+              "type": "string",
+              "enum": [
+                "colorful",
+                "accent1",
+                "accent2",
+                "accent3",
+                "accent4",
+                "accent5",
+                "accent6"
+              ],
+              "default": "colorful"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "Pictures arranged with their captions (a picture layout): a captioned grid, a strip, a featured picture, steps, a list or a mosaic. Each picture is cropped to fill its frame."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
               "const": "equation"
             },
             "tex": {
@@ -7468,6 +7547,455 @@
             "name"
           ],
           "description": "An attached file, shown as a chip with its name; double-click saves it to the computer."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "shape"
+            },
+            "shape": {
+              "description": "The shape: a preset name as in .docx files (rect, roundRect, ellipse, triangle, diamond, rightArrow, star5, wedgeRectCallout, flowChartDecision, line…), \"textBox\" (a box for text), \"picture\" (a picture placed freely, with \"src\") or \"group\" (several shapes in \"children\").",
+              "type": "string",
+              "enum": [
+                "line",
+                "bentConnector3",
+                "curvedConnector3",
+                "rect",
+                "roundRect",
+                "snip1Rect",
+                "snip2SameRect",
+                "snip2DiagRect",
+                "snipRoundRect",
+                "round1Rect",
+                "round2SameRect",
+                "round2DiagRect",
+                "ellipse",
+                "triangle",
+                "rtTriangle",
+                "parallelogram",
+                "trapezoid",
+                "diamond",
+                "pentagon",
+                "heptagon",
+                "decagon",
+                "dodecagon",
+                "hexagon",
+                "octagon",
+                "pie",
+                "chord",
+                "teardrop",
+                "frame",
+                "halfFrame",
+                "corner",
+                "diagStripe",
+                "plus",
+                "plaque",
+                "can",
+                "cube",
+                "bevel",
+                "donut",
+                "noSmoking",
+                "blockArc",
+                "foldedCorner",
+                "smileyFace",
+                "heart",
+                "lightningBolt",
+                "sun",
+                "moon",
+                "cloud",
+                "arc",
+                "bracketPair",
+                "bracePair",
+                "leftBracket",
+                "rightBracket",
+                "leftBrace",
+                "rightBrace",
+                "rightArrow",
+                "leftArrow",
+                "downArrow",
+                "upArrow",
+                "leftRightArrow",
+                "upDownArrow",
+                "quadArrow",
+                "leftRightUpArrow",
+                "bentArrow",
+                "uturnArrow",
+                "leftUpArrow",
+                "bentUpArrow",
+                "curvedRightArrow",
+                "curvedLeftArrow",
+                "curvedDownArrow",
+                "curvedUpArrow",
+                "stripedRightArrow",
+                "notchedRightArrow",
+                "homePlate",
+                "chevron",
+                "rightArrowCallout",
+                "leftArrowCallout",
+                "downArrowCallout",
+                "upArrowCallout",
+                "leftRightArrowCallout",
+                "quadArrowCallout",
+                "circularArrow",
+                "mathPlus",
+                "mathMinus",
+                "mathMultiply",
+                "mathDivide",
+                "mathEqual",
+                "mathNotEqual",
+                "flowChartProcess",
+                "flowChartAlternateProcess",
+                "flowChartDecision",
+                "flowChartInputOutput",
+                "flowChartPredefinedProcess",
+                "flowChartInternalStorage",
+                "flowChartDocument",
+                "flowChartMultidocument",
+                "flowChartTerminator",
+                "flowChartPreparation",
+                "flowChartManualInput",
+                "flowChartManualOperation",
+                "flowChartConnector",
+                "flowChartOffpageConnector",
+                "flowChartPunchedCard",
+                "flowChartPunchedTape",
+                "flowChartSummingJunction",
+                "flowChartOr",
+                "flowChartCollate",
+                "flowChartSort",
+                "flowChartExtract",
+                "flowChartMerge",
+                "flowChartOnlineStorage",
+                "flowChartDelay",
+                "flowChartMagneticTape",
+                "flowChartMagneticDisk",
+                "flowChartMagneticDrum",
+                "flowChartDisplay",
+                "irregularSeal1",
+                "irregularSeal2",
+                "star4",
+                "star5",
+                "star6",
+                "star7",
+                "star8",
+                "star10",
+                "star12",
+                "star16",
+                "star24",
+                "star32",
+                "ribbon2",
+                "ribbon",
+                "ellipseRibbon2",
+                "ellipseRibbon",
+                "verticalScroll",
+                "horizontalScroll",
+                "wave",
+                "doubleWave",
+                "wedgeRectCallout",
+                "wedgeRoundRectCallout",
+                "wedgeEllipseCallout",
+                "cloudCallout",
+                "borderCallout1",
+                "accentCallout1",
+                "callout1",
+                "accentBorderCallout1",
+                "textBox",
+                "picture",
+                "group"
+              ],
+              "default": "rect"
+            },
+            "id": {
+              "description": "A stable id, unique in the document (made up when missing).",
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{1,64}$"
+            },
+            "name": {
+              "description": "Name shown in the Selection pane.",
+              "type": "string",
+              "maxLength": 200
+            },
+            "x": {
+              "description": "Horizontal position in points, from the left margin (the left edge of the text). In a group: from the group’s left edge.",
+              "type": "number",
+              "minimum": -2000,
+              "maximum": 4000
+            },
+            "y": {
+              "description": "Vertical position in points, from the top of the paragraph that holds the shape. In a group: from the group’s top edge.",
+              "type": "number",
+              "minimum": -4000,
+              "maximum": 4000
+            },
+            "width": {
+              "description": "Width in points (the text is about 470 pt wide on A4).",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 3000
+            },
+            "height": {
+              "description": "Height in points.",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 4000
+            },
+            "rotate": {
+              "description": "Rotation in degrees, clockwise.",
+              "type": "number",
+              "minimum": -360,
+              "maximum": 360
+            },
+            "flip": {
+              "description": "Flipped horizontally (h), vertically (v) or both.",
+              "type": "string",
+              "enum": [
+                "h",
+                "v",
+                "hv"
+              ]
+            },
+            "wrap": {
+              "description": "How the text goes around it: inline (a large character in the line), square (text around its box), topBottom (above and below only), behind (behind the text), front (in front of the text). Default: front for a shape, square for a text box.",
+              "type": "string",
+              "enum": [
+                "inline",
+                "square",
+                "topBottom",
+                "behind",
+                "front"
+              ]
+            },
+            "z": {
+              "description": "Stacking order: higher is on top.",
+              "type": "integer",
+              "minimum": -100000,
+              "maximum": 100000
+            },
+            "fill": {
+              "description": "Fill colour: \"#rrggbb\", a theme colour (text, accent1 … accent6) or \"none\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "line": {
+              "description": "Outline colour, or \"none\".",
+              "type": "string",
+              "maxLength": 30
+            },
+            "lineWidth": {
+              "description": "Outline width in points (default 1).",
+              "type": "number",
+              "minimum": 0,
+              "maximum": 50
+            },
+            "dash": {
+              "type": "string",
+              "enum": [
+                "solid",
+                "dash",
+                "dot",
+                "dashDot",
+                "longDash"
+              ],
+              "default": "solid"
+            },
+            "head": {
+              "description": "Start of a line: none, arrow, triangle, oval or diamond.",
+              "type": "string",
+              "enum": [
+                "none",
+                "arrow",
+                "triangle",
+                "oval",
+                "diamond"
+              ],
+              "default": "none"
+            },
+            "tail": {
+              "description": "End of a line (an arrow is \"tail\": \"triangle\").",
+              "type": "string",
+              "enum": [
+                "none",
+                "arrow",
+                "triangle",
+                "oval",
+                "diamond"
+              ],
+              "default": "none"
+            },
+            "transparency": {
+              "description": "Fill transparency in percent.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "shadow": {
+              "description": "A soft drop shadow.",
+              "type": "boolean",
+              "default": false
+            },
+            "text": {
+              "description": "The text inside the shape, as plain text.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "md": {
+              "description": "The text inside the shape, in Markdown.",
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "blocks": {
+              "description": "The text inside the shape as blocks (paragraphs, lists).",
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "description": "A paragraph of plain text.",
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  {
+                    "$ref": "#/$defs/Block"
+                  }
+                ]
+              },
+              "maxItems": 100000
+            },
+            "valign": {
+              "description": "Vertical place of the text (default: middle for a shape, top for a text box).",
+              "type": "string",
+              "enum": [
+                "top",
+                "middle",
+                "bottom"
+              ]
+            },
+            "alt": {
+              "description": "Alternative text: what the shape shows, for readers who cannot see it.",
+              "type": "string",
+              "maxLength": 2000
+            },
+            "hidden": {
+              "description": "Hidden (Selection pane): kept in the file but not shown or printed.",
+              "type": "boolean",
+              "default": false
+            },
+            "children": {
+              "description": "A group’s shapes (each a \"shape\"), placed from the group’s top-left corner.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              },
+              "maxItems": 100
+            },
+            "src": {
+              "description": "A \"picture\" shape only: the picture, \"asset:<id>\" (see \"assets\") or a \"data:image/…;base64,\" URI.",
+              "type": "string",
+              "maxLength": 30000000
+            },
+            "crop": {
+              "description": "Cropping, in percent of each side.",
+              "type": "object",
+              "properties": {
+                "top": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "right": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "bottom": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "left": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 95
+                }
+              },
+              "additionalProperties": false
+            },
+            "adjust": {
+              "description": "Picture corrections and effects.",
+              "type": "object",
+              "properties": {
+                "brightness": {
+                  "description": "Brightness, -100 to 100 (percent).",
+                  "type": "integer",
+                  "minimum": -100,
+                  "maximum": 100
+                },
+                "contrast": {
+                  "description": "Contrast, -100 to 100 (percent).",
+                  "type": "integer",
+                  "minimum": -100,
+                  "maximum": 100
+                },
+                "saturation": {
+                  "description": "Colour saturation in percent: 0 is grey, 100 unchanged.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 400
+                },
+                "recolor": {
+                  "type": "string",
+                  "enum": [
+                    "grayscale",
+                    "sepia",
+                    "washout",
+                    "blackwhite"
+                  ]
+                },
+                "artistic": {
+                  "type": "string",
+                  "enum": [
+                    "blur",
+                    "pencil",
+                    "negative"
+                  ]
+                },
+                "transparency": {
+                  "description": "Transparency in percent.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 95
+                },
+                "shadow": {
+                  "description": "A drop shadow.",
+                  "type": "boolean"
+                },
+                "glow": {
+                  "description": "A soft glow around the picture, in this colour.",
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "softEdges": {
+                  "description": "Soft edges, in points.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50
+                },
+                "reflection": {
+                  "description": "A reflection below the picture: the share of its height reflected, 10 to 100 (percent).",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "description": "A shape, text box, picture placed freely (\"shape\": \"picture\" with \"src\") or group anchored in this paragraph: it moves with the paragraph but sits anywhere on the page (x, y from the margin and the paragraph top). Put it at the start of the paragraph."
         },
         {
           "type": "object",

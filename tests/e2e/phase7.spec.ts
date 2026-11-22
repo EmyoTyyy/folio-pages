@@ -214,6 +214,42 @@ test.describe('mises à jour', () => {
   })
 })
 
+test.describe('mise à jour en place (Chrome)', () => {
+  test.beforeEach(async ({ page }) => installFakeFs(page))
+  test('le fichier ouvert est proposé (pas le titre), réécrit, puis réécrit directement ; bouton Recharger', async ({ page }, info) => {
+    test.skip(!existsSync(KEY_FILE), 'pas de clé de signature locale')
+    test.setTimeout(60_000)
+    const errors = watchErrors(page)
+    await openEditor(page, makeFile(info, 'mon-fichier.html', DOC).url)
+    const app = new Uint8Array(readFileSync(BLANK))
+    const NEW = 'https://exemple.org/folio-pages-99.html'
+    const body = await signed({ app: 'folio-pages', version: '99.0.0', sha256: await sha256(app), url: NEW })
+    await page.route(MANIFEST_URL, (r) => r.fulfill({ status: 200, body, headers: CORS }))
+    await page.route(NEW, (r) => r.fulfill({ status: 200, body: Buffer.from(app), headers: { ...CORS, 'content-type': 'text/html' } }))
+    await tab(page, 'help')
+    await rb(page, 'check-update')
+    const dlg = page.locator('[data-dialog="update"]')
+    // Le navigateur ne sait pas encore où est le fichier : on dit lequel choisir.
+    await expect(dlg).toContainText('mon-fichier.html')
+    await dlg.locator('[data-action="apply"]').click()
+    const done = page.locator('.fp-toast').filter({ hasText: '99.0.0' })
+    await expect(done).toContainText('Rechargez pour l’utiliser.')
+    await expect(done.locator('.fp-toast__action')).toHaveText('Recharger')
+    const fs = await page.evaluate(() => (window as any).__fs)
+    expect(fs.pickerCalls).toEqual([{ suggestedName: 'mon-fichier.html' }])
+    expect(fs.writes).toHaveLength(1)
+    expect(fs.writes[0].name).toBe('mon-fichier.html')
+    expect(JSON.stringify(docOfFile(fs.writes[0].text).blocks[0])).toContain('Budget 2027')
+    // Deuxième fois : réécrit directement, sans fenêtre.
+    await rb(page, 'check-update')
+    await expect(dlg).toContainText('réécrit à sa place')
+    await dlg.locator('[data-action="apply"]').click()
+    await expect.poll(() => page.evaluate(() => (window as any).__fs.writes.length)).toBe(2)
+    expect((await page.evaluate(() => (window as any).__fs)).pickerCalls).toHaveLength(1)
+    errors.check()
+  })
+})
+
 test.describe('recherche de mise à jour à l’ouverture', () => {
   /** Un vrai navigateur : la recherche à l'ouverture est sautée quand il est piloté par un programme. */
   const asUser = (page: Page) => page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false }))

@@ -186,7 +186,7 @@ describe('compte rendu (dialecte d’un traitement de texte de bureau, écrit à
   it('signale ce qui n’a pas d’équivalent, et rien d’autre', () => {
     expect(issues).toEqual([])
     // (Le MERGEFIELD est un vrai champ de fusion : plus de perte « champ ».)
-    expect(lossMap(res)).toEqual({ 'heading-number': 2, 'hidden-text': 1, symbol: 1, textbox: 1, 'image-format': 1 })
+    expect(lossMap(res)).toEqual({ 'heading-number': 2, 'hidden-text': 1, symbol: 1, 'image-format': 1 })
   })
 
   it('propriétés, thème, notes, première page différente, numérotation des pages', () => {
@@ -250,8 +250,12 @@ describe('compte rendu (dialecte d’un traitement de texte de bureau, écrit à
     const text = allText(doc)
     // L'équation est une formule : sa fraction en LaTeX.
     expect(text).toContain('Coût par usager : $\\frac{C}{n}=42$ euros.')
-    expect(text).toContain('À retenir : la réunion suivante est le 14 mai.')
-    expect(text.match(/À retenir/g)).toHaveLength(1)
+    // La zone de texte est une zone de texte (une forme), son texte dedans, une seule fois.
+    const json = JSON.stringify(doc)
+    expect(json).toContain('"shape":"textBox"')
+    expect(json).toContain('À retenir : la réunion suivante est le 14 mai.')
+    expect(json.match(/À retenir/g)).toHaveLength(1)
+    expect(text).not.toContain('À retenir')
     const links = doc.blocks.find((b) => b.type === 'paragraph' && texts(b.content).startsWith('lien douteux')) as BlockOf<'paragraph'>
     expect(links.content).toEqual([{ text: 'lien douteux ; ' }, { text: 'lien par champ', link: 'https://exemple.org/pilotage' }, { text: ' ; fusion : ' }, { type: 'mergefield', name: 'Prenom' }, { text: ' ; ' }, { type: 'field', name: 'author', format: '' }])
     expect(JSON.stringify(doc)).not.toContain('javascript:')

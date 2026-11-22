@@ -11,6 +11,8 @@
 import { chartFromSpace } from './chart'
 import { dirToStore } from '../format/bidi'
 import { diagramFromAlt } from '../format/diagram'
+import { picturesFromAlt } from '../format/pictures'
+import { placeAnchored, shapeFromDrawing } from './shapes'
 import { BUILTIN_STYLES, resolveStyle } from '../format/theme'
 import { calloutKindOfStyle, isDefaultCalloutTitle } from '../format/callout'
 import { INK_ALT } from '../format/ink'
@@ -46,6 +48,8 @@ export type ImportLossCode =
   | 'equation'
   | 'drawing'
   | 'textbox'
+  | 'shape-geometry'
+  | 'shape-position'
   | 'chart'
   | 'chart-type'
   | 'object'
@@ -990,7 +994,8 @@ class Importer {
   private drawing(node: XmlNode, s: Inline): void {
     if (node.name === 'mc:AlternateContent') {
       const choice = child(node, 'mc:Choice')
-      const usable = (n: XmlNode | undefined) => !!n && (descendants(n, 'a:blip').length > 0 || descendants(n, 'v:imagedata').length > 0 || descendants(n, 'w:txbxContent').length > 0)
+      const usable = (n: XmlNode | undefined) =>
+        !!n && (descendants(n, 'a:blip').length > 0 || descendants(n, 'v:imagedata').length > 0 || descendants(n, 'w:txbxContent').length > 0 || descendants(n, 'wps:wsp').length > 0 || descendants(n, 'wpg:wgp').length > 0)
       const pick = usable(choice) ? choice : (child(node, 'mc:Fallback') ?? choice)
       for (const c of pick?.children ?? []) this.drawing(c, s)
       return
@@ -1012,6 +1017,24 @@ class Importer {
       this.readWatermark(mark)
       return
     }
+    // Une forme de Word (zone de texte, rectangle, flèche, groupe…) : une forme modifiable.
+    if (node.name === 'w:drawing' && (descendants(node, 'wps:wsp').length || descendants(node, 'wpg:wgp').length) && !s.ctx.note && !s.ctx.hf) {
+      const text = (box: XmlNode): unknown[] => {
+        const saved = { fields: this.fields, active: this.activeComments, last: this.lastRun }
+        this.fields = []
+        this.activeComments = new Set()
+        const blocks = this.assemble(this.walk(box.children, { note: true }))
+        this.fields = saved.fields
+        this.activeComments = saved.active
+        this.lastRun = saved.last
+        return blocks
+      }
+      const shape = shapeFromDrawing(node, text, (code) => this.lose(code as ImportLossCode), { width: 468, marginLeft: 72 }, (rid) => this.picture(rid))
+      if (shape) {
+        s.content.push(shape)
+        return
+      }
+    }
     const blip = descendants(node, 'a:blip')[0]
     const vml = descendants(node, 'v:imagedata')[0]
     if (blip || vml) {
@@ -1028,6 +1051,12 @@ class Importer {
       const dg = diagramFromAlt(pr?.attrs.descr ?? '')
       if (dg) {
         s.split(dg)
+        return
+      }
+      // Nos dispositions d'images : les données dans le texte, les images dans le SVG.
+      const pl = picturesFromAlt(pr?.attrs.descr ?? '', src.startsWith('asset:') ? (this.assets[src.slice(6)] ?? null) : null)
+      if (pl) {
+        s.split(pl)
         return
       }
       const img: Raw = { type: 'image', src }
@@ -1081,6 +1110,22 @@ class Importer {
         if (Math.abs(cx / cy / ratio - 1) > 0.03 && Math.abs(expected - ptOfEmu(cy)) > 1) img.height = Math.min(2000, ptOfEmu(cy))
       }
       const anchor = descendants(node, 'wp:anchor')[0]
+      // Placée à une position précise (et non alignée) : une image libre, comme une forme.
+      if (anchor && path(anchor, 'wp:positionH', 'wp:posOffset') && cx && cy && !s.ctx.note && !s.ctx.hf) {
+        const free: Raw = { type: 'shape', shape: 'picture', src, width: ptOfEmu(cx), height: ptOfEmu(cy) }
+        for (const k of ['alt', 'crop', 'flip', 'adjust'] as const) if (img[k] !== undefined) free[k] = img[k]
+        if (img.border) {
+          free.line = img.border
+          const lw = numOf(path(descendants(node, 'pic:spPr')[0], 'a:ln')?.attrs.w)
+          if (lw) free.lineWidth = Math.round((lw / 12700) * 100) / 100
+        }
+        const exact = (numOf(xfrm?.attrs.rot) ?? 0) / 60000
+        if (exact) free.rotate = exact
+        if (pr?.attrs.name && !/^(shape\d+|image|Picture \d+|Image \d+)$/i.test(pr.attrs.name)) free.name = pr.attrs.name
+        placeAnchored(free, anchor as never, (code) => this.lose(code as ImportLossCode), { width: 468, marginLeft: 72 })
+        s.content.push(free)
+        return
+      }
       img.align = s.align === 'center' || s.align === 'right' ? s.align : 'left'
       if (anchor) {
         const side = textOf(path(anchor, 'wp:positionH', 'wp:align')).trim()

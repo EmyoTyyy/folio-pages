@@ -310,7 +310,66 @@ export interface AttachmentInline {
   mime?: string
 }
 
-export type Inline = Run | FieldInline | NoteInline | MathInline | MergeInline | SeqInline | BookmarkInline | XrefInline | IndexInline | CiteInline | FormInline | AttachmentInline
+/** Habillage d'une forme : dans le texte, le texte autour (carré), au-dessus et au-dessous, derrière, devant. */
+export const SHAPE_WRAPS = ['inline', 'square', 'topBottom', 'behind', 'front'] as const
+export type ShapeWrap = (typeof SHAPE_WRAPS)[number]
+export const LINE_DASHES = ['solid', 'dash', 'dot', 'dashDot', 'longDash'] as const
+export const LINE_ENDS = ['none', 'arrow', 'triangle', 'oval', 'diamond'] as const
+
+/**
+ * Forme, zone de texte ou groupe, ancré dans un paragraphe : il suit ce
+ * paragraphe, mais se place librement sur la page. Position et taille en
+ * points : `x` depuis le bord gauche du texte (la marge), `y` depuis le haut du
+ * paragraphe d'ancrage. Dans un groupe, depuis le coin du groupe.
+ */
+export interface ShapeInline {
+  type: 'shape'
+  /** Forme prédéfinie (noms des formes .docx : rect, ellipse, rightArrow…), « textBox » ou « group ». */
+  shape: string
+  /** Identifiant stable (volet Sélection, groupes) et nom affiché. */
+  id: string
+  name?: string
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Rotation en degrés (sens des aiguilles d'une montre) ; retournement. */
+  rotate?: number
+  flip?: 'h' | 'v' | 'hv'
+  /** Habillage (par défaut : devant le texte ; une zone de texte : carré). */
+  wrap?: ShapeWrap
+  /** Ordre de superposition : plus grand, plus haut. */
+  z?: number
+  /** Remplissage et contour : couleur du thème, #rrggbb, ou « none ». */
+  fill?: string
+  line?: string
+  /** Épaisseur du contour, en points ; tirets ; bouts d'un trait (début, fin). */
+  lineWidth?: number
+  dash?: (typeof LINE_DASHES)[number]
+  head?: (typeof LINE_ENDS)[number]
+  tail?: (typeof LINE_ENDS)[number]
+  /** Transparence du remplissage (0 à 100 %), ombre portée. */
+  transparency?: number
+  shadow?: true
+  /** Le texte de la forme (paragraphes, listes ; comme une note) et son alignement vertical. */
+  blocks?: Block[]
+  valign?: 'top' | 'middle' | 'bottom'
+  /** Texte de remplacement (lecteurs d'écran), masquée (volet Sélection). */
+  alt?: string
+  hidden?: true
+  /** Un groupe : ses formes, placées depuis le coin du groupe. */
+  children?: ShapeInline[]
+  /** Image libre (shape « picture ») : l'image, « asset:id » (dans l'éditeur : son URI data:). */
+  src?: string
+  /** Image libre : rognage en pourcentage de chaque côté. */
+  crop?: Crop
+  /** Image libre : retouches (couleurs, transparence, ombre…). */
+  adjust?: PictureAdjust
+  /** Éditeur seulement : la ressource d'origine de l'image (gardée d'un enregistrement à l'autre). */
+  assetId?: string
+}
+
+export type Inline = Run | FieldInline | NoteInline | MathInline | MergeInline | SeqInline | BookmarkInline | XrefInline | IndexInline | CiteInline | FormInline | AttachmentInline | ShapeInline
 
 /** Éléments en ligne qui ne montrent rien d'eux-mêmes (signet, entrée d'index). */
 export const isHiddenInline = (x: Inline): boolean => 'type' in x && (x.type === 'bookmark' || x.type === 'xe')
@@ -433,6 +492,7 @@ export type Block =
   /** Graphique (barres, courbes, secteurs), avec ses propres données. */
   | ChartBlock
   | DiagramBlock
+  | PicturesBlock
   /** Équation centrée ($$…$$) ; numérotée (1), (2)… si `numbered`. */
   | { type: 'equation'; tex: string; numbered?: true }
   | { type: 'pagebreak' }
@@ -552,6 +612,23 @@ export interface DiagramBlock {
   items: DiagramItem[]
   title?: string
   /** 'colorful' (une couleur du thème par élément, par défaut) ou une couleur du thème pour tous. */
+  color?: (typeof import('./diagram').DIAGRAM_COLORS)[number]
+}
+
+/** Une image d'une disposition d'images : l'image (« asset:id » ; absente : un cadre vide), sa légende, un court texte. */
+export interface PictureItem {
+  src?: string
+  caption?: string
+  text?: string
+}
+
+/** Disposition d'images : des images avec leurs légendes, arrangées (grille, bandeau, mise en avant…). */
+export interface PicturesBlock {
+  type: 'pictures'
+  layout: import('./pictures').PictureLayout
+  items: PictureItem[]
+  title?: string
+  /** 'colorful' (une couleur du thème par image, par défaut) ou une couleur du thème pour toutes. */
   color?: (typeof import('./diagram').DIAGRAM_COLORS)[number]
 }
 
