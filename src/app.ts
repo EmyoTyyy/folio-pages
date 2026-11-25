@@ -1140,6 +1140,21 @@ export class FolioApp {
     if (this.slots.length > 1) this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
   }
 
+  /**
+   * La démonstration, telle qu'elle s'est ouverte (rien de changé), passe dans une
+   * autre langue quand on change celle de l'interface : rien à enregistrer ni à
+   * annuler. Une démonstration modifiée reste telle quelle. Renvoie true si elle a changé.
+   */
+  relocalizeDemo(doc: FolioDoc): boolean {
+    if (!this.isDemo || this.dirty || this.realState || this.slots.length !== 1) return false
+    if ((this.state.doc.attrs.lang as string) === doc.meta.lang) return false
+    const id = this.identity.id
+    this.resetSlots({ ...doc, id }, true)
+    this.demoKey = this.slots[0].key
+    this.scrollHooks?.set(0)
+    return true
+  }
+
   // --- protection par mot de passe (phase 7) ---------------------------------
 
   /** Mot de passe du document (en mémoire seulement), et ce qu'il chiffre dans le navigateur. */

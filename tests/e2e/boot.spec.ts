@@ -60,6 +60,34 @@ test('changer de langue met toute l’interface à jour et s’en souvient', asy
   await expect(page.locator('[data-menu="file"]')).toHaveText('File')
 })
 
+test('la démonstration intacte change de langue avec l’interface ; modifiée, elle reste telle quelle', async ({ page }) => {
+  await openEditor(page, BLANK_URL)
+  const title = editor(page).locator('p[data-style="title"]')
+  await expect(title).toHaveText('Bienvenue dans Folio Pages')
+  const language = async (code: string) => {
+    await page.locator('.fp-ribbon__tab[data-tab="review"]').click()
+    await page.locator('.fp-ribbon [data-cmd="language"]').click()
+    await page.locator(`[data-item="lang-${code}"]`).click()
+  }
+  await language('en')
+  await expect(title).toHaveText('Welcome to Folio Pages')
+  await expect(page.locator('#fp-title')).toHaveValue('Welcome to Folio Pages')
+  // Rien à enregistrer, rien à annuler.
+  await expect(page.locator('#fp-status')).toHaveText('No changes')
+  await page.keyboard.press('Control+z')
+  await expect(title).toHaveText('Welcome to Folio Pages')
+  await language('fr')
+  await expect(title).toHaveText('Bienvenue dans Folio Pages')
+  // Une démonstration modifiée est à l'utilisateur : elle ne change plus.
+  await title.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' !')
+  await language('en')
+  await expect(page.locator('[data-menu="file"]')).toHaveText('File')
+  await expect(title).toHaveText(/^Bienvenue dans Folio Pages/)
+  await expect(page.locator('#fp-status')).toHaveText('Unsaved changes')
+})
+
 test.describe('sans JavaScript', () => {
   test.use({ javaScriptEnabled: false })
   test('un message lisible remplace la page blanche', async ({ page }) => {

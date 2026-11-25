@@ -2,6 +2,14 @@
 // montré une fois après une mise à jour (et à la demande, Aide → Nouveautés).
 
 export const RELEASE_NOTES: Record<string, { fr: string[]; en: string[] }> = {
+  '0.17.1': {
+    fr: [
+      'La démonstration suit la langue de l’interface : tant qu’on ne l’a pas modifiée, changer de langue l’affiche dans la nouvelle langue.',
+    ],
+    en: [
+      'The demo follows the interface language: as long as it has not been edited, changing the language shows it in the new language.',
+    ],
+  },
   '0.17.0': {
     fr: [
       'Volet Documents : les documents du fichier rangés dans des dossiers (et des dossiers dans des dossiers), comme l’explorateur d’un éditeur de code. Le bouton en bas à gauche (ou Affichage → Documents) le montre ou le cache ; on glisse pour ranger, on l’élargit en tirant son bord.',

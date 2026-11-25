@@ -19,7 +19,8 @@ import {
 } from '../editor/commands'
 import { stats } from '../editor/stats'
 import type { Key } from '../i18n/dict'
-import { availableLanguages, lang, onLangChange, setLang, t } from '../i18n/i18n'
+import { availableLanguages, baseLang, lang, onLangChange, setLang, t } from '../i18n/i18n'
+import { demoDocument } from '../demo/demo'
 import { addLanguageUi, languagesDialog } from './packs'
 import { availableUpdate, checkUpdatesUi, openAvailableUpdate, toggleAutoUpdate, toggleOffline, whatsNewDialog } from './updates'
 import { isOffline } from '../net'
@@ -668,6 +669,8 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   onLangChange(() => {
     renderTexts()
     update()
+    // La démonstration encore intacte suit la langue de l'interface.
+    app.relocalizeDemo(demoDocument(baseLang()))
   })
   app.onChange(update)
   // Un réglage affiché dans le ruban (la messagerie choisie, par exemple) : on le met à jour.
