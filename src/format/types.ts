@@ -8,6 +8,8 @@
 // quand elles ne sont pas définies : le texte suit alors son style. « Absent »
 // n'est donc pas « valeur par défaut », et la forme complète ne les écrit pas.
 
+import type { TreeItem } from './tree'
+
 export const FORMAT = 'folio/doc'
 export const FORMAT_VERSION = 1
 
@@ -404,9 +406,9 @@ export interface ParaProps {
   formatChange?: ParaChange
 }
 
-/** Un trait de dessin : stylo ou surligneur ; points en points typographiques (x, y, x, y…). */
+/** Un trait de dessin : stylo, crayon ou surligneur ; points en points typographiques (x, y, x, y…). */
 export interface InkStroke {
-  tool: 'pen' | 'highlighter'
+  tool: 'pen' | 'pencil' | 'highlighter'
   color: string
   /** Épaisseur en points. */
   width: number
@@ -943,6 +945,8 @@ export interface FolioDoc {
   key?: string
   /** Les autres documents du fichier (seulement dans le premier), chacun complet et indépendant. */
   documents?: FolioDoc[]
+  /** Les dossiers qui rangent les documents (seulement dans le premier) ; voir format/tree.ts. */
+  tree?: TreeItem[]
 }
 
 /** Un terme du glossaire (avec sa définition) ou une abréviation (avec sa forme longue). */

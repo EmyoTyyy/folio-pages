@@ -105,7 +105,8 @@ import * as OL from '../editor/outlineview'
 import { openImmersive } from './immersive'
 import { checkUpdatesUi, toggleAutoUpdate, toggleOffline, whatsNewDialog } from './updates'
 import { isOffline } from '../net'
-import { Popover, closePopovers, popItem } from './popover'
+import { Popover, closePopovers, popItem, popoverOpen } from './popover'
+import { getDocsPane } from './docpane'
 import { toast } from './dialog'
 import { accessibilityDialog } from './a11y'
 import { isFocusMode, setFocusMode } from './focus'
@@ -130,6 +131,8 @@ export interface Group {
   controls: Ctl[]
   /** Bouton de lancement de la boîte de dialogue du groupe (coin en bas à droite). */
   launcher?: () => void
+  /** Icône du groupe replié (sinon celle de son premier contrôle). */
+  icon?: string
 }
 
 export interface TabDef {
@@ -155,6 +158,48 @@ interface ButtonOptions {
   keys?: string
 }
 
+/**
+ * Libellés courts du ruban, par commande : le bouton montre le libellé court,
+ * l'infobulle et les lecteurs d'écran gardent le libellé complet.
+ */
+const SHORT: Partial<Record<string, Key>> = {
+  'insert-footnote': 'rbs.footnote',
+  'insert-endnote': 'rbs.endnote',
+  'insert-citation': 'rbs.citation',
+  'insert-caption': 'rbs.caption',
+  'table-of-figures': 'rbs.figures',
+  'insert-authorities': 'rbs.authorities',
+  'update-toc': 'rbs.update',
+  'update-figures': 'rbs.update',
+  'update-index': 'rbs.update',
+  'update-authorities': 'rbs.update',
+  'mm-update-labels': 'rbs.update',
+  'review-spell': 'rbs.spelling',
+  thesaurus: 'rbs.thesaurus',
+  'comment-name': 'rbs.myName',
+  'redact-mark': 'rbs.redact',
+  'redact-apply': 'rbs.apply',
+  inspect: 'rbs.inspect',
+  'mm-highlight': 'rbs.highlightFields',
+  'mm-insert-field': 'rbs.mergeField',
+  'mm-match': 'rbs.match',
+  'mm-recipients': 'rbs.recipients',
+  'mm-edit-list': 'rbs.editList',
+  'mm-find': 'rbs.find',
+  'reset-window': 'rbs.resetPosition',
+  'view-spell': 'rbs.spellcheck',
+  'view-autohide': 'rbs.autoFold',
+  'view-nav': 'rbs.navigation',
+  'view-marks': 'rbs.marks',
+  'copy-compact': 'rbs.compactJson',
+  'comments-pane': 'rbs.commentsPane',
+  'view-markdown': 'rbs.markdown',
+  'zoom-fit': 'rbs.pageWidth',
+}
+
+/** Le libellé montré sur le bouton (court s'il en a un). */
+const shown = (id: string, label: string): string => (SHORT[id] ? t(SHORT[id]!) : label)
+
 export function button(o: ButtonOptions): Ctl {
   const b = h('button', {
     type: 'button',
@@ -164,7 +209,7 @@ export function button(o: ButtonOptions): Ctl {
     'aria-label': o.label,
   }) as HTMLButtonElement
   if (o.icon) b.append(icon(o.icon))
-  if (o.text || o.large) b.append(h('span', { class: 'fp-rb-btn__label' }, o.label))
+  if (o.text || o.large) b.append(h('span', { class: 'fp-rb-btn__label' }, shown(o.id, o.label)))
   b.addEventListener('mousedown', (e) => e.preventDefault()) // garder la sélection de l'éditeur
   b.addEventListener('click', () => o.run())
   return {
@@ -208,7 +253,7 @@ export function dropdown(o: MenuOptions): Ctl {
     'aria-expanded': 'false',
   }) as HTMLButtonElement
   if (o.icon) b.append(icon(o.icon))
-  const label = h('span', { class: 'fp-rb-btn__label' }, o.large ? o.label : '')
+  const label = h('span', { class: 'fp-rb-btn__label' }, o.large ? shown(o.id, o.label) : '')
   if (o.large || o.text) b.append(label)
   b.append(icon(I.caret))
   b.addEventListener('mousedown', (e) => e.preventDefault())
@@ -216,7 +261,7 @@ export function dropdown(o: MenuOptions): Ctl {
   return {
     el: b,
     update: () => {
-      if (o.text) label.textContent = o.text()
+      if (o.text) label.textContent = SHORT[o.id] ? t(SHORT[o.id]!) : o.text()
       if (o.enabled) b.disabled = !o.enabled()
       if (o.active) b.classList.toggle('is-active', o.active())
     },
@@ -486,7 +531,7 @@ function soon(o: { id: string; label: string; icon?: string; large?: boolean; te
     'aria-label': o.label,
   }) as HTMLButtonElement
   if (o.icon) b.append(icon(o.icon))
-  if (o.large || o.text) b.append(h('span', { class: 'fp-rb-btn__label' }, o.label))
+  if (o.large || o.text) b.append(h('span', { class: 'fp-rb-btn__label' }, shown(o.id, o.label)))
   if (o.drop) b.append(icon(I.caret))
   b.addEventListener('mousedown', (e) => e.preventDefault())
   return { el: b }
@@ -503,7 +548,8 @@ function soonItem(label: string): HTMLElement {
 /** Une case à cocher (Affichage → Afficher). */
 function check(o: { id: string; label: string; get: () => boolean; set: (v: boolean) => void; soon?: boolean }): Ctl {
   const box = h('input', { type: 'checkbox', 'data-cmd': o.id }) as HTMLInputElement
-  const el = h('label', { class: 'fp-rb-check' + (o.soon ? ' is-soon' : ''), title: o.soon ? t('soon', { label: o.label }) : o.label }, box, h('span', {}, o.label))
+  const el = h('label', { class: 'fp-rb-check' + (o.soon ? ' is-soon' : ''), title: o.soon ? t('soon', { label: o.label }) : o.label }, box, h('span', {}, shown(o.id, o.label)))
+  if (SHORT[o.id]) box.setAttribute('aria-label', o.label)
   box.disabled = !!o.soon
   box.addEventListener('change', () => o.set(box.checked))
   return {
@@ -904,6 +950,7 @@ function stylesGroup(app: FolioApp): Group {
   const box = h('div', { class: 'fp-rb-gallery-box' }, gallery, more.el)
   return {
     id: 'styles',
+    icon: I.styles,
     label: t('ribbon.styles'),
     launcher: () => P.stylesManager(app),
     controls: [
@@ -1814,7 +1861,7 @@ function viewGroups(app: FolioApp): Group[] {
     },
     {
       id: 'page-movement',
-      label: t('rb.pageMovement'),
+      label: t('rbs.movement'),
       controls: [
         button({ id: 'movement-vertical', label: t('rb.vertical'), icon: I.vertical, large: true, active: () => !isSideToSide(app), run: () => (isSideToSide(app) ? setSideToSide(app, false) : app.focus()) }),
         button({ id: 'movement-side', label: t('rb.sideToSide'), icon: I.sideToSide, large: true, active: () => isSideToSide(app), run: () => setSideToSide(app, true) }),
@@ -1822,6 +1869,7 @@ function viewGroups(app: FolioApp): Group[] {
     },
     {
       id: 'show',
+      icon: I.eye,
       label: t('ribbon.show'),
       controls: [
         col(
@@ -1849,6 +1897,7 @@ function viewGroups(app: FolioApp): Group[] {
               app.notifyUi()
             },
           }),
+          check({ id: 'view-docs', label: t('tree.title'), get: () => !!getDocsPane()?.visible, set: (v) => getDocsPane()?.toggle(v) }),
         ),
       ],
     },
@@ -1884,8 +1933,8 @@ function viewGroups(app: FolioApp): Group[] {
       label: t('rb.window'),
       controls: [
         button({ id: 'new-window', label: t('rb.newWindow'), icon: I.newWindow, large: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), run: () => WIN.windowsUi()?.newWindow() }),
-        soon({ id: 'arrange-all', label: t('rb.arrangeAll'), icon: I.arrangeAll, large: true }),
-        button({ id: 'split-window', label: t('rb.split'), icon: I.splitWindow, large: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), active: () => WIN.windowsUi()?.mode() === 'rows', run: () => WIN.windowsUi()?.split('rows') }),
+        soon({ id: 'arrange-all', label: t('rb.arrangeAll'), icon: I.arrangeAll, text: true }),
+        button({ id: 'split-window', label: t('rb.split'), icon: I.splitWindow, text: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), active: () => WIN.windowsUi()?.mode() === 'rows', run: () => WIN.windowsUi()?.split('rows') }),
         col(
           button({ id: 'side-by-side', label: t('rb.viewSideBySide'), icon: I.sideToSide, text: true, enabled: () => !!WIN.windowsUi()?.canOpenWindows(), active: () => WIN.windowsUi()?.mode() === 'columns', run: () => WIN.windowsUi()?.split('columns') }),
           button({ id: 'sync-scroll', label: t('rb.syncScroll'), icon: I.syncScroll, text: true, enabled: () => !!WIN.windowsUi()?.mode(), active: () => !!WIN.windowsUi()?.syncScroll(), run: () => WIN.windowsUi()?.toggleSyncScroll() }),
@@ -1903,8 +1952,8 @@ function viewGroups(app: FolioApp): Group[] {
       id: 'options',
       label: t('ribbon.optionsGroup'),
       controls: [
-        col(toggle('view-spell', t('ribbon.spellcheck'), I.spell, 'spellcheck'), toggle('view-markdown', t('ribbon.markdownTyping'), I.markdown, 'markdownTyping'), toggle('view-reduce', t('ribbon.reduceImages'), I.compress, 'reduceImages')),
-        col(toggle('view-autohide', t('ribbon.autoHide'), I.arrowUp, 'ribbonAutoHide')),
+        col(toggle('view-spell', t('ribbon.spellcheck'), I.spell, 'spellcheck'), toggle('view-markdown', t('ribbon.markdownTyping'), I.markdown, 'markdownTyping')),
+        col(toggle('view-reduce', t('ribbon.reduceImages'), I.compress, 'reduceImages'), toggle('view-autohide', t('ribbon.autoHide'), I.arrowUp, 'ribbonAutoHide')),
       ],
     },
   ]
@@ -2684,6 +2733,8 @@ export class Ribbon {
     this.el.addEventListener('focusin', () => this.setAutoHidden(false))
     this.el.classList.toggle('is-collapsed', settings().ribbonCollapsed)
     this.render()
+    // La fenêtre change de largeur : les groupes se resserrent ou s'élargissent.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.refit()).observe(this.panel)
   }
 
   /** Ruban replié par le défilement (le choix « ruban masqué » de l'utilisateur est à part). */
@@ -2709,6 +2760,7 @@ export class Ribbon {
     updateSettings({ ribbonCollapsed: on })
     this.el.classList.toggle('is-collapsed', on)
     const b = this.el.querySelector('#fp-ribbon-collapse') as HTMLElement
+    if (!on) requestAnimationFrame(() => this.refit())
     b.replaceChildren(icon(on ? I.arrowDown : I.arrowUp))
     b.setAttribute('aria-label', on ? t('ribbon.expand') : t('ribbon.collapse'))
     b.title = b.getAttribute('aria-label')!
@@ -2746,6 +2798,7 @@ export class Ribbon {
   select(id: string, force = false): void {
     if (id === this.current && !force) return
     closePopovers()
+    this.closeFlyout()
     this.current = id
     for (const [tid, b] of this.tabButtons) {
       b.setAttribute('aria-selected', String(tid === id))
@@ -2788,9 +2841,135 @@ export class Ribbon {
         l.addEventListener('click', g.launcher)
         foot.append(l)
       }
-      this.panel.append(h('div', { class: 'fp-rb-group', 'data-group': g.id, role: 'group', 'aria-label': g.label }, body, foot))
+      const group = h('div', { class: 'fp-rb-group', 'data-group': g.id, role: 'group', 'aria-label': g.label }, body, foot)
+      group.prepend(this.foldButton(group, body, g.label, g.icon))
+      this.panel.append(group)
     }
     this.update()
+    this.fit()
+  }
+
+  // --- ruban trop large : les groupes se resserrent, puis se replient ---------------------
+
+  private flyout: { el: HTMLElement; body: HTMLElement; group: HTMLElement; close: () => void } | null = null
+  private fitWidth = 0
+
+  /** Le bouton d'un groupe replié : son icône, son nom ; il ouvre le groupe dessous. */
+  private foldButton(group: HTMLElement, body: HTMLElement, label: string, ic?: string): HTMLElement {
+    const b = h('button', { type: 'button', class: 'fp-rb-btn fp-rb-btn--large has-text fp-rb-fold', 'data-fold': group.dataset.group ?? '', title: label, 'aria-label': label, 'aria-haspopup': 'true', 'aria-expanded': 'false' }) as HTMLButtonElement
+    const first = body.querySelector('svg')
+    b.append(ic ? icon(ic) : first ? (first.cloneNode(true) as SVGElement) : icon(I.more), h('span', { class: 'fp-rb-btn__label' }, label), icon(I.caret))
+    b.addEventListener('mousedown', (e) => e.preventDefault())
+    // Au clavier (detail 0), le focus entre dans le groupe ouvert.
+    b.addEventListener('click', (e) => (this.flyout?.group === group ? this.closeFlyout() : this.openFlyout(group, body, b, e.detail === 0)))
+    return b
+  }
+
+  /** Ouvre un groupe replié sous son bouton (ses contrôles y sont déplacés, puis rendus). */
+  private openFlyout(group: HTMLElement, body: HTMLElement, anchor: HTMLElement, keyboard = false): void {
+    this.closeFlyout()
+    closePopovers()
+    const el = h('div', { class: 'fp-rb-flyout', 'data-flyout': group.dataset.group ?? '', role: 'group', 'aria-label': group.getAttribute('aria-label') ?? '' })
+    el.dataset.group = group.dataset.group ?? ''
+    el.append(body)
+    document.body.append(el)
+    const r = anchor.getBoundingClientRect()
+    el.style.left = `${Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 8 - el.offsetWidth)))}px`
+    el.style.top = `${Math.round(r.bottom + 4)}px`
+    anchor.setAttribute('aria-expanded', 'true')
+    const inside = (n: EventTarget | null) => n instanceof Node && (el.contains(n) || anchor.contains(n) || !!(n as Element).closest?.('.fp-popover'))
+    const down = (e: PointerEvent) => {
+      if (!inside(e.target)) this.closeFlyout()
+    }
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || popoverOpen()) return
+      e.preventDefault()
+      this.closeFlyout()
+      anchor.focus({ preventScroll: true })
+    }
+    // Une commande choisie (bouton simple ou élément d'une liste ouverte d'ici) referme le groupe.
+    const picked = (e: MouseEvent) => {
+      const t = e.target as Element
+      const b = t.closest?.('button')
+      if (!b) return
+      if (el.contains(b) && !b.matches('[aria-haspopup], .fp-rb-combo__arrow, .fp-rb-gallery__more')) setTimeout(() => this.closeFlyout())
+      // Un choix dans une liste ouverte d'ici : la liste se ferme, le groupe aussi.
+      else if (b.closest('.fp-popover'))
+        setTimeout(() => {
+          if (!popoverOpen()) this.closeFlyout()
+        })
+    }
+    document.addEventListener('pointerdown', down, true)
+    document.addEventListener('keydown', key, true)
+    document.addEventListener('click', picked, true)
+    const close = () => {
+      document.removeEventListener('pointerdown', down, true)
+      document.removeEventListener('keydown', key, true)
+      document.removeEventListener('click', picked, true)
+      anchor.setAttribute('aria-expanded', 'false')
+      group.querySelector('.fp-rb-fold')!.after(body)
+      el.remove()
+    }
+    this.flyout = { el, body, group, close }
+    if (keyboard) (body.querySelector('button:not(:disabled), input, select') as HTMLElement | null)?.focus({ preventScroll: true })
+  }
+
+  closeFlyout(): void {
+    const f = this.flyout
+    this.flyout = null
+    f?.close()
+  }
+
+  /**
+   * Le ruban tient dans sa largeur : s'il déborde, les groupes se resserrent un à
+   * un en partant de la droite (petits boutons sans libellé, galeries plus
+   * étroites), puis se replient en un bouton qui les ouvre dessous.
+   */
+  fit(): void {
+    this.closeFlyout()
+    const panel = this.panel
+    const groups = [...panel.querySelectorAll<HTMLElement>(':scope > .fp-rb-group')]
+    for (const g of groups) g.classList.remove('is-compact', 'is-folded')
+    this.fitWidth = panel.clientWidth
+    if (!panel.isConnected || !panel.clientWidth) return
+    this.tightenLabels()
+    const over = () => panel.scrollWidth > panel.clientWidth + 1
+    if (!over()) return
+    for (const cls of ['is-compact', 'is-folded']) {
+      for (let i = groups.length - 1; i >= 0; i--) {
+        const g = groups[i]
+        if (cls === 'is-compact' && !g.querySelector('.fp-rb-stack, .fp-rb-gallery')) continue
+        const before = g.offsetWidth
+        g.classList.add(cls)
+        // Sans gain (un seul grand bouton…), le groupe reste comme il était.
+        if (g.offsetWidth >= before - 4) {
+          g.classList.remove(cls)
+          continue
+        }
+        if (!over()) return
+      }
+    }
+  }
+
+  /**
+   * Un grand bouton dont le libellé passe à la ligne garde sinon toute sa
+   * largeur maximale : on le ramène à sa plus longue ligne.
+   */
+  private tightenLabels(): void {
+    const range = document.createRange()
+    for (const l of this.panel.querySelectorAll<HTMLElement>('.fp-rb-btn--large > .fp-rb-btn__label')) {
+      l.style.width = ''
+      if (!l.textContent) continue
+      range.selectNodeContents(l)
+      const lines = [...range.getClientRects()]
+      if (lines.length < 2) continue
+      l.style.width = `${Math.ceil(Math.max(...lines.map((r) => r.width))) + 1}px`
+    }
+  }
+
+  /** La largeur a changé (fenêtre, volet) : on refait la place. */
+  refit(): void {
+    if (this.panel.clientWidth && this.panel.clientWidth !== this.fitWidth) this.fit()
   }
 
   /** Met à jour l'état des contrôles et les onglets contextuels. */

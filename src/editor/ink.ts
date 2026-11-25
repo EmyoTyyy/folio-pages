@@ -31,12 +31,27 @@ export function inkElement(strokes: InkStroke[]): SVGSVGElement {
     p.setAttribute('stroke-linejoin', 'round')
     if (inkOpacity(s) < 1) {
       p.setAttribute('stroke-opacity', String(inkOpacity(s)))
-      p.setAttribute('class', 'fp-ink__hl')
+      p.setAttribute('class', s.tool === 'pencil' ? 'fp-ink__pencil' : 'fp-ink__hl')
+    }
+    if (s.tool === 'pencil') {
+      pencilFilter()
+      p.setAttribute('filter', 'url(#fp-pencil-grain)')
     }
     g.append(p)
   }
   svg.append(g)
   return svg
+}
+
+/** Le grain du crayon : un filtre SVG partagé, posé une fois dans la page. */
+function pencilFilter(): void {
+  if (document.getElementById('fp-pencil-grain')) return
+  const svg = document.createElementNS(SVG, 'svg')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden')
+  svg.innerHTML =
+    '<filter id="fp-pencil-grain" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="4" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.35" result="a"/><feComposite in="SourceGraphic" in2="a" operator="in"/></filter>'
+  document.body.append(svg)
 }
 
 const inkKey = new PluginKey<DecorationSet>('folio-ink')
@@ -122,4 +137,26 @@ export const clearInk: Command = (state, dispatch) => {
     dispatch(tr)
   }
   return true
+}
+
+/**
+ * Modifie les traits de paragraphes (position → nouvelle liste de traits) :
+ * déplacer, gommer en partie, convertir… Une étape d'annulation, sauf `merge`
+ * (la gomme qui glisse : ses passages se fondent en une seule étape).
+ */
+export function editInk(changes: Map<number, (ink: InkStroke[]) => InkStroke[]>, merge = false): Command {
+  return (state, dispatch) => {
+    if (!changes.size) return false
+    if (dispatch) {
+      const tr = state.tr
+      for (const [pos, fn] of changes) {
+        const node = tr.doc.nodeAt(pos)
+        if (!node?.isTextblock || !('ink' in node.attrs)) continue
+        const ink = fn((node.attrs.ink as InkStroke[] | null) ?? []).slice(-200)
+        tr.setNodeMarkup(pos, null, { ...node.attrs, ink: ink.length ? ink : null })
+      }
+      dispatch(merge ? tr : closeHistory(tr))
+    }
+    return true
+  }
 }

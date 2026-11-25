@@ -1179,9 +1179,11 @@
               "type": "object",
               "properties": {
                 "tool": {
+                  "description": "pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).",
                   "type": "string",
                   "enum": [
                     "pen",
+                    "pencil",
                     "highlighter"
                   ],
                   "default": "pen"
@@ -1633,6 +1635,14 @@
       },
       "maxItems": 50
     },
+    "tree": {
+      "description": "With several documents: folders to arrange them, shown as a tree in the Documents pane. Only in the first document. Each item is the \"key\" of a document, or a folder {\"folder\": \"Title\", \"items\": [...]}; folders can hold folders. Documents left out go at the end. Leave it out when there are no folders.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TreeItem"
+      },
+      "maxItems": 300
+    },
     "template": {
       "description": "A template: each time the file opens, a new document starts from it.",
       "type": "boolean",
@@ -1808,9 +1818,11 @@
                 "type": "object",
                 "properties": {
                   "tool": {
+                    "description": "pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).",
                     "type": "string",
                     "enum": [
                       "pen",
+                      "pencil",
                       "highlighter"
                     ],
                     "default": "pen"
@@ -2131,9 +2143,11 @@
                 "type": "object",
                 "properties": {
                   "tool": {
+                    "description": "pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).",
                     "type": "string",
                     "enum": [
                       "pen",
+                      "pencil",
                       "highlighter"
                     ],
                     "default": "pen"
@@ -4891,9 +4905,11 @@
                   "type": "object",
                   "properties": {
                     "tool": {
+                      "description": "pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).",
                       "type": "string",
                       "enum": [
                         "pen",
+                        "pencil",
                         "highlighter"
                       ],
                       "default": "pen"
@@ -5344,6 +5360,14 @@
             "$ref": "#/$defs/Document"
           },
           "maxItems": 50
+        },
+        "tree": {
+          "description": "With several documents: folders to arrange them, shown as a tree in the Documents pane. Only in the first document. Each item is the \"key\" of a document, or a folder {\"folder\": \"Title\", \"items\": [...]}; folders can hold folders. Documents left out go at the end. Leave it out when there are no folders.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TreeItem"
+          },
+          "maxItems": 300
         },
         "template": {
           "description": "A template: each time the file opens, a new document starts from it.",
@@ -8508,9 +8532,11 @@
             "type": "object",
             "properties": {
               "tool": {
+                "description": "pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).",
                 "type": "string",
                 "enum": [
                   "pen",
+                  "pencil",
                   "highlighter"
                 ],
                 "default": "pen"
@@ -8686,6 +8712,40 @@
         }
       },
       "additionalProperties": false
+    },
+    "TreeItem": {
+      "description": "A document (its key) or a folder.",
+      "anyOf": [
+        {
+          "description": "The key of a document of this file.",
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,31}$"
+        },
+        {
+          "description": "A folder.",
+          "type": "object",
+          "properties": {
+            "folder": {
+              "description": "The folder name.",
+              "type": "string",
+              "maxLength": 200
+            },
+            "items": {
+              "description": "What the folder holds: document keys and folders.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TreeItem"
+              },
+              "maxItems": 300
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "folder"
+          ]
+        }
+      ]
     }
   }
 }

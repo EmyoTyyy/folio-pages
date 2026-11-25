@@ -63,6 +63,7 @@ import { templateGallery } from './templates'
 import { exportDialog } from './exports'
 import * as NT from './navtools'
 import { SpreadView, isSideToSide, setSideToSide } from './spread'
+import { DocsPane } from './docpane'
 import { DocTabs } from './doctabs'
 
 export interface Chrome {
@@ -458,7 +459,9 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
   // Volet Sélection (formes), à droite, ouvert depuis Format de la forme.
   const selPane = new SHP.SelectionPane(app)
   SHP.setSelectionPane(selPane)
-  workspace.append(nav.el, splitBox, comments.el, lookup.el, selPane.el)
+  // Volet Documents (les dossiers et documents du fichier), tout à gauche.
+  const docsPane = new DocsPane(app)
+  workspace.append(docsPane.el, nav.el, splitBox, comments.el, lookup.el, selPane.el)
   splitBox.append(canvas)
   // Volet Vérifications : à gauche du texte, ou dessous.
   const review = new ReviewPane(app, (side, el) => (side === 'vertical' ? nav.el.after(el) : splitBox.append(el)))

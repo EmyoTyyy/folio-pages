@@ -102,9 +102,10 @@ test('onglets : changer de document, annuler dans chacun, renvois et liens vers 
 test('ajouter, renommer, dupliquer, déplacer, supprimer (et annuler), enregistrer et rouvrir', async ({ page }, info) => {
   const errors = watchErrors(page)
   await openEditor(page, makeFile(info, 'gestion.html', FILE).url)
-  // + : un document vide, nommé tout de suite.
+  // Volet Documents, puis « Nouveau document » : un document vide, nommé tout de suite.
+  await page.locator('#fp-docs-toggle').click()
   await page.locator('#fp-doc-add').click()
-  const name = page.locator('[data-doc-rename]')
+  const name = page.locator('[data-tree-rename]')
   await expect(name).toBeFocused()
   await name.fill('Notes de réunion')
   await name.press('Enter')
@@ -113,28 +114,36 @@ test('ajouter, renommer, dupliquer, déplacer, supprimer (et annuler), enregistr
   await expect(page.locator('#fp-title')).toHaveValue('Notes de réunion')
   await editor(page).click()
   await page.keyboard.type('Ordre du jour.')
-  // Double-clic : renommer.
+  // Double-clic sur l'onglet : renommer.
+  const tabName = page.locator('[data-doc-rename]')
   await tabs(page).nth(2).dblclick()
-  await name.fill('Annexe A — chiffres')
-  await name.press('Enter')
+  await tabName.fill('Annexe A — chiffres')
+  await tabName.press('Enter')
   await expect(tabs(page).nth(2)).toHaveText('Annexe A — chiffres')
-  // Menu de l'onglet : dupliquer, déplacer.
+  // Menu de l'onglet : dupliquer (le double s'ouvre après l'onglet affiché), déplacer l'onglet.
   await tabs(page).nth(0).click({ button: 'right' })
   await page.locator('[data-popover="doc-tab"] [data-doc-action="duplicate"]').click()
-  await expect(tabs(page)).toHaveText(['Rapport', 'Rapport (copie)', 'Notes de réunion', 'Annexe A — chiffres'])
+  await expect(tabs(page)).toHaveText(['Rapport', 'Notes de réunion', 'Annexe A — chiffres', 'Rapport (copie)'])
   await expect(active(page)).toHaveText('Rapport (copie)')
-  await tabs(page).nth(1).click({ button: 'right' })
-  await page.locator('[data-popover="doc-tab"] [data-doc-action="right"]').click()
+  // Dans le fichier, le double suit son original.
+  const tree = page.locator('#fp-docs .fp-tree__row')
+  await expect(tree).toHaveText(['Rapport', 'Rapport (copie)', 'Notes de réunion', 'Annexe A — chiffres'])
+  await tabs(page).nth(3).click({ button: 'right' })
+  await page.locator('[data-popover="doc-tab"] [data-doc-action="left"]').click()
   await expect(tabs(page)).toHaveText(['Rapport', 'Notes de réunion', 'Rapport (copie)', 'Annexe A — chiffres'])
+  // Déplacer un onglet ne change pas l'ordre du fichier.
+  await expect(tree).toHaveText(['Rapport', 'Rapport (copie)', 'Notes de réunion', 'Annexe A — chiffres'])
   // Supprimer (confirmé), puis Annuler dans le message : le document revient à sa place.
   await tabs(page).nth(2).click({ button: 'right' })
   await page.locator('[data-popover="doc-tab"] [data-doc-action="delete"]').click()
   await page.locator('[data-dialog="doc-delete"] [data-action="delete"]').click()
   await expect(tabs(page)).toHaveText(['Rapport', 'Notes de réunion', 'Annexe A — chiffres'])
+  await expect(tree).toHaveText(['Rapport', 'Notes de réunion', 'Annexe A — chiffres'])
   await page.locator('.fp-toast__action', { hasText: 'Annuler' }).click()
-  await expect(tabs(page)).toHaveText(['Rapport', 'Notes de réunion', 'Rapport (copie)', 'Annexe A — chiffres'])
+  await expect(tree).toHaveText(['Rapport', 'Rapport (copie)', 'Notes de réunion', 'Annexe A — chiffres'])
+  await expect(active(page)).toHaveText('Rapport (copie)')
   // Supprimé pour de bon.
-  await tabs(page).nth(2).click({ button: 'right' })
+  await active(page).click({ button: 'right' })
   await page.locator('[data-popover="doc-tab"] [data-doc-action="delete"]').click()
   await page.locator('[data-dialog="doc-delete"] [data-action="delete"]').click()
   await expect(tabs(page)).toHaveText(['Rapport', 'Notes de réunion', 'Annexe A — chiffres'])
@@ -163,7 +172,7 @@ test('ajouter, renommer, dupliquer, déplacer, supprimer (et annuler), enregistr
   // Mode lecture : on lit les autres documents, sans en ajouter.
   await tab(page, 'view')
   await rb(page, 'view-read')
-  await expect(page.locator('#fp-doc-add')).toBeHidden()
+  await expect(page.locator('#fp-doc-add')).toBeDisabled()
   await tabs(page).nth(1).click()
   await expect(editor(page).getByText('Ordre du jour.')).toBeVisible()
   errors.check()
@@ -173,9 +182,10 @@ test('glisser un onglet : il reste sur sa ligne, les autres s’écartent ; pas 
   const errors = watchErrors(page)
   await openEditor(page, makeFile(info, 'glisser.html', FILE).url)
   // Nouveau document nommé avec Entrée : on écrit dans le document, l'onglet n'a pas le focus.
+  await page.locator('#fp-docs-toggle').click()
   await page.locator('#fp-doc-add').click()
-  await page.locator('[data-doc-rename]').fill('Notes')
-  await page.locator('[data-doc-rename]').press('Enter')
+  await page.locator('[data-tree-rename]').fill('Notes')
+  await page.locator('[data-tree-rename]').press('Enter')
   await expect(tabs(page)).toHaveText(['Rapport', 'Notes', 'Annexe A'])
   await expect(editor(page)).toBeFocused()
   await expect(active(page)).not.toBeFocused()
@@ -303,11 +313,13 @@ test('exporter et imprimer : ce document ou tous les documents', async ({ page }
   errors.check()
 })
 
-test('un seul document : un onglet et +, le fichier ne change pas de forme', async ({ page }, info) => {
+test('un seul document : un onglet et le bouton du volet, le fichier ne change pas de forme', async ({ page }, info) => {
   const errors = watchErrors(page)
   await openEditor(page, makeFile(info, 'seul.html', { format: 'folio/doc', version: 1, meta: { title: 'Seul' }, blocks: ['Texte.'] }).url)
   await expect(tabs(page)).toHaveText(['Seul'])
-  await expect(page.locator('#fp-doc-add')).toBeVisible()
+  await expect(page.locator('#fp-docs-toggle')).toBeVisible()
+  await expect(page.locator('#fp-docs')).toBeHidden()
+  await expect(tabs(page).locator('[data-tab-close]')).toHaveCount(0)
   const f = await file(page)
   expect(f.documents).toBeUndefined()
   expect(f.key).toBeUndefined()

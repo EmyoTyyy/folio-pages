@@ -66,6 +66,9 @@ Rules that matter:
   lists for steps, short complete paragraphs, no placeholders.
 - Equations: LaTeX, `$…$` in a sentence and `{ "type": "equation", "tex": "…" }`
   for a centred one (`"numbered": true` to number it); `\\ce{H2O}` for chemistry.
+- Several documents (only when asked: chapters, annexes…): the first one
+  carries the others in `documents`, each with a `key`; arrange them in
+  folders with `tree` (see *Several documents in one file* in the guide).
 
 ## 3. Put it into the file
 

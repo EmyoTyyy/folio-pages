@@ -6,6 +6,7 @@
 // entre documents, et l'assemblage de tous les documents en un seul (export
 // « tous les documents » : chacun commence une nouvelle page).
 
+import type { TreeItem } from './tree'
 import { BOOKMARK_NAME, DOC_KEY, type Block, type FolioDoc, type StyleDef } from './types'
 
 /** « #clé:ancre » : un lien vers un autre document du fichier (ancre vide : son début). */
@@ -60,22 +61,60 @@ export function ensureKeys(docs: FolioDoc[]): string[] {
 
 /** Le fichier en documents : le premier (sans « documents »), puis les autres. */
 export function splitFile(file: FolioDoc): FolioDoc[] {
-  const { documents, ...first } = file
+  const { documents, tree: _t, ...first } = file
   return [first as FolioDoc, ...(documents ?? [])]
 }
 
-/** Les documents en un fichier : les autres dans le premier ; une clé à chacun s'il y en a plusieurs. */
-export function joinFile(docs: FolioDoc[]): FolioDoc {
+/**
+ * Les documents en un fichier : les autres dans le premier ; une clé à chacun
+ * s'il y en a plusieurs (ou s'ils sont rangés dans des dossiers, `tree`).
+ */
+export function joinFile(docs: FolioDoc[], tree?: TreeItem[]): FolioDoc {
   const [first, ...rest] = docs
-  if (!rest.length) {
-    const { key: _k, documents: _d, ...alone } = first
+  if (!rest.length && !tree) {
+    const { key: _k, documents: _d, tree: _t, ...alone } = first
     return alone as FolioDoc
   }
   const all = docs.map((d) => ({ ...d }))
   ensureKeys(all)
-  for (const d of all) delete d.documents
+  for (const d of all) {
+    delete d.documents
+    delete d.tree
+  }
   const [head, ...others] = all
-  return { ...head, documents: others.map((d) => ({ ...d, id: head.id })) }
+  return { ...head, ...(others.length ? { documents: others.map((d) => ({ ...d, id: head.id })) } : {}), ...(tree ? { tree } : {}) }
+}
+
+/**
+ * Des documents venus d'un autre fichier : chacun reçoit une clé libre ici, et
+ * leurs liens et renvois entre eux suivent. Renvoie la table ancienne → nouvelle clé.
+ */
+export function rekeyDocuments(docs: FolioDoc[], used: Iterable<string>): Map<string, string> {
+  const taken = new Set(used)
+  const map = new Map<string, string>()
+  for (const d of docs) {
+    const old = d.key ?? ''
+    let key = old && DOC_KEY.test(old) && !taken.has(old) ? old : freeKey([...taken])
+    if (taken.has(key)) key = freeKey([...taken])
+    taken.add(key)
+    if (old) map.set(old, key)
+    d.key = key
+  }
+  if (![...map].some(([a, b]) => a !== b)) return map
+  const fix = (o: Record<string, unknown>): Record<string, unknown> => {
+    if (o.type === 'xref' && typeof o.doc === 'string' && map.has(o.doc)) o.doc = map.get(o.doc)
+    for (const f of ['link', 'href']) {
+      const l = typeof o[f] === 'string' ? parseDocLink(o[f] as string) : null
+      if (l && map.has(l.doc)) o[f] = docLink(map.get(l.doc)!, l.anchor)
+    }
+    return o
+  }
+  for (const d of docs) {
+    d.blocks = mapDeep(d.blocks, fix) as Block[]
+    d.headers = mapDeep(d.headers, fix) as FolioDoc['headers']
+    d.footers = mapDeep(d.footers, fix) as FolioDoc['footers']
+  }
+  return map
 }
 
 // --- parcours générique du JSON --------------------------------------------------

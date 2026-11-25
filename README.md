@@ -38,7 +38,7 @@ While you write, a backup copy is kept **in your browser only**. If the tab or
 the browser closes before you save, reopen the file: Folio Pages offers to
 restore the changes, and warns you if the backup is older than the file.
 
-## What it does (version 0.15)
+## What it does (version 0.17)
 
 - **A ribbon**: File first, then Home, Insert, Design, Layout, References,
   Mailings, Review, View, AI and Help, with contextual Table, Picture Format and
@@ -48,7 +48,10 @@ restore the changes, and warns you if the backup is older than the file.
   Comments, a Mode switch (Editing, Reviewing with tracked changes, Viewing) and
   Share on the right; undo and redo next to the title; a command search box
   (<kbd>Alt</kbd> <kbd>Q</kbd>). Scrolling down folds the ribbon away (the tabs
-  stay); scrolling up, or a tab, brings it back.
+  stay); scrolling up, or a tab, brings it back. The ribbon never scrolls
+  sideways: when the window is narrow, groups tighten from the right (small
+  buttons keep their icon, the label moves to the tooltip), then fold into one
+  button that opens the group underneath.
 - **Right-click menu**, anywhere: a "Search the menus" box, Cut, Copy and the
   Paste Options row, then the commands for what was clicked (text, link,
   formula, table, picture), and a small formatting toolbar (Style and Crop for a
@@ -272,15 +275,25 @@ restore the changes, and warns you if the backup is older than the file.
   soft, inverse), line focus on one, three or five lines (the arrow keys move
   it), wider text spacing, and read aloud paragraph by paragraph with the one
   being read highlighted. Settings are remembered; <kbd>Esc</kbd> closes it.
-- **Several documents in one file (new in 0.13)**: tabs at the bottom of the
-  window, like the sheets of a spreadsheet: **+** adds a document,
-  double-click (or <kbd>F2</kbd>) renames it, right-click duplicates, moves
-  or deletes it (with Undo), and tabs can be dragged. Each document is
-  complete and independent (its own page setup, theme, styles, comments and
-  undo history). **Insert → Link** lists the headings and bookmarks of every
-  document; **References → Cross-reference** can point into another document
-  (its text, "Table 2", the number or the page), always up to date. Export and
-  print offer this document or all of them, one after another, each starting
+- **Several documents in one file, in folders (0.13, folders new in 0.17)**:
+  the **Documents** pane at the left (the button at the bottom left, or
+  **View → Documents**) shows the documents of the file as a tree, like the
+  explorer of a code editor: new document, new folder (folders inside
+  folders), **Add files…** (a .docx, .odt, .rtf, Markdown or text file, or
+  another Folio Pages file with all its documents and folders), drag to
+  arrange, files dropped on the pane are added, keyboard as in any tree
+  (arrows, <kbd>Enter</kbd>, <kbd>F2</kbd>, <kbd>Delete</kbd>), and a
+  right-click menu: rename, duplicate, **Save as a separate file** (a new
+  Folio Pages file with that document or folder only), export to PDF, print,
+  delete (with Undo). The pane can be resized. Open documents are tabs at the
+  bottom of the window: × or a middle click closes a tab (the document stays
+  in the file), tabs can be dragged, and the browser remembers which ones
+  were open. Each document is complete and independent (its own page setup,
+  theme, styles, comments and undo history). **Insert → Link** lists the
+  headings and bookmarks of every document; **References → Cross-reference**
+  can point into another document (its text, "Table 2", the number or the
+  page), always up to date. Export and print offer this document, its folder,
+  all of them, or the documents you tick, one after another, each starting
   on a new page.
 - **Writing tools (new in 0.11)**: check lists (click a box to tick it, or
   type `[ ] `); callouts (Note, Tip, Important, Warning, Caution, or type
@@ -305,6 +318,13 @@ restore the changes, and warns you if the backup is older than the file.
   check box fields, a protected form), a Draw tab (pen, highlighter, eraser),
   Inspect Document and redaction, BibTeX / RIS / CSL-JSON sources, Vancouver
   and Chicago notes citation styles, opening `.odt` and `.rtf` files.
+- **Draw (new in 0.16)**: pen, pencil (grainy) and highlighter, each with its
+  colours (or any colour) and a thickness slider; <kbd>Shift</kbd> draws a
+  straight line. Stroke eraser or point eraser (cuts a stroke where it passes).
+  The lasso takes strokes to move, delete or convert. **Ink to shape** turns a
+  hand-drawn line, arrow, rectangle, ellipse, triangle or diamond into a real
+  shape; **Ink replay** redraws the ink stroke by stroke. Shapes, text boxes and
+  free pictures are at hand on the same tab.
 - **Interface**: light or dark, or following the system (the page stays white).
 - **Also**: code blocks with syntax highlighting, links, special characters,
   page breaks, fields (`{{page}}`, `{{title}}`, `{{date:DD/MM/YYYY}}`…),
@@ -476,7 +496,9 @@ Several documents: a cross-reference to the page of another document shows
 the last page known, which is updated once that document has been shown (and
 kept in the file). Exporting all the documents uses the theme and styles of the
 first one. Undoing **Replace from JSON** with several documents restores the
-document on screen only.
+document on screen only. **Add files…** copies a file into this one: later changes to
+the original file on disk do not come back (browsers can't keep several files
+open for writing everywhere).
 
 Notes: a footnote stays whole on its page (a very long one is not continued on
 the next page).

@@ -11,6 +11,7 @@ import { resolveFieldName } from './fields'
 import { CHART_LIMITS } from './chart'
 import { DIAGRAM_COLORS, DIAGRAM_KINDS, DIAGRAM_LIMITS } from './diagram'
 import { PICTURE_LAYOUTS, PICTURES_LIMITS, isPictureSrc } from './pictures'
+import { TREE_LIMITS } from './tree'
 import { SHAPE_ALIASES, SHAPE_ID, SHAPE_KINDS, SHAPE_LIMITS } from './shapes'
 import { CALLOUT_KINDS, CHART_KINDS, FORM_KINDS, INK_LIMITS, UNDERLINE_STYLES, UNICODE_RANGE, AUTHORITY_CATEGORIES, BOOKMARK_NAME, DOC_KEY, CITATION_STYLES, SOURCE_ID, SOURCE_TYPES, XREF_SHOWS, CODE_COLORS, COMMENT_ID, FIELD_NAMES, ID_PATTERN, KEY_PATTERN, NOTE_FORMATS, NOTE_RESTARTS, NUMBERINGS, PAGE_NUMBER_FORMATS, PAPER_SIZES, TABLE_STYLES, THEME_COLORS, MERGE_OPS, MERGE_TYPES, ADDRESS_FIELDS, LINE_DASHES, LINE_ENDS, SHAPE_WRAPS } from './types'
 
@@ -492,7 +493,7 @@ const baseParaFields = (): Record<string, Desc> => ({
   ink: arr(
     obj(
       {
-        tool: enumOf(['pen', 'highlighter'], { def: 'pen' }),
+        tool: enumOf(['pen', 'pencil', 'highlighter'], { def: 'pen', doc: 'pen (solid), pencil (grainy, slightly lighter) or highlighter (wide, see-through).' }),
         color: color(),
         width: num({ min: 0.25, max: 40, step: 0.25, def: 2 }),
         points: arr(num({ min: -INK_LIMITS.coord, max: INK_LIMITS.coord }), { max: INK_LIMITS.points * 2, doc: 'x, y, x, y… in points from the top-left corner of the paragraph.' }),
@@ -1226,6 +1227,10 @@ const documentDesc = obj(
       max: LIMITS.documents,
       doc: 'More documents in the same file, each complete and independent (its own title, page setup, theme, styles, content…), shown as tabs at the bottom of the window. Only in the first document. Give each document, this one included, a "key".',
     }),
+    tree: arr(ref('TreeItem'), {
+      max: TREE_LIMITS.items,
+      doc: 'With several documents: folders to arrange them, shown as a tree in the Documents pane. Only in the first document. Each item is the "key" of a document, or a folder {"folder": "Title", "items": [...]}; folders can hold folders. Documents left out go at the end. Leave it out when there are no folders.',
+    }),
     template: bool({ def: false, doc: 'A template: each time the file opens, a new document starts from it.' }),
     readOnly: bool({ def: false, doc: 'A read-only copy: the file opens in reading view, without editing.' }),
     markdown: str({
@@ -1246,4 +1251,17 @@ export const DEFS: Record<string, Desc> = {
   Inline: inline,
   ListItem: listItem,
   Cell: cell,
+  TreeItem: either(
+    [
+      str({ max: 32, pattern: DOC_KEY, doc: 'The key of a document of this file.' }),
+      obj(
+        {
+          folder: str({ max: TREE_LIMITS.title, doc: 'The folder name.' }),
+          items: arr(ref('TreeItem'), { max: TREE_LIMITS.items, doc: 'What the folder holds: document keys and folders.' }),
+        },
+        { required: ['folder'], doc: 'A folder.' },
+      ),
+    ],
+    { doc: 'A document (its key) or a folder.' },
+  ),
 }

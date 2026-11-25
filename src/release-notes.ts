@@ -2,6 +2,32 @@
 // montré une fois après une mise à jour (et à la demande, Aide → Nouveautés).
 
 export const RELEASE_NOTES: Record<string, { fr: string[]; en: string[] }> = {
+  '0.17.0': {
+    fr: [
+      'Volet Documents : les documents du fichier rangés dans des dossiers (et des dossiers dans des dossiers), comme l’explorateur d’un éditeur de code. Le bouton en bas à gauche (ou Affichage → Documents) le montre ou le cache ; on glisse pour ranger, on l’élargit en tirant son bord.',
+      'Les documents ouverts sont des onglets en bas : × ou un clic du milieu ferme un onglet, le document reste dans le fichier. Le navigateur se souvient des onglets ouverts et des dossiers repliés.',
+      'Ajouter des fichiers : un .docx, un .odt, un .rtf, du Markdown, du texte, ou un autre fichier Folio Pages avec tous ses documents et dossiers (aussi en les déposant sur le volet). Clic droit : enregistrer un document ou un dossier comme fichier à part, l’exporter en PDF, l’imprimer.',
+      'Export et impression : ce document, son dossier, tous, ou les documents que vous cochez.',
+    ],
+    en: [
+      'Documents pane: the documents of the file arranged in folders (and folders in folders), like the explorer of a code editor. The button at the bottom left (or View → Documents) shows or hides it; drag to arrange, drag its edge to widen it.',
+      'Open documents are tabs at the bottom: × or a middle click closes a tab, the document stays in the file. The browser remembers the open tabs and the collapsed folders.',
+      'Add files: a .docx, .odt, .rtf, Markdown or text file, or another Folio Pages file with all its documents and folders (also by dropping them on the pane). Right-click: save a document or a folder as a separate file, export it to PDF, print it.',
+      'Export and print: this document, its folder, all of them, or the documents you tick.',
+    ],
+  },
+  '0.16.0': {
+    fr: [
+      'Onglet Dessin : crayon (au grain de mine), lasso pour prendre des traits (les déplacer, les supprimer, les convertir), gomme partielle qui coupe un trait là où elle passe. Chaque stylo a ses couleurs, une couleur au choix et une épaisseur au curseur ; Maj trace un trait droit. Formes, zones de texte et images libres sont aussi dans l’onglet.',
+      'Encre en forme : un trait, une flèche, un rectangle, une ellipse, un triangle ou un losange dessinés à la main deviennent de vraies formes, modifiables et gardées en .docx et .odt. Rejouer le dessin le refait trait après trait.',
+      'Le ruban tient toujours dans la fenêtre : libellés plus courts (le complet reste dans l’infobulle), grands boutons ajustés, un bouton principal par groupe ; quand la place manque, les groupes se resserrent puis se replient en un bouton qui les ouvre dessous.',
+    ],
+    en: [
+      'Draw tab: a pencil (with a lead grain), a lasso to take strokes (move, delete, convert them), a point eraser that cuts a stroke where it passes. Each pen has its colours, any colour, and a thickness slider; Shift draws a straight line. Shapes, text boxes and free pictures are on the tab too.',
+      'Ink to shape: a hand-drawn line, arrow, rectangle, ellipse, triangle or diamond becomes a real shape, editable and kept in .docx and .odt. Ink replay redraws the ink stroke by stroke.',
+      'The ribbon always fits the window: shorter labels (the full one stays in the tooltip), tighter large buttons, one main button per group; when space runs out, groups tighten, then fold into one button that opens them underneath.',
+    ],
+  },
   '0.15.0': {
     fr: [
       'Formes et zones de texte : Insertion → Formes (plus de 140 formes : traits et flèches, rectangles, formes de base, flèches pleines, équations, organigramme, étoiles et bannières, bulles) et Insertion → Zone de texte. Une forme suit son paragraphe mais se place librement : on la déplace, la redimensionne, la fait pivoter, on écrit dedans.',

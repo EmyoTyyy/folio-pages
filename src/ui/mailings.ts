@@ -1028,7 +1028,7 @@ export function mailingsGroups(app: FolioApp): Group[] {
       label: t('mail.group'),
       controls: [
         button({ id: 'mm-send-doc', label: t('mail.sendDoc'), icon: I.mailSend, large: true, run: () => sendDocumentDialog(app) }),
-        button({ id: 'mm-send-each', label: t('mail.perRecipient'), icon: I.mailMany, large: true, run: () => personalEmails(app) }),
+        button({ id: 'mm-send-each', label: t('mail.perRecipient'), icon: I.mailMany, text: true, run: () => personalEmails(app) }),
         dropdown({
           id: 'mm-mail-via',
           label: t('mm.emailVia'),
@@ -1073,7 +1073,7 @@ export function mailingsGroups(app: FolioApp): Group[] {
           id: 'mm-recipients',
           label: t('mm.selectRecipients'),
           icon: I.mmRecipients,
-          large: true,
+          text: () => t('mm.selectRecipients'),
           menu: () =>
             h(
               'div',
@@ -1089,17 +1089,17 @@ export function mailingsGroups(app: FolioApp): Group[] {
                 : []),
             ),
         }),
-        button({ id: 'mm-edit-list', label: t('mm.editList'), icon: I.mmEditList, large: true, enabled: hasList, run: () => editListDialog(app, true) }),
+        button({ id: 'mm-edit-list', label: t('mm.editList'), icon: I.mmEditList, text: true, enabled: hasList, run: () => editListDialog(app, true) }),
       ],
     },
     {
       id: 'mm-write',
       label: t('mm.writeGroup'),
       controls: [
-        button({ id: 'mm-highlight', label: t('mm.highlight'), icon: I.highlight, large: true, active: () => mergeViewOf(app.state).highlight, run: () => app.run(setMergeView({ highlight: !mergeViewOf(app.state).highlight })) }),
-        button({ id: 'mm-address', label: t('mm.address'), icon: I.mmAddress, large: true, enabled: hasList, run: () => addressDialog(app) }),
-        button({ id: 'mm-greeting', label: t('mm.greeting'), icon: I.mmGreeting, large: true, enabled: hasList, run: () => greetingDialog(app) }),
         dropdown({ id: 'mm-insert-field', label: t('mm.insertField'), icon: I.mmField, large: true, enabled: hasList, menu: fieldMenu }),
+        button({ id: 'mm-highlight', label: t('mm.highlight'), icon: I.highlight, text: true, active: () => mergeViewOf(app.state).highlight, run: () => app.run(setMergeView({ highlight: !mergeViewOf(app.state).highlight })) }),
+        button({ id: 'mm-address', label: t('mm.address'), icon: I.mmAddress, text: true, enabled: hasList, run: () => addressDialog(app) }),
+        button({ id: 'mm-greeting', label: t('mm.greeting'), icon: I.mmGreeting, text: true, enabled: hasList, run: () => greetingDialog(app) }),
         dropdown({ id: 'mm-rules', label: t('mm.rules'), icon: I.mmRules, text: () => t('mm.rules'), enabled: hasList, menu: rulesMenu }),
         button({ id: 'mm-match', label: t('mm.match'), icon: I.mmMatch, text: true, enabled: hasList, run: () => matchFieldsDialog(app) }),
         button({ id: 'mm-update-labels', label: t('mm.updateLabels'), icon: I.labels, text: true, enabled: isLabels, run: () => labelsDialog(app, true) }),

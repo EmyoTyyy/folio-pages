@@ -1856,7 +1856,7 @@ textarea {
 .fp-rb-group {
   display: flex;
   flex-direction: column;
-  padding: 0 8px;
+  padding: 0 6px;
   border-right: 1px solid var(--fp-border);
   flex: 0 0 auto;
 }
@@ -1941,7 +1941,7 @@ textarea {
   min-height: 62px;
   min-width: 52px;
   max-width: 86px;
-  padding: 4px 6px;
+  padding: 4px 5px;
   gap: 3px;
   white-space: normal;
   text-align: center;
@@ -1953,6 +1953,9 @@ textarea {
 }
 .fp-rb-btn__label {
   font-size: 12px;
+}
+.fp-rb-btn--large > .fp-rb-btn__label {
+  text-wrap: balance;
 }
 .fp-rb-drop > svg:last-child,
 .fp-rb-arrow svg {
@@ -6613,6 +6616,100 @@ input[type='range']:focus-visible::-moz-range-thumb {
 [data-ink-tool='eraser'] .fp-ink-layer {
   cursor: cell;
 }
+[data-ink-tool='lasso'] .fp-ink-layer {
+  cursor: crosshair;
+}
+[data-ink-tool='lasso'] .fp-ink-layer.is-over-selection {
+  cursor: move;
+}
+/* Lasso : la boucle en cours, puis les traits pris et leur cadre. */
+.fp-ink-lasso {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.fp-ink-lasso path {
+  fill: color-mix(in srgb, var(--fp-accent) 8%, transparent);
+  stroke: var(--fp-accent);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+}
+.fp-ink-sel {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.fp-ink-sel__strokes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fp-ink-sel__strokes path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fp-accent) 30%, transparent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fp-ink-sel__box {
+  position: absolute;
+  border: 1.5px dashed var(--fp-accent);
+  border-radius: 3px;
+}
+/* Rejouer : le dessin se refait par-dessus la page, l'original attend. */
+.fp-ink-replaying .fp-prose .fp-ink {
+  visibility: hidden;
+}
+.fp-ink-replay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  cursor: pointer;
+}
+.fp-ink-replay > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+/* Couleurs et épaisseur d'un stylo. */
+.fp-ink-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px;
+}
+.fp-ink-menu__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.fp-ink-menu__row input[type='range'] {
+  flex: 1;
+  min-width: 110px;
+  accent-color: var(--fp-accent);
+}
+.fp-ink-menu__value {
+  min-width: 42px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fp-text-dim);
+}
+.fp-ink-menu__custom {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--fp-border);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
 .fp-ink-layer > .fp-ink {
   z-index: auto;
 }
@@ -7658,11 +7755,21 @@ body.fp-shape-dragging * {
 }
 
 /* Insertion → Formes : la galerie. */
+/* La galerie défile seule, verticalement ; sa largeur est celle de la grille, plus la place
+   de la barre de défilement (jamais de défilement horizontal). */
+.fp-popover--inner-scroll {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 .fp-shapes {
-  width: 300px;
-  max-height: min(70vh, 560px);
+  min-height: 0;
+  max-height: calc(min(70vh, 520px) - 14px);
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 6px 8px 8px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  padding: 2px 4px 4px 6px;
 }
 .fp-shapes__title {
   margin: 8px 2px 4px;
@@ -8363,4 +8470,279 @@ body.fp-shape-dragging * {
   .fp-doctabs {
     display: none !important;
   }
+}
+
+/* ------------------------------------------- ruban : resserré, replié --- */
+
+/* Le bouton d'un groupe replié n'apparaît que lorsque le groupe l'est. */
+.fp-rb-fold {
+  display: none;
+}
+.fp-rb-group.is-folded > .fp-rb-fold {
+  display: inline-flex;
+  align-self: flex-start;
+}
+.fp-rb-group.is-folded > .fp-rb-group__body {
+  display: none;
+}
+.fp-rb-group.is-folded > .fp-rb-group__foot > span {
+  visibility: hidden;
+}
+.fp-rb-fold > svg:last-child {
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
+}
+.fp-rb-fold[aria-expanded='true'] {
+  background: var(--fp-hover);
+}
+/* Resserré : les petits boutons gardent leur icône, leur libellé passe dans l'infobulle. */
+.fp-rb-group.is-compact .fp-rb-stack > .fp-rb-btn:has(> svg:first-child) > .fp-rb-btn__label,
+.fp-rb-group.is-compact .fp-rb-stack > .fp-rb-split > .fp-rb-btn:first-child:has(> svg:first-child) > .fp-rb-btn__label,
+.fp-rb-group.is-compact .fp-rb-stack > .fp-rb-field:has(> svg:first-child) > span:not(.fp-rb-unit) {
+  display: none;
+}
+.fp-rb-group.is-compact .fp-rb-stack > .fp-rb-btn.has-text:has(> svg:first-child) {
+  padding: 0 5px;
+}
+.fp-rb-group.is-compact .fp-rb-gallery-box .fp-rb-gallery,
+.fp-rb-group.is-compact .fp-rb-gallery--themes {
+  max-width: 260px;
+}
+/* Un groupe replié, ouvert sous son bouton. */
+.fp-rb-flyout {
+  position: fixed;
+  z-index: 49;
+  display: flex;
+  padding: 8px 10px;
+  max-width: calc(100vw - 16px);
+  background: var(--fp-surface);
+  border: 1px solid var(--fp-border);
+  border-radius: var(--fp-radius);
+  box-shadow: var(--fp-shadow-pop);
+}
+.fp-rb-flyout > .fp-rb-group__body {
+  flex-wrap: nowrap;
+  max-width: none;
+}
+
+/* ------------------------------------------- volet Documents : l'arbre --- */
+
+.fp-docs .fp-nav__head {
+  padding: 6px 4px 4px 14px;
+  gap: 4px;
+}
+.fp-docs__actions {
+  display: flex;
+  align-items: center;
+}
+.fp-docs__actions .fp-iconbtn {
+  width: 26px;
+  height: 26px;
+}
+.fp-docs__actions .fp-iconbtn svg {
+  width: 16px;
+  height: 16px;
+}
+.fp-docs__actions .fp-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.fp-docs__tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 6px 24px;
+}
+.fp-docs__tree.is-drop-end {
+  box-shadow: inset 0 -2px 0 var(--fp-accent);
+}
+.fp-tree__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px 0 calc(4px + var(--depth, 0) * 14px);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--fp-text);
+  cursor: pointer;
+  user-select: none;
+  /* Les traits qui relient un dossier à son contenu. */
+  background-image: repeating-linear-gradient(to right, transparent 0 11px, var(--fp-border) 11px 12px, transparent 12px 14px);
+  background-size: calc(var(--depth, 0) * 14px) 100%;
+  background-position: 4px 0;
+  background-repeat: no-repeat;
+}
+.fp-tree__row:hover {
+  background-color: color-mix(in srgb, var(--fp-text) 7%, transparent);
+}
+.fp-tree__row.is-selected:not(.is-active) {
+  background-color: color-mix(in srgb, var(--fp-text) 5%, transparent);
+}
+.fp-tree__row.is-active {
+  background-color: var(--fp-accent-wash);
+  color: var(--fp-accent);
+  font-weight: 600;
+}
+.fp-tree__row:focus-visible {
+  outline: 2px solid var(--fp-accent);
+  outline-offset: -2px;
+}
+.fp-tree__twisty {
+  flex: 0 0 14px;
+  display: grid;
+  place-items: center;
+  color: var(--fp-text-dim);
+  transition: transform 140ms var(--fp-ease);
+}
+.fp-tree__twisty svg {
+  width: 12px;
+  height: 12px;
+}
+.fp-tree__row[aria-expanded='true'] > .fp-tree__twisty {
+  transform: rotate(90deg);
+}
+.fp-tree__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--fp-text-dim);
+}
+.fp-tree__row.is-folder > .fp-tree__icon,
+.fp-tree__row.is-active > .fp-tree__icon {
+  color: var(--fp-accent);
+}
+.fp-tree__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.fp-tree__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fp-tree__input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--fp-accent);
+  border-radius: 5px;
+  background: var(--fp-surface);
+  color: var(--fp-text-body);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+.fp-tree__row.is-dragging {
+  opacity: 0.45;
+}
+.fp-tree__row.is-drop-before::before,
+.fp-tree__row.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: calc(4px + var(--depth, 0) * 14px);
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fp-accent);
+  pointer-events: none;
+}
+.fp-tree__row.is-drop-before::before {
+  top: -1px;
+}
+.fp-tree__row.is-drop-after::after {
+  bottom: -1px;
+}
+.fp-tree__row.is-drop-inside {
+  background-color: var(--fp-accent-wash);
+  box-shadow: inset 0 0 0 1.5px var(--fp-accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fp-tree__twisty {
+    transition: none;
+  }
+}
+.fp-focus-mode .fp-docs {
+  display: none;
+}
+
+/* Onglets : le × de fermeture, et le bouton du volet. */
+.fp-doctab__close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -6px;
+  border-radius: 4px;
+  color: var(--fp-text-dim);
+  opacity: 0;
+  transition: opacity 120ms var(--fp-ease), background 120ms var(--fp-ease);
+}
+.fp-doctab:hover > .fp-doctab__close,
+.fp-doctab.is-active > .fp-doctab__close,
+.fp-doctab:focus-visible > .fp-doctab__close {
+  opacity: 1;
+}
+.fp-doctab__close:hover {
+  background: color-mix(in srgb, var(--fp-text) 12%, transparent);
+  color: var(--fp-text-body);
+}
+.fp-doctab__close svg {
+  width: 12px;
+  height: 12px;
+}
+.fp-doctabs__add[aria-pressed='true'] {
+  background: var(--fp-accent-wash);
+  color: var(--fp-accent);
+}
+
+/* Fenêtre « Quels documents ? » : l'arbre à cocher. */
+.fp-scope__tree {
+  max-height: 220px;
+  overflow: auto;
+  margin: 4px 0 2px 26px;
+  padding: 6px 10px;
+  border: 1px solid var(--fp-border);
+  border-radius: 8px;
+}
+.fp-scope__tree[hidden] {
+  display: none;
+}
+.fp-scope__row {
+  padding-left: calc(var(--depth, 0) * 18px);
+}
+.fp-docs {
+  width: var(--docs-w, 250px);
+}
+@media (min-width: 861px) {
+  .fp-docs {
+    position: relative;
+  }
+}
+.fp-docs__resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.fp-docs__resize:hover,
+.fp-docs__resize:focus-visible {
+  background: var(--fp-accent);
+  opacity: 0.5;
+  outline: none;
+}
+.fp-point-anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }

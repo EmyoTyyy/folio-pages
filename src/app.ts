@@ -28,7 +28,8 @@ import { settings } from './settings'
 import type { Report } from './format/dsl'
 import { prettyJson } from './format/json'
 import { loadDocument, type LoadResult } from './format/load'
-import { anchorSlug, combineDocuments, ensureKeys, freeKey, joinFile, parseDocLink, splitFile } from './format/documents'
+import { anchorSlug, combineDocuments, ensureKeys, freeKey, joinFile, parseDocLink, rekeyDocuments, splitFile } from './format/documents'
+import { buildTree, canMove, cleanTitle, countFolders, docOrder, docsIn, folderById, folderId, insertNode, locate, moveNode as moveTreeNode, rekeyTree, subtree, TREE_LIMITS, treeJson, treeSignature, type FolderNode, type TreeNode } from './format/tree'
 import { crossRefValue, refsKey, type OtherDoc } from './editor/refs'
 import { emptyMeta, mintId, type FolioDoc } from './format/types'
 import type { Key } from './i18n/dict'
@@ -79,6 +80,7 @@ function contentKey(doc: FolioDoc): string {
     blocks: doc.blocks,
     assets: doc.assets,
     documents: doc.documents?.map(contentKey),
+    tree: doc.tree,
   })
 }
 
@@ -97,6 +99,17 @@ interface DocSlot {
   /** Dernières pages connues de ses signets (vue page), pour les renvois des autres documents. */
   pages: Map<string, string> | null
 }
+
+/** Une place dans l'arbre : un dossier (null : la racine) et un rang. */
+export interface TreePlace {
+  parent: string | null
+  index: number
+}
+
+/** L'arbre tel que le montre le volet Documents. */
+export type TreeView =
+  | { kind: 'folder'; id: string; title: string; count: number; children: TreeView[] }
+  | { kind: 'doc'; key: string; title: string; active: boolean; dirty: boolean; open: boolean }
 
 export type ShortcutName = Parameters<NonNullable<EditorContext['onShortcut']>>[0]
 
@@ -196,6 +209,10 @@ export class FolioApp {
    */
   private demoKey: string | null = null
   private active = 0
+  /** Les dossiers et l'ordre des documents (l'ordre de `slots` est toujours celui de l'arbre). */
+  private tree: TreeNode[] = []
+  /** Les documents ouverts en onglets, dans l'ordre des onglets (celui qui est affiché en fait partie). */
+  private openKeys: string[] = []
   /** Ordre des documents au dernier enregistrement (ajout, suppression, déplacement : à enregistrer). */
   private savedOrder = ''
   private plugins: ReturnType<typeof editorPlugins> = []
@@ -308,8 +325,7 @@ export class FolioApp {
     }
     this.editorCtx = ctx
     this.plugins = editorPlugins(ctx)
-    const docs = splitFile(init.doc)
-    ensureKeys(docs)
+    const docs = this.arrange(init.doc)
     const state = this.makeState(docs[0])
     this.savedDoc = init.boot === 'recovered-text' ? null : state.doc
     this.slots = docs.map((d, i) => {
@@ -317,6 +333,7 @@ export class FolioApp {
       return { key: d.key!, state: st, saved: st && init.boot !== 'recovered-text' ? st.doc : null, scroll: 0, pages: null }
     })
     this.savedOrder = this.order()
+    this.openKeys = this.initialTabs()
     if (this.isDemo) this.demoKey = this.slots[0].key
     this.docStyle = h('style', { id: 'fp-doc-style', 'data-folio-transient': '' })
     document.head.append(this.docStyle)
@@ -553,8 +570,263 @@ export class FolioApp {
     return state
   }
 
+  /** L'arbre et l'ordre des documents : ce qui doit être enregistré quand ils changent. */
   private order(): string {
-    return this.slots.map((s) => s.key).join(',')
+    return treeSignature(this.tree)
+  }
+
+  /** Les documents d'un fichier, dans l'ordre de son arbre (qui devient celui de la session). */
+  private arrange(file: FolioDoc): FolioDoc[] {
+    const docs = splitFile(file)
+    ensureKeys(docs)
+    this.tree = buildTree(file.tree, docs.map((d) => d.key!))
+    const rank = new Map(docOrder(this.tree).map((k, i) => [k, i]))
+    return docs.sort((a, b) => rank.get(a.key!)! - rank.get(b.key!)!)
+  }
+
+  /** Les documents suivent l'ordre de l'arbre ; le document affiché reste le même. */
+  private syncOrder(): void {
+    const key = this.slots[this.active].key
+    const rank = new Map(docOrder(this.tree).map((k, i) => [k, i]))
+    this.slots.sort((a, b) => (rank.get(a.key) ?? 1e9) - (rank.get(b.key) ?? 1e9))
+    this.active = this.slots.findIndex((s) => s.key === key)
+  }
+
+  // --- onglets : les documents ouverts ----------------------------------------------
+
+  private get tabsKey(): string {
+    return `folio-pages:tabs:${this.identity.id}`
+  }
+
+  /** Les onglets de la dernière fois (ce navigateur), sinon les documents hors des dossiers. */
+  private initialTabs(): string[] {
+    const keys = new Set(this.slots.map((s) => s.key))
+    let open: string[] = []
+    try {
+      const raw = JSON.parse(localStorage.getItem(this.tabsKey) ?? 'null') as unknown
+      if (Array.isArray(raw)) open = raw.filter((k): k is string => typeof k === 'string' && keys.has(k))
+    } catch {
+      /* rien de gardé */
+    }
+    if (!open.length) open = this.tree.filter((n) => n.kind === 'doc').map((n) => (n as { key: string }).key)
+    const shown = this.slots[this.active].key
+    if (!open.includes(shown)) open.unshift(shown)
+    return [...new Set(open)]
+  }
+
+  private saveTabs(): void {
+    try {
+      localStorage.setItem(this.tabsKey, JSON.stringify(this.openKeys))
+    } catch {
+      /* stockage indisponible : les onglets ne seront pas retrouvés */
+    }
+  }
+
+  /** Ouvre un onglet (juste après celui qui est affiché) sans changer de document. */
+  private openTab(key: string): void {
+    if (this.openKeys.includes(key)) return
+    const at = this.openKeys.indexOf(this.slots[this.active]?.key ?? '')
+    this.openKeys.splice(at < 0 ? this.openKeys.length : at + 1, 0, key)
+    this.saveTabs()
+  }
+
+  /** Les onglets : les documents ouverts, dans leur ordre. */
+  get tabs(): { key: string; title: string; active: boolean; dirty: boolean }[] {
+    const all = new Map(this.documents.map((d) => [d.key, d]))
+    return this.openKeys.map((k) => all.get(k)).filter((d): d is NonNullable<typeof d> => !!d)
+  }
+
+  /** Ferme un onglet (le document reste dans le fichier) ; le dernier onglet ne se ferme pas. */
+  closeTab(key: string): boolean {
+    const i = this.openKeys.indexOf(key)
+    if (i < 0 || this.openKeys.length < 2 || this.realState) return false
+    if (key === this.activeKey) {
+      const next = this.openKeys[i + 1] ?? this.openKeys[i - 1]
+      if (!this.switchToKey(next)) return false
+    }
+    this.openKeys.splice(this.openKeys.indexOf(key), 1)
+    this.saveTabs()
+    this.notify()
+    return true
+  }
+
+  /** Ferme les autres onglets. */
+  closeOtherTabs(key: string): void {
+    if (!this.openKeys.includes(key)) return
+    if (key !== this.activeKey && !this.switchToKey(key)) return
+    this.openKeys = [key]
+    this.saveTabs()
+    this.notify()
+  }
+
+  /** Change un onglet de place (l'ordre des documents dans le fichier ne change pas). */
+  moveTab(from: number, to: number): void {
+    const n = this.openKeys.length
+    if (from === to || from < 0 || to < 0 || from >= n || to >= n) return
+    const [k] = this.openKeys.splice(from, 1)
+    this.openKeys.splice(to, 0, k)
+    this.saveTabs()
+    this.notify()
+  }
+
+  // --- l'arbre : dossiers et documents ----------------------------------------------
+
+  /** L'arbre, pour le volet Documents. */
+  get docTree(): TreeView[] {
+    const info = new Map(this.documents.map((d) => [d.key, d]))
+    const open = new Set(this.openKeys)
+    const view = (list: TreeNode[]): TreeView[] =>
+      list.map((n) => {
+        if (n.kind === 'folder') return { kind: 'folder', id: n.id, title: n.title, count: docsIn(n).length, children: view(n.children) }
+        const d = info.get(n.key)!
+        return { kind: 'doc', key: n.key, title: d.title, active: d.active, dirty: d.dirty, open: open.has(n.key) }
+      })
+    return view(this.tree)
+  }
+
+  isFolder(ref: string): boolean {
+    return folderById(this.tree, ref) !== null
+  }
+
+  /** On peut ranger `ref` dans `parent` (pas un dossier dans lui-même, pas trop profond). */
+  canMoveNode(ref: string, parent: string | null): boolean {
+    return canMove(this.tree, ref, parent)
+  }
+
+  get hasFolders(): boolean {
+    return this.tree.some((n) => n.kind === 'folder')
+  }
+
+  /** Le dossier d'un document, ou d'un dossier (null : à la racine). */
+  parentOf(ref: string): { id: string; title: string } | null {
+    const p = locate(this.tree, ref)?.parent
+    return p ? { id: p.id, title: p.title } : null
+  }
+
+  /** Les documents d'un dossier (et de ses sous-dossiers), dans l'ordre. */
+  folderDocs(id: string): string[] {
+    const f = folderById(this.tree, id)
+    return f ? docsIn(f) : []
+  }
+
+  folderTitle(id: string): string {
+    return folderById(this.tree, id)?.title ?? ''
+  }
+
+  /** Juste après un élément (par défaut : le document affiché), dans son dossier. */
+  placeAfter(ref = this.activeKey): TreePlace {
+    const at = locate(this.tree, ref)
+    return at ? { parent: at.parent?.id ?? null, index: at.index + 1 } : { parent: null, index: Infinity }
+  }
+
+  /** Après un changement de l'arbre : l'ordre, la copie de secours, l'interface. */
+  private treeChanged(): void {
+    this.syncOrder()
+    if (this.isDemo) this.isDemo = false
+    this.scheduleSnapshot()
+    this.notify()
+  }
+
+  /** Nouveau dossier ; renvoie son identifiant (null : trop de dossiers ou trop profond). */
+  addFolder(title: string, place: TreePlace = this.placeAfter()): string | null {
+    if (countFolders(this.tree) >= TREE_LIMITS.folders) {
+      toast(t('tree.tooMany'), { kind: 'info' })
+      return null
+    }
+    const parentDepth = place.parent ? (locate(this.tree, place.parent)?.depth ?? 0) + 1 : 0
+    if (parentDepth >= TREE_LIMITS.depth) {
+      toast(t('tree.tooDeep'), { kind: 'info' })
+      return null
+    }
+    const node: FolderNode = { kind: 'folder', id: folderId(), title: cleanTitle(title) || t('tree.newFolder'), children: [] }
+    insertNode(this.tree, node, place.parent, place.index)
+    this.treeChanged()
+    return node.id
+  }
+
+  renameFolder(id: string, title: string): void {
+    const f = folderById(this.tree, id)
+    const v = cleanTitle(title)
+    if (!f || !v || v === f.title) return
+    f.title = v
+    this.treeChanged()
+  }
+
+  /** Déplace un document ou un dossier ; false si c'est impossible (un dossier dans lui-même). */
+  moveNode(ref: string, parent: string | null, index: number): boolean {
+    if (this.reading || this.realState) return false
+    const before = treeSignature(this.tree)
+    if (!moveTreeNode(this.tree, ref, parent, index)) return false
+    if (treeSignature(this.tree) !== before) this.treeChanged()
+    return true
+  }
+
+  /**
+   * Retire un document ou un dossier (avec tout ce qu'il contient) ; renvoie de
+   * quoi l'y remettre (Annuler), ou null s'il ne resterait aucun document.
+   */
+  removeNode(ref: string): (() => void) | null {
+    const at = locate(this.tree, ref)
+    if (!at || this.realState) return null
+    const keys = at.node.kind === 'doc' ? [at.node.key] : docsIn(at.node)
+    const gone = new Set(keys)
+    if (keys.length >= this.slots.length) return null
+    // Le document affiché s'en va : on passe à un onglet voisin, sinon au premier document qui reste.
+    if (gone.has(this.activeKey)) {
+      const tabs = this.openKeys.filter((k) => !gone.has(k))
+      const i = this.openKeys.indexOf(this.activeKey)
+      const next = this.openKeys.slice(i + 1).find((k) => !gone.has(k)) ?? tabs[tabs.length - 1] ?? this.slots.find((s) => !gone.has(s.key))!.key
+      this.switchToKey(next)
+    }
+    const parent = at.parent?.id ?? null
+    const index = at.index
+    const node = at.node
+    at.list.splice(at.index, 1)
+    const slots = this.slots.filter((s) => gone.has(s.key))
+    const tabs = this.openKeys.filter((k) => gone.has(k))
+    const shown = this.activeKey
+    this.slots = this.slots.filter((s) => !gone.has(s.key))
+    this.active = this.slots.findIndex((s) => s.key === shown)
+    this.openKeys = this.openKeys.filter((k) => !gone.has(k))
+    if (!this.openKeys.length) this.openKeys = [this.activeKey]
+    this.saveTabs()
+    this.treeChanged()
+    return () => {
+      if (slots.some((s) => this.slots.some((x) => x.key === s.key))) return
+      insertNode(this.tree, node, parent && folderById(this.tree, parent) ? parent : null, index)
+      this.slots.push(...slots)
+      for (const k of tabs) this.openTab(k)
+      this.syncOrder()
+      this.switchToKey(keys[0])
+      this.treeChanged()
+    }
+  }
+
+  /**
+   * Ajoute les documents d'un autre fichier (avec ses dossiers) : plusieurs
+   * documents arrivent dans un dossier à son nom. Renvoie la clé du premier.
+   */
+  importDocuments(file: FolioDoc, name: string, place: TreePlace = this.placeAfter()): string | null {
+    const docs = splitFile(file).map((d) => ({ ...d, id: this.identity.id, template: false, readOnly: false }))
+    if (this.slots.length + docs.length > 50) {
+      toast(t('docs.tooMany'), { kind: 'info' })
+      return null
+    }
+    const map = rekeyDocuments(docs, this.slots.map((s) => s.key))
+    const keys = docs.map((d) => d.key!)
+    let nodes = buildTree(file.tree ? rekeyTree(file.tree, map) : undefined, keys)
+    if (docs.length > 1) nodes = [{ kind: 'folder', id: folderId(), title: cleanTitle(name) || t('tree.newFolder'), children: nodes }]
+    const parentDepth = place.parent ? (locate(this.tree, place.parent)?.depth ?? 0) + 1 : 0
+    // Trop de dossiers, ou trop profond : les documents arrivent sans leurs dossiers.
+    const height = (list: TreeNode[]): number => list.reduce((m, n) => (n.kind === 'folder' ? Math.max(m, 1 + height(n.children)) : m), 0)
+    if (countFolders(this.tree) + countFolders(nodes) > TREE_LIMITS.folders || parentDepth + height(nodes) > TREE_LIMITS.depth) nodes = keys.map((key) => ({ kind: 'doc', key }))
+    let index = place.index
+    for (const n of nodes) insertNode(this.tree, n, place.parent, index++)
+    for (const d of docs) this.slots.push({ key: d.key!, state: this.makeState(d), saved: null, scroll: 0, pages: null })
+    this.syncOrder()
+    this.treeChanged()
+    this.switchToKey(docOrder(nodes)[0])
+    return docOrder(nodes)[0]
   }
 
   /** L'état d'un document (celui qui est affiché : l'état réel, même pendant un export). */
@@ -563,11 +835,11 @@ export class FolioApp {
   }
 
   /** Les documents du fichier, dans l'ordre des onglets. */
-  get documents(): { key: string; title: string; active: boolean; dirty: boolean }[] {
+  get documents(): { key: string; title: string; active: boolean; dirty: boolean; open: boolean }[] {
     return this.slots.map((s, i) => {
       const doc = this.slotState(i).doc
       const saved = i === this.active ? this.savedDoc : s.saved
-      return { key: s.key, title: this.docTitleOf(doc, i), active: i === this.active, dirty: saved === null || !doc.eq(saved) }
+      return { key: s.key, title: this.docTitleOf(doc, i), active: i === this.active, dirty: saved === null || !doc.eq(saved), open: this.openKeys.includes(s.key) }
     })
   }
 
@@ -638,6 +910,7 @@ export class FolioApp {
   switchTo(i: number): boolean {
     if (i === this.active || !this.slots[i] || this.realState) return false
     this.onBeforeSwitch?.()
+    this.openTab(this.slots[i].key)
     const cur = this.slots[this.active]
     cur.state = this.view.state
     cur.saved = this.savedDoc
@@ -670,11 +943,11 @@ export class FolioApp {
     this.notify()
   }
 
-  /** Ajoute un document au fichier (vide, ou celui donné) et l'affiche ; renvoie sa place. */
-  addDocument(doc?: FolioDoc, at = this.active + 1): number {
+  /** Ajoute un document au fichier (vide, ou celui donné) et l'affiche ; renvoie sa clé (null : trop de documents). */
+  addDocument(doc?: FolioDoc, place: TreePlace = this.placeAfter()): string | null {
     if (this.slots.length >= 50) {
       toast(t('docs.tooMany'), { kind: 'info' })
-      return -1
+      return null
     }
     let d = doc
     if (!d) {
@@ -682,53 +955,29 @@ export class FolioApp {
       d = withDefaultDesign({ ...(fresh.ok ? fresh.doc : this.getDoc()), meta: { ...emptyMeta(), title: t('docs.untitled', { n: this.slots.length + 1 }) }, blocks: [], comments: [] })
     }
     const key = freeKey(this.slots.map((s) => s.key))
-    const place = Math.max(0, Math.min(this.slots.length, at))
-    this.slots.splice(place, 0, { key, state: this.makeState(d), saved: null, scroll: 0, pages: null })
-    if (place <= this.active) this.active++
-    if (this.isDemo) this.isDemo = false
-    this.switchTo(place)
-    this.scheduleSnapshot()
-    this.notify()
-    return place
+    this.slots.push({ key, state: this.makeState(d), saved: null, scroll: 0, pages: null })
+    insertNode(this.tree, { kind: 'doc', key }, place.parent, place.index)
+    this.treeChanged()
+    this.switchToKey(key)
+    return key
   }
 
   /** Copie d'un document, juste après lui. */
-  duplicateDocument(i: number): number {
-    if (!this.slots[i]) return -1
+  duplicateDocument(i: number): string | null {
+    if (!this.slots[i]) return null
     const d = pmToDoc(this.slotState(i).doc, this.identity)
     d.meta = { ...d.meta, title: t('docs.copyOf', { title: this.docTitleOf(this.slotState(i).doc, i) }).slice(0, 500) }
-    return this.addDocument(d, i + 1)
+    return this.addDocument(d, this.placeAfter(this.slots[i].key))
   }
 
   /** Retire un document du fichier ; renvoie de quoi l'y remettre (Annuler). */
   removeDocument(i: number): (() => void) | null {
-    if (this.slots.length < 2 || !this.slots[i] || this.realState) return null
-    if (i === this.active) this.switchTo(i > 0 ? i - 1 : 1)
-    const [slot] = this.slots.splice(i, 1)
-    if (i < this.active) this.active--
-    this.scheduleSnapshot()
-    this.notify()
-    return () => {
-      if (this.slots.some((s) => s.key === slot.key)) return
-      const at = Math.min(i, this.slots.length)
-      this.slots.splice(at, 0, slot)
-      if (at <= this.active) this.active++
-      this.switchTo(at)
-      this.scheduleSnapshot()
-      this.notify()
-    }
+    return this.slots[i] ? this.removeNode(this.slots[i].key) : null
   }
 
-  /** Change un document de place. */
-  moveDocument(from: number, to: number): void {
-    const n = this.slots.length
-    if (from === to || from < 0 || to < 0 || from >= n || to >= n) return
-    const activeKey = this.slots[this.active].key
-    const [slot] = this.slots.splice(from, 1)
-    this.slots.splice(to, 0, slot)
-    this.active = this.slots.findIndex((s) => s.key === activeKey)
-    this.scheduleSnapshot()
-    this.notify()
+  /** L'index d'un document (-1 : inconnu). */
+  indexOf(key: string): number {
+    return this.slots.findIndex((s) => s.key === key)
   }
 
   /** Renomme un document (son titre). */
@@ -742,36 +991,71 @@ export class FolioApp {
     this.notify()
   }
 
-  /** Tous les documents du fichier en un seul (export ou impression de tous les documents). */
-  combinedDoc(): { doc: FolioDoc; styles: string[] } {
-    const docs = this.slots.map((s, i) => ({ ...this.withCrossValues(pmToDoc(this.slotState(i).doc, this.identity), i), key: s.key }))
+  /**
+   * Des documents du fichier en un seul (export ou impression de plusieurs
+   * documents ; tous par défaut), dans l'ordre de l'arbre.
+   */
+  combinedDoc(keys?: string[]): { doc: FolioDoc; styles: string[] } {
+    const keep = new Set(keys ?? this.slots.map((s) => s.key))
+    const docs = this.slots.flatMap((s, i) => (keep.has(s.key) ? [{ ...this.detached(i, keep).doc, key: s.key }] : []))
     const { doc, note } = combineDocuments(docs)
     return { doc, styles: note.styles }
   }
 
-  /** Le document affiché, prêt pour un export seul : les renvois et liens vers les autres documents deviennent du texte. */
-  standaloneDoc(): FolioDoc | null {
-    const doc = this.withCrossValues(pmToDoc(this.slotState(this.active).doc, this.identity), this.active)
+  /** Un document seul, prêt pour un export (le document affiché par défaut) ; null s'il n'a rien à changer. */
+  standaloneDoc(i = this.active): FolioDoc | null {
+    if (!this.slots[i]) return null
+    const { doc, changed } = this.detached(i, new Set([this.slots[i].key]))
+    return changed || i !== this.active ? doc : null
+  }
+
+  /**
+   * Un document dont les renvois et liens vers des documents hors de `keep`
+   * deviennent du texte (ils n'auraient plus de cible).
+   */
+  private detached(i: number, keep: ReadonlySet<string>): { doc: FolioDoc; changed: boolean } {
+    const doc = this.withCrossValues(pmToDoc(this.slotState(i).doc, this.identity), i)
     let changed = false
+    const outside = (key: string) => !keep.has(key)
     const walk = (v: unknown): unknown => {
       if (Array.isArray(v)) return v.map(walk)
       if (!v || typeof v !== 'object') return v
       const o = v as Record<string, unknown>
-      if (o.type === 'xref' && typeof o.doc === 'string' && o.doc) {
+      if (o.type === 'xref' && typeof o.doc === 'string' && o.doc && outside(o.doc)) {
         changed = true
         const { type: _t, target: _g, show: _s, doc: _d, last, ...marks } = o
         return { ...marks, text: (last as string) || '?' }
       }
       const out: Record<string, unknown> = {}
       for (const [k, x] of Object.entries(o)) out[k] = walk(x)
-      if (typeof out.link === 'string' && parseDocLink(out.link)) {
-        changed = true
-        delete out.link
+      for (const f of ['link', 'href']) {
+        const l = typeof out[f] === 'string' ? parseDocLink(out[f] as string) : null
+        if (l && outside(l.doc)) {
+          changed = true
+          delete out[f]
+        }
       }
       return out
     }
     const blocks = walk(doc.blocks) as FolioDoc['blocks']
-    return changed ? { ...doc, blocks } : null
+    const headers = walk(doc.headers) as FolioDoc['headers']
+    const footers = walk(doc.footers) as FolioDoc['footers']
+    return changed ? { doc: { ...doc, blocks, headers, footers }, changed } : { doc, changed }
+  }
+
+  /**
+   * Un fichier Folio Pages avec certains documents seulement (enregistrer un
+   * document ou un dossier à part) : ses dossiers ; `root` : le dossier dont le
+   * contenu devient la racine du nouveau fichier.
+   */
+  partialFile(keys: string[], root?: string): FolioDoc {
+    const keep = new Set(keys)
+    const docs = this.slots.flatMap((s, i) => (keep.has(s.key) ? [{ ...this.detached(i, keep).doc, key: s.key }] : []))
+    const base = root ? (folderById(this.tree, root)?.children ?? this.tree) : this.tree
+    // Un dossier seul autour de tout ce qui part n'a pas de sens dans le nouveau fichier.
+    let part = subtree(base, keep)
+    while (part.length === 1 && part[0].kind === 'folder') part = part[0].children
+    return joinFile(docs, treeJson(part))
   }
 
   /** Les renvois vers d'autres documents gardent leur valeur actuelle (« last »), pour le fichier et les exports. */
@@ -837,14 +1121,13 @@ export class FolioApp {
   /** Le fichier entier : le premier document, avec les autres dans « documents ». */
   fileDoc(): FolioDoc {
     const docs = this.slots.map((s, i) => ({ ...this.withCrossValues(pmToDoc(this.slotState(i).doc, this.identity), i), key: s.key }))
-    return joinFile(docs)
+    return joinFile(docs, treeJson(this.tree))
   }
 
   /** Remplace tous les documents par ceux d'un fichier ; `saved` : le fichier les contient déjà. */
   private resetSlots(file: FolioDoc, saved: boolean): void {
     this.demoKey = null
-    const docs = splitFile(file)
-    ensureKeys(docs)
+    const docs = this.arrange(file)
     const first = this.makeState(docs[0])
     this.active = 0
     this.slots = docs.map((d, i) => {
@@ -852,6 +1135,7 @@ export class FolioApp {
       return { key: d.key!, state: st, saved: saved && st ? st.doc : null, scroll: 0, pages: null }
     })
     this.savedOrder = saved ? this.order() : ''
+    this.openKeys = this.initialTabs()
     this.resetTo(first, saved)
     if (this.slots.length > 1) this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
   }
@@ -1018,6 +1302,38 @@ export class FolioApp {
       suggestedName: () => this.suggestedFileName(),
       belongs: (text) => this.fileHoldsThisDocument(text),
     })
+  }
+
+  /**
+   * Enregistre un document ou un dossier à part, dans un nouveau fichier Folio
+   * Pages (avec sa propre identité) ; le fichier ouvert ne change pas. Un
+   * fichier protégé donne un fichier protégé par le même mot de passe.
+   */
+  async savePartial(keys: string[], root?: string): Promise<SaveOutcome | null> {
+    if (this.saving || !keys.length) return null
+    const id = mintId()
+    const now = new Date().toISOString()
+    const doc = this.partialFile(keys, root)
+    doc.id = id
+    for (const d of doc.documents ?? []) d.id = id
+    doc.meta = { ...doc.meta, created: now, modified: now }
+    doc.template = false
+    doc.readOnly = false
+    const i = this.indexOf(keys[0])
+    const title = root ? this.folderTitle(root) : i >= 0 ? this.docTitleOf(this.slotState(i).doc, i) : ''
+    const html = serializeShell(await this.fileBlock(doc), this.sealer ? this.fileTitle() : `${title} — Folio Pages`)
+    const name = fileNameFor(title)
+    const saver = new Saver({ docId: () => id, suggestedName: () => name, belongs: () => false })
+    this.saving = true
+    this.notify()
+    try {
+      return await saver.save(html)
+    } catch (e) {
+      return { kind: 'error', message: e instanceof Error ? e.message : String(e) }
+    } finally {
+      this.saving = false
+      this.notify()
+    }
   }
 
   /**
@@ -1238,6 +1554,14 @@ export class FolioApp {
     // Plusieurs fenêtres sur le document : chacune son numéro.
     const numbered = this.windowIndex > 1 || (this.sync?.windows ?? 0) > 0
     return `${this.displayTitle()}${numbered ? ` (${this.windowIndex})` : ''} — Folio Pages`
+  }
+
+  /** Le nom d'un export d'une partie des documents (un document, un dossier), le temps de l'export. */
+  exportBase: string | null = null
+
+  /** Nom proposé pour un export : celui de la partie exportée, sinon celui du fichier. */
+  exportFileName(): string {
+    return this.exportBase ? fileNameFor(this.exportBase) : this.suggestedFileName()
   }
 
   suggestedFileName(): string {
@@ -1504,13 +1828,16 @@ export class FolioApp {
    */
   replaceFile(file: FolioDoc): void {
     this.demoKey = null
-    const docs = splitFile(file)
-    if (docs.length === 1) return this.replaceDocument(docs[0], false)
-    ensureKeys(docs)
+    if (!file.documents?.length && !file.tree) return this.replaceDocument(splitFile(file)[0], false)
+    const docs = this.arrange(file)
     const keep = Math.max(0, docs.findIndex((d) => d.key === this.slots[this.active].key))
     const current = this.slots[this.active]
     this.slots = docs.map((d, i) => (i === keep ? { ...current, key: d.key! } : { key: d.key!, state: this.makeState(d), saved: null, scroll: 0, pages: null }))
     this.active = keep
+    const known = new Set(docs.map((d) => d.key!))
+    this.openKeys = this.openKeys.filter((k) => known.has(k))
+    if (!this.openKeys.includes(docs[keep].key!)) this.openKeys.push(docs[keep].key!)
+    this.saveTabs()
     this.replaceDocument(docs[keep], false)
     this.view.dispatch(this.state.tr.setMeta(refsKey, true).setMeta('addToHistory', false))
     this.notify()

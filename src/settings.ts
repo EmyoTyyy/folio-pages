@@ -34,6 +34,8 @@ export interface Settings {
   appearance: 'system' | 'light' | 'dark'
   /** Volet de navigation affiché. */
   navPane: boolean
+  /** Volet Documents : montré, caché, ou null (montré quand le fichier a des dossiers). */
+  docsPane: boolean | null
   /** Volet des commentaires affiché. */
   commentsPane: boolean
   /** Nom affiché avec vos commentaires (demandé une fois, gardé dans ce navigateur seulement). */
@@ -74,7 +76,7 @@ export interface Settings {
 }
 
 const KEY = 'folio-pages:settings'
-const DEFAULTS: Settings = { reduceImages: true, markdownTyping: true, spellcheck: true, showMarks: false, zoom: 1, ribbonCollapsed: false, ribbonAutoHide: true, offline: false, autoUpdate: true, immWidth: 'moderate', immColor: 'none', immFocus: 0, immSpacing: false, readSpread: false, view: 'page', ruler: true, appearance: 'system', navPane: false, commentsPane: true, authorName: '', trackView: 'all', reviewPane: 'off', mailVia: 'app', autoCorrect: true, acQuotes: true, acFrenchSpacing: true, acReplace: true, acCapitalize: false, acCustom: [], acRemoved: [], defaultDesign: null, typewriter: false, dimOthers: false, autoSave: false, longSentences: false, imageWrap: 'none', imageAlign: 'center' }
+const DEFAULTS: Settings = { reduceImages: true, markdownTyping: true, spellcheck: true, showMarks: false, zoom: 1, ribbonCollapsed: false, ribbonAutoHide: true, offline: false, autoUpdate: true, immWidth: 'moderate', immColor: 'none', immFocus: 0, immSpacing: false, readSpread: false, view: 'page', ruler: true, appearance: 'system', navPane: false, docsPane: null, commentsPane: true, authorName: '', trackView: 'all', reviewPane: 'off', mailVia: 'app', autoCorrect: true, acQuotes: true, acFrenchSpacing: true, acReplace: true, acCapitalize: false, acCustom: [], acRemoved: [], defaultDesign: null, typewriter: false, dimOthers: false, autoSave: false, longSentences: false, imageWrap: 'none', imageAlign: 'center' }
 
 let current: Settings = load()
 const listeners = new Set<(s: Settings) => void>()
@@ -86,6 +88,7 @@ function load(): Settings {
     for (const k of Object.keys(DEFAULTS) as (keyof Settings)[]) {
       if (typeof raw[k] === typeof DEFAULTS[k]) (out as Record<string, unknown>)[k] = raw[k]
     }
+    if (typeof raw.docsPane === 'boolean') out.docsPane = raw.docsPane
     out.zoom = Math.min(4, Math.max(0.25, Number(out.zoom) || 1))
     if (!['page', 'web', 'draft', 'outline'].includes(out.view)) out.view = 'page'
     if (!['system', 'light', 'dark'].includes(out.appearance)) out.appearance = 'system'

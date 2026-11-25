@@ -25,7 +25,7 @@ export type ExportFormat = (typeof EXPORT_FORMATS)[number]
 export function exportOptions(app: FolioApp): ExportCommonOptions {
   const info = app.pagesInfo
   return {
-    filename: app.suggestedFileName(),
+    filename: app.exportFileName(),
     locale: lang(),
     pages: info?.pages() ?? 1,
     headingPages: info ? outline(app.state.doc, 6).map((o) => info.pageAt(o.pos)) : undefined,
@@ -36,7 +36,7 @@ export function exportOptions(app: FolioApp): ExportCommonOptions {
 /** Le fichier d'un format (sauf .docx et PDF, qui ont leur propre chemin). */
 export async function buildExport(app: FolioApp, format: Exclude<ExportFormat, 'docx' | 'pdf'>): Promise<{ bytes: Uint8Array; name: string; mime: string; ext: string; losses: number }> {
   const doc = app.getDoc()
-  const base = app.suggestedFileName().replace(/\.html?$/i, '')
+  const base = app.exportFileName().replace(/\.html?$/i, '')
   const o = exportOptions(app)
   switch (format) {
     case 'odt': {

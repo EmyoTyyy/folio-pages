@@ -79,6 +79,9 @@
     A group: "shape": "group", "children": [shapes placed from its corner].
     A picture placed freely: "shape": "picture", "src": "asset:<id>",
     "alt" (an "image" block is for a picture on its own line).
+    Optional: "rotate", "flip", "lineWidth", "dash" (dash, dot…), "head" /
+    "tail" ("triangle" makes an arrow), "transparency", "shadow", "z"
+    (stacking), "valign" of the text, "hidden", "blocks" for rich text.
   · callout: "kind" note, tip, important, warning or caution, "title",
     then text/md or "blocks".
   · divider: a horizontal line.   · pagebreak: start a new page.
@@ -88,7 +91,15 @@
     (the text is about 470 pt wide), "align", "wrap": "none" (own line),
     "left" or "right" (text flows around it), "tight" (text follows the
     outline of a transparent PNG; side from "align"), "behind" or "front"
-    (over the text, taking no room).
+    (over the text, taking no room). Optional: "crop" { "top", "right",
+    "bottom", "left" } in percent, "rotate" (90, 180, 270), "flip" ("h",
+    "v"), "border" (a colour), "adjust" { "brightness", "contrast" (-100 to
+    100), "saturation", "recolor" ("grayscale", "sepia"…), "transparency",
+    "shadow", "glow", "softEdges", "reflection" }.
+  · glossary / abbreviations: the terms of the top-level "terms": [{
+    "term": "WHO", "definition": "World Health Organization", "kind":
+    "abbreviation" }] ("kind" "glossary" by default) used in the text.
+  · authorities (legal): lists the xe runs that have an "authority".
   TEXT of a paragraph, heading, list item or cell, one of:
   · "text": plain text, used as is; \n is a line break;
   · "md": Markdown: **bold**, *italic*, ++underline++, ~~strike~~,
@@ -98,16 +109,33 @@
     in LaTeX: $E = mc^2$ in the line (no space just inside the $ signs),
     $$…$$ alone in its paragraph for a centred equation.
   · "content": runs, e.g. ["plain ", { "text": "bold", "bold": true }].
-    A run may also have "color" ("#rrggbb" or "accent1"…"accent6"),
-    "highlight" ("yellow"…), "font", "size" (points), "caps", "smallcaps".
+    Run marks: "bold", "italic", "underline" (with "underlineStyle":
+    double, thick, dotted, dashed, wavy, and "underlineColor"), "strike",
+    "code", "sup", "sub", "link" (https://…, mailto:…, #anchor), "color"
+    ("#rrggbb" or "accent1"…"accent6"), "highlight" ("yellow"…), "font",
+    "size" (points), "caps", "smallcaps", "letterSpacing", "lang"; effects
+    "outline", "shadow" (true), "glow", "textBorder", "textShading"
+    (colours).
+    A field is a run: { "type": "field", "name": "page" } (title, author,
+    date with "format": "DD/MM/YYYY", time, pages, filename…).
+    A form field (fill-in forms): { "type": "formfield", "kind": "text",
+    "name": "Name", "placeholder": "…" }; kinds dropdown ("options"), date,
+    checkbox ("checked"); "formsOnly": true at the top level locks the rest.
+    An attached file: { "type": "attachment", "src": "asset:<id>", "name":
+    "budget.xlsx" }, its data a "data:application/octet-stream;base64,…"
+    asset.
     A note is a run too: { "type": "note", "text": "…" } (bottom of the
     page), with "kind": "end" for an endnote, or "md" / "blocks".
     A formula is a run too: { "type": "math", "tex": "x^2" }.
     Comments (only when asked to review): a run { "text": "…",
     "comments": ["c1"] } and, at the top level, "comments": [{ "id": "c1",
-    "author": "AI", "text": "Check this figure." }].
+    "author": "AI", "text": "Check this figure." }] (a thread may have
+    "replies": [{ "author", "text" }] and "resolved": true).
     Suggested edits (only when asked): { "text": "old", "deleted":
-    { "author": "AI" } } then { "text": "new", "inserted": { "author": "AI" } }.
+    { "author": "AI" } } then { "text": "new", "inserted": { "author": "AI" } };
+    a formatting change: { "text": "key", "bold": true, "formatChange":
+    { "author": "AI", "before": {} } } (before: only the marks that were
+    set). "trackChanges": true at the top level tracks later edits.
     Mail merge (only for form letters, labels…): a run { "type":
     "mergefield", "name": "First name" } (in md: {{merge:First name}}),
     and at the top level "mailMerge": { "type": "letters", "source": {
@@ -116,28 +144,42 @@
   OPTIONS, all optional:
   · paragraphs and headings: "align" (left, center, right, justify),
     "spacing" { "before", "after" } and "indent" { "left", "first" } in
-    points, "line" (1.5…); paragraphs: "style": "title", "subtitle",
-    "caption", or a style you define in the top-level "styles".
-  · lists: "numbering" (decimal, alpha, roman, outline), "bullet" ("✓").
+    points, "line" (1.5…), "keepNext", "keepLines", "pageBreakBefore"
+    (true), "shading" and "border" (colours), "dropCap" (2 to 10 lines),
+    "dir": "rtl" (Arabic, Hebrew); paragraphs: "style": "title",
+    "subtitle", "caption", or a style you define in the top-level "styles"
+    ({ "name", "basedOn", "next", marks and paragraph options }).
+  · lists: "numbering" (decimal, alpha, roman, outline), "bullet" ("✓"),
+    "continue": true (carry on the previous numbered list).
   · tables: "style" (grid, lines, zebra, boxed, minimal), "widths" in
-    points, "repeatHeader": true (header row on every page); cells: "bg".
+    points, "repeatHeader": true (header row on every page), "firstColumn",
+    "border" (a colour), "rowHeight" (points); cells: "bg", "valign",
+    "textDir": "tbrl" (vertical).
+  · charts: "legend", "horizontal" (bars).
   · "theme": { "name": "classic" } (folio, classic, modern, slate, ink,
     system); its colours accent1…accent6 can be used by name everywhere.
   PAGES (all optional): "page": { "size": "A4" or "Letter"…, "orientation":
     "landscape", "margins": { "top", "right", "bottom", "left" } in mm };
     "headers"/"footers": { "default": [ blocks ] } on every page, e.g.
     { "md": "Page {{page}} of {{pages}}", "align": "center" }.
-  · { "type": "columns", "count": 2, "blocks": [ … ] }: text in columns.
+  · { "type": "columns", "count": 2, "blocks": [ … ] }: text in columns
+    ("gap" in points, "rule": true; a { "type": "columnbreak" } inside).
   · { "type": "section", "numberStart": 1 }: a section break; what follows
-    starts a new page, may restart numbering and have its own "headers",
-    and its own "page": { "orientation": "landscape" } (a wide table).
+    starts a new page ("start": "odd" or "even"), may restart numbering
+    ("numberFormat": "roman"…), have its own "headers" ("firstPage": true
+    for a different first page), and its own "page": { "orientation":
+    "landscape" } (a wide table).
+  · "watermark": { "text": "DRAFT" } (or "image": "asset:<id>") behind
+    every page; "lineNumbers": true; "hyphenate": true.
   · { "type": "toc" }: a table of contents of the headings, always up to
     date ("levels": 3, "title": "Contents").
   REFERENCES (all optional, all kept up to date by the app):
   · Citations: top-level "sources": [{ "id": "Darwin1859", "type": "book",
     "authors": ["Darwin, Charles"], "title": "On the Origin of Species",
     "publisher": "John Murray", "year": "1859" }] (types: book, article,
-    chapter, website, report, thesis…; "container" is the journal or site),
+    chapter, website, report, thesis…; "container" is the journal or site;
+    also "editors", "place", "volume", "issue", "pages", "edition", "url",
+    "doi", "isbn", "accessed"),
     a run { "type": "cite", "id": "Darwin1859", "locator": "p. 12" } where
     a source is used, and a { "type": "bibliography", "title": "References" }
     block. "citationStyle": "apa" (default), "mla", "chicago", "harvard",
@@ -149,7 +191,9 @@
     paragraph, and { "type": "xref", "target": "harbour", "show": "label" }
     (text, label, number, page, above) where you refer to it.
   · Index: a run { "type": "xe", "term": "photosynthesis" } beside the word
-    (invisible), and an { "type": "index" } block at the end.
+    (invisible; "sub" a subentry, "see" a "See …" reference), and an
+    { "type": "index" } block at the end. Legal citations: "authority":
+    "cases" (statutes…) and "short" on the xe, and an "authorities" block.
   SEVERAL DOCUMENTS IN ONE FILE (only when asked: a report and its annexes,
   chapters, a letter and its attachments…): give the first document a
   "key" and put the others, each a complete document with its own "key",
@@ -157,8 +201,17 @@
   Link to another one with "link": "#annex:sales" (its bookmark or heading)
   or "#annex:" (its start); a cross-reference adds "doc": { "type": "xref",
   "doc": "annex", "target": "sales", "show": "label" }.
+  Many documents: arrange them in folders with "tree" in the first
+  document, e.g. "tree": ["intro", { "folder": "Chapters", "items":
+  ["ch1", "ch2"] }, "annex"] (keys and folders, folders inside folders).
   · "notes": { "foot": { "format": "symbols" }, "end": { "format":
     "decimal" } } changes how notes are numbered (optional).
+  "meta" also takes "author", "subject", "organization", "keywords".
+  OTHER TOP-LEVEL FIELDS, only when asked: "goal": { "words": 1500 } (a
+  writing goal), "fonts" (embedded fonts: { "family", "src": "asset:<id>" }),
+  "template": true (each opening starts a new document from it),
+  "readOnly": true (opens in reading view). Hand drawing ("ink" on a
+  paragraph) is best left to the app.
   Or give the whole document as Markdown instead of "blocks":
   { "format": "folio/doc", "version": 1, "markdown": "# Title\n\nText" }.
 
@@ -201,5 +254,7 @@
       inside the $ signs, and every \\eqref names an existing \\label.
   [ ] Every "cite" id is in "sources"; every "xref" target is a bookmark
       (in the document named by its "doc", if any).
+  [ ] Several documents: each has its own "key"; every key in "tree" and
+      in "#key:" links names one of them.
   [ ] Nothing is invented that the request or the sources do not support.
   ════════════════════════════════════════════════════════════════════════

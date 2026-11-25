@@ -60,7 +60,7 @@ export function commentsPrintout(app: FolioApp): HTMLElement | null {
   )
 }
 
-export function printDialog(app: FolioApp): void {
+export function printDialog(app: FolioApp, preset?: string[]): void {
   const pv = getPageView()
   const paged = pv?.mode === 'page'
   const total = pv?.pageCount ?? 1
@@ -82,10 +82,15 @@ export function printDialog(app: FolioApp): void {
   const error = h('p', { class: 'fp-field-error', role: 'alert', 'data-field': 'print-error' })
   for (const c of [all.r, cur.r, some.r, range, booklet]) c.toggleAttribute('disabled', !paged)
   // Plusieurs documents : celui-ci, ou tous (toutes leurs pages, à la suite).
-  const scope = scopeField(app, (s) => {
-    if (s === 'all') all.r.checked = true
-    for (const c of [cur.r, some.r, range]) c.toggleAttribute('disabled', !paged || s === 'all')
-  })
+  const scope = scopeField(
+    app,
+    (s) => {
+      if (s !== 'one') all.r.checked = true
+      for (const c of [cur.r, some.r, range]) c.toggleAttribute('disabled', !paged || s !== 'one')
+    },
+    preset,
+  )
+  if (scope.value() !== 'one') for (const c of [cur.r, some.r, range]) c.toggleAttribute('disabled', true)
   openDialog({
     name: 'print',
     title: t('print.title'),
@@ -106,6 +111,7 @@ export function printDialog(app: FolioApp): void {
         value: 'ok',
         primary: true,
         run: () => {
+          if (!scope.valid()) return false
           let pages: number[] | undefined
           if (some.r.checked) {
             const p = parsePageRange(range.value, total)
@@ -127,7 +133,7 @@ export function printDialog(app: FolioApp): void {
           }
           const chosen = scope.value()
           // Après la fermeture de la fenêtre (sinon elle serait imprimée).
-          setTimeout(() => void (chosen === 'all' || app.documents.length > 1 ? runScoped(app, chosen, print) : print()), 0)
+          setTimeout(() => void (app.documents.length > 1 ? runScoped(app, chosen, print) : print()), 0)
         },
       },
     ],

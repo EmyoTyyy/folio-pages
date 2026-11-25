@@ -113,6 +113,7 @@ fills in the defaults; the file it saves always holds the complete form.
 | `goal` | object | none | A writing goal: `{ "words": 1500, "deadline": "2026-12-01" }`. |
 | `hyphenate` | boolean | `false` | Automatic hyphenation. |
 | `lineNumbers` | `true` or object | none | Line numbers in the left margin. See *More blocks*. |
+| `watermark` | object | none | A text or a picture behind the text of every page. See *Pictures*. |
 | `mailMerge` | object | none | Mail merge: the list of recipients and how to merge. See *Mail merge*. |
 | `sources` | array | `[]` | Sources cited by `cite` runs and listed by `bibliography` blocks. See *References and citations*. |
 | `citationStyle` | string | `"apa"` | `apa`, `mla`, `chicago` (author-date), `harvard`, `ieee` (numbered), `iso690`. |
@@ -124,6 +125,7 @@ fills in the defaults; the file it saves always holds the complete form.
 | `assets` | object | `{}` | Pictures (and fonts) as `data:` URIs in base64, by id, used as `"asset:<id>"`. |
 | `key` | string | — | With several documents in the file: a short name for this one (a letter, then letters, digits, `_`). See *Several documents in one file*. |
 | `documents` | array | none | More documents in the same file, each complete and independent, shown as tabs. Only in the first document. |
+| `tree` | array | none | Folders that arrange the documents, shown in the Documents pane. Only in the first document. See *Folders*. |
 
 ### `meta`
 
@@ -181,7 +183,8 @@ previous one.
 **Table options:** `style` — `"grid"` (default), `"lines"`, `"zebra"`,
 `"boxed"`, `"minimal"`; `widths` — one width per column, in points;
 `align` — `"center"` or `"right"`; `firstColumn: true` to emphasise the first
-column; `border` — a colour. Cells may have `bg` (a colour), `valign`
+column; `border` — a colour; `rowHeight` — an exact height for every row,
+in points (sheets of labels; left out, rows fit their content). Cells may have `bg` (a colour), `valign`
 (`"middle"`, `"bottom"`) and `textDir` (`"tbrl"`: vertical, top to bottom;
 `"btlr"`: bottom to top — for narrow header cells).
 
@@ -315,7 +318,14 @@ names are the preset names of .docx files (`rect`, `roundRect`, `ellipse`,
 `triangle`, `diamond`, `rightArrow`, `chevron`, `star5`, `cloud`,
 `wedgeRoundRectCallout`, `flowChartProcess`, `flowChartDecision`, `line`…; see
 the JSON Schema for all 140). Lines take `tail`/`head` (`triangle` for an
-arrow). `fill` and `line` are theme colours, `#rrggbb` or `"none"`. A group
+arrow; also `arrow`, `oval`, `diamond` or `none`). `fill` and `line` are theme
+colours, `#rrggbb` or `"none"`; `lineWidth` is in points (default 1) and `dash`
+is `solid`, `dash`, `dot`, `dashDot` or `longDash`. Optional: `rotate`
+(degrees, clockwise), `flip` (`"h"`, `"v"`, `"hv"`), `transparency` of the fill
+(percent), `shadow` (`true`), `z` (stacking order, higher on top), `valign` of
+the text (`top`, `middle`, `bottom`), `alt` (what the shape shows), and
+`hidden` (kept in the file but not shown or printed). The text inside is
+`text`, `md`, or `blocks` (paragraphs and lists). A group
 (`"shape": "group"`) holds `children` placed from its top-left corner. A
 picture placed freely is `"shape": "picture"` with `src` (`"asset:<id>"` or a
 `data:image/…` URI), `alt`, and optionally `crop` and `adjust` as for an
@@ -382,8 +392,9 @@ With pictures, each `src` names an asset, as for an image:
 
 **Glossary and abbreviations.** Define each term once in `terms`
 (`{ "term": "WHO", "definition": "World Health Organization", "kind": "abbreviation" }`;
-`kind` is `"glossary"` by default), then put a `glossary` or `abbreviations`
-block where the list should appear.
+`kind` is `"glossary"` by default; `plural` when the plural is not the term
++ s), then put a `glossary` or `abbreviations` block where the list should
+appear (`"all": true` lists every term, not only those used in the text).
 
 **Form fields** are runs: `{ "type": "formfield", "kind": "text", "name": "Name", "placeholder": "Your name" }`;
 `kind` may be `"dropdown"` (with `options`), `"date"` (`value` YYYY-MM-DD) or
@@ -432,6 +443,17 @@ your own (with a `name`) and use it as a paragraph `style`:
 }
 ```
 
+`theme` holds `name`, `colors` (`text`, `accent1` … `accent6`,
+as `#rrggbb`), `fonts` (`{ "heading", "body", "mono" }`, font family names)
+and `code` (colours of code blocks: `background`, `text`, `keyword`,
+`string`, `number`, `comment`, `function`, `type`). A style takes `name`,
+`basedOn` (the style it starts from), `next` (the style of the paragraph
+typed after it, as a heading is followed by `normal`), the run marks (`font`,
+`size`, `color`, `highlight`, `bold`, `italic`, `underline`, `strike`, `caps`,
+`smallcaps`, `letterSpacing`) and the paragraph options (`align`, `indent`,
+`spacing`, `line`, `keepNext`, `keepLines`, `pageBreakBefore`, `shading`,
+`border`, `dropCap`, `dir`, `noLineNumbers`).
+
 ### Pictures
 
 A picture is an `image` block. Its data goes in `assets`, as a base64 `data:`
@@ -475,7 +497,8 @@ stretch the picture on purpose), and `adjust` for corrections and effects:
 `brightness` and `contrast` (−100 to 100), `saturation` (0 to 400, 100 is
 unchanged), `recolor` (`"grayscale"`, `"sepia"`, `"washout"`, `"blackwhite"`),
 `artistic` (`"blur"`, `"pencil"`, `"negative"`), `transparency` (0 to 95),
-`shadow` (`true`), `glow` (a colour) and `softEdges` (points).
+`shadow` (`true`), `glow` (a colour), `softEdges` (points) and `reflection`
+(10 to 100: the share of the picture's height reflected below it).
 
 **Watermark and hyphenation.** A top-level `watermark` puts a text or a picture
 behind the text of every page; `"hyphenate": true` splits long words at the
@@ -495,6 +518,14 @@ end of lines, by the rules of the document language:
 `watermark` takes `text` (or `image`: `"asset:<id>"` with `scale`, its width in
 percent of the text), `color`, `diagonal`, `opacity` (5 to 100) and `size`
 (points; 0 fits the page).
+
+**Drawing.** Hand drawing (the Draw tab) is stored on the paragraph it was
+drawn over: `"ink": [{ "tool": "pen", "color": "#1f2937", "width": 2,
+"points": [10, 4, 60, 30, 120, 8] }]`, with `tool` `pen` (solid), `pencil`
+(grainy) or `highlighter` (wide, see-through), `width` in points, and
+`points` as x, y, x, y… in points from the top-left corner of the paragraph.
+It is usually left to the app; for a diagram or an arrow, prefer a `diagram`
+block or shapes.
 
 ### Pages
 
@@ -648,8 +679,13 @@ it. There are no comments in headers, footers or notes.
 When a person asks you to *suggest* edits rather than make them, mark them as
 tracked changes: a run with `inserted` is proposed new text, a run with
 `deleted` is text proposed for removal (it stays visible, struck through, until
-someone accepts the change). Both take `{ "author", "date" }`. Set
-`"trackChanges": true` so that the person's own edits are tracked too.
+someone accepts the change). Both take `{ "author", "date" }`. A formatting
+change is `formatChange`: `{ "author", "date", "before": { … } }` on a run
+(`before` holds the marks set before, only those: `{}` when bold was added to
+plain text) or on a
+paragraph, heading or list item (`before` holds the earlier paragraph options
+and `style`); accepting keeps the new formatting. Set `"trackChanges": true` so
+that the person's own edits are tracked too.
 
 ```json
 {
@@ -706,6 +742,7 @@ carry the usual marks, such as `"bold": true`); in `md`, write
 | `sort` | `{ "field", "desc": true }`. |
 | `email` | For `emails`: `{ "to": "<column>", "subject": "… «Column» …" }`. |
 | `label` | For `labels`, in mm: `{ "name", "pageWidth", "pageHeight", "cols", "rows", "width", "height", "top", "left", "hgap", "vgap" }`. |
+| `envelope` | For `envelopes`, in mm: `{ "name", "width", "height", "returnAddress" }` (the sender's address, lines separated by `\n`). |
 
 ```json
 {
@@ -819,7 +856,8 @@ with their pages.
 **Table of authorities** (legal documents): `xe` runs with `"authority":
 "cases"` (or `statutes`, `rules`, `treatises`, `regulations`,
 `constitution`, `other`), `"term"` the full citation and `"short"` its short
-form; an `authorities` block lists them by category.
+form; an `authorities` block lists them by category (`"category": "cases"`
+for one category only; `"all"`, the default, for every category).
 
 ### Several documents in one file
 
@@ -862,8 +900,45 @@ independent (its own `meta`, `page`, `headers`, `theme`, `styles`, `blocks`,
   of a bookmark in that document, always up to date. `"show": "page"` shows
   its page once that document has been laid out; the app keeps the last value
   in `"last"` (leave it out).
-- Exporting or printing asks for the document on screen or all of them, one
-  after another, each starting on a new page.
+- Exporting or printing asks which documents: the one on screen, its folder,
+  all of them, or a chosen set; several documents follow one another, each
+  starting on a new page.
+
+#### Folders
+
+With many documents (the chapters of a book, a course and its handouts),
+arrange them in folders with `tree`, in the first document. Each item is the
+`key` of a document, or a folder `{ "folder": "Title", "items": [...] }`;
+folders can hold folders (8 levels at most, 200 folders). The order of `tree`
+is the order of the documents.
+
+```json
+{
+  "format": "folio/doc",
+  "version": 1,
+  "key": "intro",
+  "meta": { "title": "Introduction", "lang": "en" },
+  "blocks": [{ "type": "heading", "level": 1, "text": "Introduction" }],
+  "documents": [
+    { "key": "ch1", "meta": { "title": "Chapter 1" }, "blocks": [{ "type": "heading", "level": 1, "text": "Chapter 1" }] },
+    { "key": "ch2", "meta": { "title": "Chapter 2" }, "blocks": [{ "type": "heading", "level": 1, "text": "Chapter 2" }] },
+    { "key": "ch2b", "meta": { "title": "Chapter 2, first draft" }, "blocks": ["Ideas for chapter 2."] },
+    { "key": "annex", "meta": { "title": "Annex" }, "blocks": [{ "type": "heading", "level": 1, "text": "Annex" }] }
+  ],
+  "tree": [
+    "intro",
+    { "folder": "Chapters", "items": ["ch1", "ch2", { "folder": "Drafts", "items": ["ch2b"] }] },
+    "annex"
+  ]
+}
+```
+
+- Documents left out of `tree` go at the end; unknown or repeated keys are
+  ignored (and reported).
+- Leave `tree` out when there are no folders: the order of `documents` is
+  enough.
+- The Documents pane (at the left) shows the tree; documents open as tabs at
+  the bottom. Which tabs are open is remembered by the browser, not the file.
 
 ### The whole document as Markdown
 
@@ -918,6 +993,8 @@ lists (indent to nest), `>` quotations, fenced code blocks, pipe tables (with
 - [ ] Every `cite` id is in `sources`; every `xref` target is a `bookmark`
       (in the document named by its `doc`, if any);
       caption and page numbers are `seq` and `xref` runs, never typed by hand.
+- [ ] Several documents: each has a unique `key`; every key in `tree` and in
+      `#key:` links names one of them.
 - [ ] Nothing is invented that the request or the sources do not support.
 
 ## 6. What the app does with mistakes

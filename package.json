@@ -1,6 +1,6 @@
 {
   "name": "folio-pages",
-  "version": "0.15.0",
+  "version": "0.17.0",
   "description": "Un traitement de texte libre dans un seul fichier HTML : l'éditeur et le document à la fois.",
   "license": "MIT",
   "private": true,

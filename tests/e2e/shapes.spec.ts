@@ -423,3 +423,23 @@ test('dessiner bas dans un long paragraphe : la page ne défile pas', async ({ p
   expect(Math.abs(b.y - 600)).toBeLessThan(3)
   errors.check()
 })
+
+test('galerie des formes : une seule barre de défilement, verticale, et jamais de défilement horizontal', async ({ page }, info) => {
+  const errors = watchErrors(page)
+  await openEditor(page, makeFile(info, 'galerie.html', { format: 'folio/doc', version: 1, blocks: ['Texte.'] }).url)
+  for (const [id, cmd] of [['insert', 'insert-shapes'], ['draw', 'ink-shapes']]) {
+    await tab(page, id)
+    await page.locator(`.fp-ribbon [data-cmd="${cmd}"]`).first().click()
+    const pop = page.locator('.fp-popover')
+    await expect(pop.locator('.fp-shapes')).toBeVisible()
+    const m = await pop.evaluate((el) => {
+      const g = el.querySelector('.fp-shapes')!
+      return { pop: [el.scrollWidth - el.clientWidth, el.scrollHeight - el.clientHeight], galH: g.scrollWidth - g.clientWidth, galV: g.scrollHeight > g.clientHeight }
+    })
+    expect(m.pop, cmd).toEqual([0, 0])
+    expect(m.galH, cmd).toBe(0)
+    expect(m.galV, cmd).toBe(true)
+    await page.keyboard.press('Escape')
+  }
+  errors.check()
+})

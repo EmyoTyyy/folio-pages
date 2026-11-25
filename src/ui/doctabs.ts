@@ -1,20 +1,23 @@
-// Onglets des documents du fichier, en bas de la fenêtre (comme les feuilles
-// d'un classeur) : un clic affiche le document, + en ajoute un, double-clic
-// (ou F2) le renomme, clic droit (ou Maj+F10) : renommer, dupliquer, déplacer,
-// supprimer. Les onglets se déplacent aussi en les faisant glisser : l'onglet
-// saisi suit le pointeur sur la ligne, et les autres s'écartent pour lui faire place.
+// Onglets des documents ouverts, en bas de la fenêtre : un clic affiche le
+// document, × (ou un clic du milieu) ferme l'onglet (le document reste dans le
+// fichier, dans le volet Documents), double-clic (ou F2) le renomme, clic droit
+// (ou Maj+F10) : renommer, dupliquer, fermer, montrer dans le volet, déplacer,
+// supprimer. Le bouton de gauche montre ou cache le volet Documents. Les
+// onglets se déplacent aussi en les faisant glisser : l'onglet saisi suit le
+// pointeur sur la ligne, et les autres s'écartent pour lui faire place.
 
 import type { FolioApp } from '../app'
 import { t } from '../i18n/i18n'
 import { openDialog, toast } from './dialog'
 import { h, icon } from './dom'
 import { RIBBON_ICONS as I } from './icons'
+import { getDocsPane } from './docpane'
 import { Popover, closePopovers, popItem } from './popover'
 
 export class DocTabs {
   readonly el: HTMLElement
   private readonly list: HTMLElement
-  private readonly addBtn: HTMLButtonElement
+  private readonly paneBtn: HTMLButtonElement
   private sig = ''
   private renaming = -1
   /** Renommage commencé au clavier (F2) : on revient ensuite sur l'onglet. */
@@ -28,8 +31,8 @@ export class DocTabs {
 
   constructor(private app: FolioApp) {
     this.list = h('div', { class: 'fp-doctabs__list', role: 'tablist', 'aria-label': t('docs.tabs') })
-    this.addBtn = h('button', { type: 'button', class: 'fp-doctabs__add', id: 'fp-doc-add', title: t('docs.add'), 'aria-label': t('docs.add'), onclick: () => this.add() }, icon(I.plus)) as HTMLButtonElement
-    this.el = h('div', { class: 'fp-doctabs', id: 'fp-doctabs' }, this.list, this.addBtn)
+    this.paneBtn = h('button', { type: 'button', class: 'fp-doctabs__add', id: 'fp-docs-toggle', title: t('tree.toggle'), 'aria-label': t('tree.toggle'), 'aria-pressed': 'false', onclick: () => getDocsPane()?.toggle() }, icon(I.docsPane)) as HTMLButtonElement
+    this.el = h('div', { class: 'fp-doctabs', id: 'fp-doctabs' }, this.paneBtn, this.list)
     app.onChange(() => this.render())
     this.list.addEventListener('keydown', (e) => this.key(e))
     this.render()
@@ -37,17 +40,20 @@ export class DocTabs {
 
   render(): void {
     if (this.drag) return
-    const docs = this.app.documents
+    const docs = this.app.tabs
     const reading = this.app.reading
-    const sig = JSON.stringify([docs, reading, this.renaming])
+    const shown = !!getDocsPane()?.visible
+    const sig = JSON.stringify([docs, reading, this.renaming, shown])
     if (sig === this.sig) return
     this.sig = sig
     const focused = this.list.contains(document.activeElement)
-    this.addBtn.hidden = reading
+    this.paneBtn.setAttribute('aria-pressed', String(shown))
     this.el.classList.toggle('is-single', docs.length === 1)
     this.list.replaceChildren(
       ...docs.map((d, i) => {
         if (i === this.renaming) return this.renameField(i, d.title)
+        const path = this.app.parentOf(d.key)
+        const tip = (path ? `${this.app.folderTitle(path.id)} › ` : '') + d.title + (d.dirty ? ` (${t('docs.unsaved')})` : '')
         const tab = h(
           'button',
           {
@@ -57,20 +63,28 @@ export class DocTabs {
             'aria-selected': String(d.active),
             tabindex: d.active ? '0' : '-1',
             'data-doc': d.key,
-            title: d.dirty ? `${d.title} (${t('docs.unsaved')})` : d.title,
+            title: tip,
           },
           h('span', { class: 'fp-doctab__label' }, d.title),
           d.dirty ? h('span', { class: 'fp-doctab__dot', 'aria-hidden': 'true' }) : null,
+          docs.length > 1 ? this.closeBtn(d.key, d.title) : null,
         ) as HTMLButtonElement
         tab.addEventListener('mousedown', (e) => {
           if (e.button === 0 && e.detail > 1) e.preventDefault()
+          // Clic du milieu : fermer (sans le défilement automatique du navigateur).
+          if (e.button === 1) e.preventDefault()
+        })
+        tab.addEventListener('auxclick', (e) => {
+          if (e.button !== 1) return
+          e.preventDefault()
+          this.app.closeTab(d.key)
         })
         tab.addEventListener('click', () => {
           if (this.swallowClick) {
             this.swallowClick = false
             return
           }
-          this.app.switchTo(i)
+          this.app.switchToKey(d.key)
         })
         tab.addEventListener('pointerdown', (e) => this.pointerDown(e, i, tab))
         tab.addEventListener('dblclick', () => this.startRename(i))
@@ -85,14 +99,22 @@ export class DocTabs {
     if (focused && this.renaming < 0) this.list.querySelector<HTMLElement>('.fp-doctab.is-active')?.focus()
   }
 
-  /** Nouveau document vide, juste après celui qui est affiché. */
-  add(): void {
-    if (this.app.reading) return
-    if (this.app.addDocument() >= 0) {
-      this.app.focus()
-      // Le nom se choisit tout de suite.
-      this.startRename(this.app.activeIndex)
-    }
+  /** Le × d'un onglet : le ferme (le document reste dans le fichier). */
+  private closeBtn(key: string, title: string): HTMLElement {
+    // Pour la souris ; au clavier, le menu de l'onglet (Maj+F10) a « Fermer l'onglet ».
+    const b = h('span', { class: 'fp-doctab__close', 'aria-hidden': 'true', title: t('tree.closeNamed', { title }), 'data-tab-close': key }, icon(I.close))
+    b.addEventListener('pointerdown', (e) => e.stopPropagation())
+    b.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.app.closeTab(key)
+    })
+    return b
+  }
+
+  /** L'index d'un onglet dans les documents du fichier. */
+  private docIndex(i: number): number {
+    const d = this.app.tabs[i]
+    return d ? this.app.indexOf(d.key) : -1
   }
 
   /**
@@ -198,7 +220,7 @@ export class DocTabs {
       this.list.classList.remove('is-reordering')
       tab.classList.remove('is-dragging')
       for (const t of tabs) t.style.transform = ''
-      if (keep && target !== from) this.app.moveDocument(from, target)
+      if (keep && target !== from) this.app.moveTab(from, target)
       else this.render()
       // L'onglet lâché glisse de là où il est jusqu'à sa place.
       const landed = this.list.querySelectorAll<HTMLElement>('.fp-doctab')[keep ? target : from]
@@ -256,7 +278,7 @@ export class DocTabs {
       if (done) return
       done = true
       this.renaming = -1
-      if (keep && input.value.trim() && input.value.trim() !== title) this.app.renameDocument(i, input.value)
+      if (keep && input.value.trim() && input.value.trim() !== title) this.app.renameDocument(this.docIndex(i), input.value)
       this.sig = ''
       this.render()
       // Au clavier (F2), retour sur l'onglet ; sinon, on écrit dans le document
@@ -286,21 +308,30 @@ export class DocTabs {
 
   private menu(i: number, anchor: HTMLElement): void {
     closePopovers()
-    const n = this.app.documents.length
+    const tabs = this.app.tabs
+    const d = tabs[i]
+    if (!d) return
+    const n = tabs.length
     const ro = this.app.reading
+    const sep = () => h('div', { class: 'fp-pop__sep', role: 'separator' })
     const items = [
       popItem(t('docs.rename'), () => this.startRename(i), { 'data-doc-action': 'rename', disabled: ro }),
-      popItem(t('docs.duplicate'), () => void this.app.duplicateDocument(i), { 'data-doc-action': 'duplicate', disabled: ro }),
-      popItem(t('docs.moveLeft'), () => this.app.moveDocument(i, i - 1), { 'data-doc-action': 'left', disabled: ro || i === 0 }),
-      popItem(t('docs.moveRight'), () => this.app.moveDocument(i, i + 1), { 'data-doc-action': 'right', disabled: ro || i === n - 1 }),
-      popItem(t('docs.delete'), () => this.remove(i), { 'data-doc-action': 'delete', disabled: ro || n < 2 }),
+      popItem(t('docs.duplicate'), () => void this.app.duplicateDocument(this.docIndex(i)), { 'data-doc-action': 'duplicate', disabled: ro }),
+      popItem(t('tree.closeTab'), () => void this.app.closeTab(d.key), { 'data-doc-action': 'close', disabled: n < 2 }),
+      popItem(t('tree.closeOthers'), () => this.app.closeOtherTabs(d.key), { 'data-doc-action': 'close-others', disabled: n < 2 }),
+      popItem(t('tree.reveal'), () => getDocsPane()?.reveal(d.key), { 'data-doc-action': 'reveal' }),
+      sep(),
+      popItem(t('docs.moveLeft'), () => this.app.moveTab(i, i - 1), { 'data-doc-action': 'left', disabled: i === 0 }),
+      popItem(t('docs.moveRight'), () => this.app.moveTab(i, i + 1), { 'data-doc-action': 'right', disabled: i === n - 1 }),
+      sep(),
+      popItem(t('docs.delete'), () => this.remove(i), { 'data-doc-action': 'delete', disabled: ro || this.app.documents.length < 2 }),
     ]
     new Popover({ anchor, name: 'doc-tab', content: h('div', { class: 'fp-pop__list', role: 'menu' }, ...items) })
   }
 
   /** Supprimer un document (après confirmation), annulable juste après. */
   async remove(i: number): Promise<void> {
-    const d = this.app.documents[i]
+    const d = this.app.tabs[i]
     if (!d || this.app.documents.length < 2) return
     const choice = await openDialog({
       name: 'doc-delete',
@@ -312,7 +343,7 @@ export class DocTabs {
       ],
     }).result
     if (choice !== 'delete') return
-    const undo = this.app.removeDocument(i)
+    const undo = this.app.removeNode(d.key)
     if (undo) toast(t('docs.deleted', { title: d.title }), { kind: 'info', timeout: 10000, action: { label: t('menu.undo'), run: undo } })
   }
 }

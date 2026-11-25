@@ -8,7 +8,7 @@ import { capturePdf, type CaptureReport } from '../layout/pdf-capture'
 import { t } from '../i18n/i18n'
 import { toast } from './dialog'
 import { getPageView } from './panels'
-import { askScope, runScoped } from './docscope'
+import { askScope, runScoped, type DocScope } from './docscope'
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
 
@@ -35,7 +35,7 @@ export async function pdfFile(app: FolioApp): Promise<{ name: string; bytes: Uin
       keywords: (meta.keywords as string[]).join(', '),
       lang: (meta.lang as string) || undefined,
     })
-    return { name: app.suggestedFileName().replace(/\.html?$/i, '') + '.pdf', bytes, report }
+    return { name: app.exportFileName().replace(/\.html?$/i, '') + '.pdf', bytes, report }
   } finally {
     if (before !== 'page' && !reading) pv.setMode(before)
   }
@@ -44,9 +44,9 @@ export async function pdfFile(app: FolioApp): Promise<{ name: string; bytes: Uin
 let busy = false
 
 /** Fichier → Exporter → PDF, Partager → PDF. */
-export async function exportPdfUi(app: FolioApp): Promise<void> {
+export async function exportPdfUi(app: FolioApp, chosen?: DocScope): Promise<void> {
   if (busy) return
-  const scope = await askScope(app)
+  const scope = chosen ?? (await askScope(app))
   if (!scope) return
   busy = true
   const done = toast(t('pdf.making'), { kind: 'info', timeout: 60000 })

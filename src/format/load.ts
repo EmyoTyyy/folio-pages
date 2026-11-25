@@ -6,6 +6,7 @@
 import { check, DROP, isPlainObject, Report, type Ctx } from './dsl'
 import { locateJsonError, repairJson, type JsonError } from './json'
 import { ensureKeys } from './documents'
+import { buildTree, treeJson, type TreeIssue, type TreeItem } from './tree'
 import { normalizeDoc } from './normalize'
 import { DEFS, LIMITS, VALIDATION_LIMITS } from './spec'
 import type { Block, FolioDoc, NoteInline, ShapeInline } from './types'
@@ -81,14 +82,18 @@ export function loadDocument(input: unknown, opts: LoadOptions = {}): LoadResult
   // Plusieurs documents : chacun se vérifie et se complète à part ; un seul niveau.
   const raw = checked as Record<string, unknown>
   const more = Array.isArray(raw.documents) ? (raw.documents as unknown[]) : []
+  const tree = Array.isArray(raw.tree) ? (raw.tree as TreeItem[]) : undefined
   delete raw.documents
+  delete raw.tree
   const doc = normalizeDoc(raw, report, now, opts.assets)
   if (more.length) {
     const subs: FolioDoc[] = []
     more.forEach((d, i) => {
       if (!isPlainObject(d)) return
       if (Array.isArray(d.documents) && d.documents.length) report.ignore(`documents[${i}].documents`, 'invalid-value', 'documents')
+      if (Array.isArray(d.tree)) report.ignore(`documents[${i}].tree`, 'invalid-value', 'tree')
       delete d.documents
+      delete d.tree
       // Le format est celui du fichier : pas d'avertissement s'il n'est pas répété.
       d.format ??= raw.format
       d.version ??= raw.version
@@ -99,6 +104,15 @@ export function loadDocument(input: unknown, opts: LoadOptions = {}): LoadResult
       const all = [doc, ...subs]
       for (const k of ensureKeys(all)) report.warn('documents', 'invalid-value', `key ${k}`)
     }
+  }
+  // Les dossiers : rangés d'après les clés connues (inconnues ou répétées : ignorées).
+  if (tree?.length) {
+    if (!doc.key) ensureKeys([doc])
+    const issues: TreeIssue[] = []
+    const nodes = buildTree(tree, [doc, ...(doc.documents ?? [])].map((d) => d.key!), issues)
+    for (const x of issues) report.ignore(x.path, x.what === 'unknown-key' || x.what === 'duplicate-key' ? 'invalid-value' : 'too-deep', x.detail)
+    const json = treeJson(nodes)
+    if (json) doc.tree = json
   }
   return { ok: true, doc, report, repaired }
 }

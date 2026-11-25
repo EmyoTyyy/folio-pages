@@ -563,7 +563,7 @@ export function cleanInk(raw: unknown): InkStroke[] {
     if (pts.length < 2) continue
     const color = typeof o.color === 'string' ? parseColor(o.color) : null
     out.push({
-      tool: o.tool === 'highlighter' ? 'highlighter' : 'pen',
+      tool: o.tool === 'highlighter' || o.tool === 'pencil' ? o.tool : 'pen',
       color: color ?? '#1f2937',
       width: typeof o.width === 'number' ? Math.min(40, Math.max(0.25, o.width)) : 2,
       points: pts.map((v) => Math.round(Math.max(-INK_LIMITS.coord, Math.min(INK_LIMITS.coord, v)) * 10) / 10),

@@ -246,7 +246,7 @@ export function startDrawing(app: FolioApp, entry: Entry): void {
 }
 
 /** Une nouvelle forme se pose au-dessus des autres. */
-function nextZ(app: FolioApp): number {
+export function nextZ(app: FolioApp): number {
   const all = allShapes(app.view.state.doc)
   return all.length ? Math.max(...all.map((s) => s.data.z ?? 0)) + 1 : 0
 }
@@ -282,7 +282,7 @@ export function shapesGallery(app: FolioApp, pick?: (e: Entry) => void): HTMLEle
   const section = (title: string, list: Entry[], cat: string) => (list.length ? h('div', { class: 'fp-shapes__cat', 'data-cat': cat }, h('div', { class: 'fp-shapes__title' }, title), h('div', { class: 'fp-shapes__grid', role: 'group', 'aria-label': title }, ...list.map(tile))) : null)
   const rec = recent().map((k) => ENTRIES.find((e) => e.key === k)!).filter(Boolean)
   const cats = SHAPE_CATEGORIES.map((c) => section(t(`shape.cat.${c}` as Key), ENTRIES.filter((e) => (c === 'lines' ? isLineKind(e.kind) : !isLineKind(e.kind) && catOf(e) === c)), c))
-  return h('div', { class: 'fp-shapes', role: 'menu', 'aria-label': t('rb.shapes') }, ...([section(t('shape.cat.recent'), rec, 'recent'), ...cats].filter(Boolean) as HTMLElement[]))
+  return h('div', { class: 'fp-shapes', role: 'menu', 'aria-label': t('rb.shapes'), 'data-scrolls': '' }, ...([section(t('shape.cat.recent'), rec, 'recent'), ...cats].filter(Boolean) as HTMLElement[]))
 }
 
 // --- zones de texte prêtes ------------------------------------------------------------------

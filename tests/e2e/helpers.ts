@@ -200,6 +200,13 @@ export async function tab(page: Page, id: string): Promise<void> {
 
 /** Clique une commande du ruban (dans l'onglet visible). */
 export async function rb(page: Page, cmd: string): Promise<void> {
+  // Ruban trop étroit : le groupe est replié, on l'ouvre d'abord.
+  const folded = page.locator(`.fp-rb-group.is-folded:has([data-cmd="${cmd}"])`)
+  if (await folded.count()) {
+    await folded.first().locator('.fp-rb-fold').click()
+    await page.locator(`.fp-rb-flyout [data-cmd="${cmd}"]`).first().click()
+    return
+  }
   await page.locator(`.fp-ribbon [data-cmd="${cmd}"]`).first().click()
 }
 

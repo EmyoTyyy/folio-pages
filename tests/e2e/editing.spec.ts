@@ -209,8 +209,9 @@ test('nouveau document vide : ni en-tête, ni pied de page, ni filigrane ; annul
 
 test('nouveau document vide sur la démonstration, après l’ajout d’un autre document', async ({ page }) => {
   await openEditor(page, pathToFileURL(BLANK).href)
+  await page.locator('#fp-docs-toggle').click()
   await page.locator('#fp-doc-add').click()
-  await page.locator('[data-doc-rename]').press('Enter')
+  await page.locator('[data-tree-rename]').press('Enter')
   await page.locator('.fp-doctab').first().click()
   await expect(page.locator('#fp-title')).toHaveValue('Bienvenue dans Folio Pages')
   await page.locator('[data-menu="file"]').click()

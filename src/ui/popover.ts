@@ -46,6 +46,9 @@ export class Popover {
     this.el = h('div', { class: 'fp-popover', role: 'dialog', 'data-popover': o.name })
     // Ouverte depuis la barre du menu contextuel : au-dessus du menu.
     if (o.anchor.closest('.fp-ctx-mini--floating')) this.el.classList.add('fp-popover--over-menu')
+    // Un contenu qui défile lui-même (galerie des formes) : la fenêtre, elle, ne défile pas
+    // (sinon deux barres de défilement l'une dans l'autre).
+    if (o.content.hasAttribute('data-scrolls')) this.el.classList.add('fp-popover--inner-scroll')
     this.el.append(o.content)
     document.body.append(this.el)
     this.place()

@@ -1947,13 +1947,7 @@ export async function versionsDialog(app: FolioApp): Promise<void> {
 export async function openRecognized(app: FolioApp, o: Opened): Promise<void> {
   if (o.kind === 'encrypted' && o.envelope) return openProtected(app, o.name, o.envelope, o.handle)
   if (o.kind !== 'document') {
-    const msg =
-      o.kind === 'broken'
-        ? t('open.broken', { name: o.name, line: String(o.error.line) })
-        : o.kind === 'docx-failed'
-          ? t(`open.docx.${o.code}` as Key, { name: o.name })
-          : t(`open.${o.kind === 'blank-app' ? 'blankApp' : o.kind === 'too-large' ? 'tooLarge' : o.kind}` as Key, { name: o.name })
-    toast(msg, { kind: o.kind === 'blank-app' ? 'info' : 'error', timeout: 9000 })
+    toast(openFailure(o), { kind: o.kind === 'blank-app' ? 'info' : 'error', timeout: 9000 })
     return
   }
   pageView?.closeEditor()
@@ -1963,8 +1957,24 @@ export async function openRecognized(app: FolioApp, o: Opened): Promise<void> {
   else toast(t(o.imported ? 'open.imported' : 'open.opened', { name: o.name }), { kind: 'success' })
 }
 
+/** Pourquoi un fichier ne s'ouvre pas comme document. */
+export function openFailure(o: Exclude<Opened, { kind: 'document' }>): string {
+  if (o.kind === 'broken') return t('open.broken', { name: o.name, line: String(o.error.line) })
+  if (o.kind === 'docx-failed') return t(`open.docx.${o.code}` as Key, { name: o.name })
+  return t(`open.${o.kind === 'blank-app' ? 'blankApp' : o.kind === 'too-large' ? 'tooLarge' : o.kind}` as Key, { name: o.name })
+}
+
 /** Un document protégé ouvert par Ctrl+O (ou déposé) : son mot de passe, puis le document. */
 async function openProtected(app: FolioApp, name: string, env: Envelope, handle: FsHandle | null): Promise<void> {
+  const got = await askPassword(name, env)
+  if (!got) return
+  pageView?.closeEditor()
+  if (!(await app.openDocument(got.doc, { handle, name, report: got.report, password: got.password }))) return
+  toast(t('open.opened', { name }), { kind: 'success' })
+}
+
+/** Le mot de passe d'un document protégé, puis son contenu ; null si l'on renonce. */
+export async function askPassword(name: string, env: Envelope): Promise<{ doc: FolioDoc; report: Report; password: string } | null> {
   const input = h('input', { type: 'password', class: 'fp-input', 'data-field': 'password', autocomplete: 'current-password', 'aria-label': t('protect.password') }) as HTMLInputElement
   const error = h('p', { class: 'fp-field-error', role: 'alert' })
   let opened: { doc: FolioDoc; report: Report; password: string } | null = null
@@ -2000,10 +2010,7 @@ async function openProtected(app: FolioApp, name: string, env: Envelope, handle:
     ],
   }).result
   const got = opened as { doc: FolioDoc; report: Report; password: string } | null
-  if (choice !== 'ok' || !got) return
-  pageView?.closeEditor()
-  if (!(await app.openDocument(got.doc, { handle, name, report: got.report, password: got.password }))) return
-  toast(t('open.opened', { name }), { kind: 'success' })
+  return choice === 'ok' ? got : null
 }
 
 /** Fichier → Ouvrir… (Ctrl+O) */
@@ -2091,7 +2098,7 @@ export async function docxFile(app: FolioApp): Promise<{ name: string; res: { by
     toast(t('docx.export.module'), { kind: 'error', timeout: 9000 })
     return null
   }
-  const name = app.suggestedFileName().replace(/\.html?$/i, '') + '.docx'
+  const name = app.exportFileName().replace(/\.html?$/i, '') + '.docx'
   const info = app.pagesInfo
   const res = await mod.exportDocx(app.getDoc(), {
     filename: name,
