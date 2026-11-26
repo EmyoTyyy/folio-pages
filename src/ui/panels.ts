@@ -40,7 +40,10 @@ import { Report } from '../format/dsl'
 import type { FsHandle } from '../file/save'
 import { normalizePage } from '../format/normalize'
 import { pageLabel } from '../layout/paginate'
-import { formatDate, lang, t } from '../i18n/i18n'
+import { baseLang, formatDate, lang, t } from '../i18n/i18n'
+import { cheatSheet, cheatSheetDocument, keyLabel } from '../help/cheatsheet'
+import { APP_VERSION } from '../update'
+import { openInNewTab } from './mailings'
 import type { Key } from '../i18n/dict'
 import { settings, updateSettings } from '../settings'
 import { openDialog, toast } from './dialog'
@@ -1383,31 +1386,57 @@ export function wordCountDialog(app: FolioApp): void {
   statsDialog(app)
 }
 
+/**
+ * Aide-mémoire (F1, ?) : les raccourcis, la saisie rapide et les astuces, avec
+ * une recherche ; on peut l'imprimer (un document Folio Pages de deux pages,
+ * ouvert dans un nouvel onglet) ou l'ouvrir comme document.
+ */
 export function shortcutsDialog(): void {
-  const mod = isMac() ? '⌘' : 'Ctrl'
-  const shift = t('key.shift')
-  const groups: [Key, [string, Key][]][] = [
-    ['shortcuts.text', [[`${mod}+B`, 'ribbon.bold'], [`${mod}+I`, 'ribbon.italic'], [`${mod}+U`, 'ribbon.underline'], [`${mod}+${shift}+X`, 'ribbon.strike'], [`${mod}+.`, 'ribbon.sup'], [`${mod}+,`, 'ribbon.sub'], [`${mod}+${shift}+>`, 'ribbon.grow'], [`${mod}+${shift}+<`, 'ribbon.shrink'], [`${shift}+F3`, 'ribbon.case'], [`${mod}+\\`, 'ribbon.clear'], [`${mod}+K`, 'ribbon.link']]],
-    ['shortcuts.paragraph', [[`${mod}+Alt+1…6`, 'shortcuts.headings'], [`${mod}+Alt+0`, 'style.normal'], [`${mod}+${shift}+L / E / R / J`, 'shortcuts.align'], [`${mod}+${shift}+8`, 'ribbon.bullets'], [`${mod}+${shift}+7`, 'ribbon.numbers'], ['Tab / ' + `${shift}+Tab`, 'shortcuts.listLevel'], [`${shift}+${t('key.enter')}`, 'shortcuts.lineBreak'], [`${mod}+${t('key.enter')}`, 'ribbon.pageBreak'], [`${mod}+Alt+F`, 'note.insertFoot'], [`${mod}+Alt+D`, 'note.insertEnd'], ['Alt+=', 'ribbon.equation'], ['$…$ · $$…$$', 'shortcuts.mathTyping']]],
-    ['shortcuts.editing', [[`${mod}+Z`, 'menu.undo'], [`${mod}+Y`, 'menu.redo'], [`${mod}+F`, 'menu.find'], [`${mod}+H`, 'menu.replace'], [`${mod}+${shift}+V`, 'menu.pastePlain'], [`${mod}+Alt+C / V`, 'ribbon.painter'], [`${mod}+S`, 'menu.save'], [`${mod}+O`, 'open.menu'], [`${mod}+Alt+M`, 'comment.new'], [`${mod}+0`, 'shortcuts.zoomReset'], [`${mod}+${t('key.wheel')}`, 'ribbon.zoom'], [`${mod}+${t('shortcuts.click')}`, 'ctx.openLink'], [`${shift}+F10`, 'ctx.label'], ['F1 · ?', 'menu.shortcuts']]],
-  ]
-  const tips: Key[] = ['tips.markdown', 'tips.fields', 'tips.escape', 'tips.styles', 'tips.images', 'tips.ai', 'tips.math', 'tips.contextMenu']
+  const language = baseLang()
+  const mac = isMac()
+  const sheet = cheatSheet(language)
+  const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const search = h('input', { type: 'search', class: 'fp-input fp-cheat__search', 'data-field': 'cheat-search', placeholder: t('cheat.search'), 'aria-label': t('cheat.search') }) as HTMLInputElement
+  const rowsEls: { el: HTMLElement[]; hay: string; section: HTMLElement }[] = []
+  const sections = sheet.sections.map((sec) => {
+    const dl = h('dl', { class: 'fp-keys' })
+    const el = h('section', { class: 'fp-cheat__section', 'data-cheat': sec.id }, h('h3', { class: 'fp-form__title' }, sec.title), dl)
+    for (const r of sec.rows) {
+      const shown = r.keys ? r.keys.map((c) => keyLabel(c, language, mac)) : r.type!
+      const lead = h('dt', {}, ...shown.flatMap((x, i) => [...(i ? [h('span', { class: 'fp-cheat__or' }, ' / ')] : []), h(r.keys ? 'kbd' : 'code', {}, x)]))
+      const dd = h('dd', {}, r.text)
+      dl.append(lead, dd)
+      rowsEls.push({ el: [lead, dd], hay: norm(`${shown.join(' ')} ${r.text} ${sec.title}`), section: el })
+    }
+    return el
+  })
+  const tips = h('section', { class: 'fp-cheat__section fp-cheat__tips', 'data-cheat': 'tips' }, h('h3', { class: 'fp-form__title' }, sheet.tipsTitle), h('ul', { class: 'fp-tips' }, ...sheet.tips.map((x) => h('li', {}, x))))
+  const empty = h('p', { class: 'fp-muted', 'data-field': 'cheat-empty', hidden: '' }, t('cheat.none'))
+  const filter = () => {
+    const q = norm(search.value.trim())
+    for (const r of rowsEls) for (const e of r.el) e.hidden = !!q && !r.hay.includes(q)
+    for (const sec of sections) sec.hidden = !!q && !rowsEls.some((r) => r.section === sec && !r.el[0].hidden)
+    tips.hidden = !!q && !norm(sheet.tips.join(' ')).includes(q)
+    for (const li of tips.querySelectorAll('li')) li.hidden = !!q && !norm(li.textContent ?? '').includes(q)
+    empty.hidden = !q || sections.some((x) => !x.hidden) || !tips.hidden
+  }
+  search.addEventListener('input', filter)
+  const asDocument = (print: boolean) => {
+    const doc = cheatSheetDocument(language, mac, APP_VERSION)
+    const how = openInNewTab(doc, `${doc.meta.title}.html`, print)
+    if (how === 'download') toast(t('cheat.downloaded'), { kind: 'info' })
+  }
   openDialog({
     name: 'shortcuts',
-    title: t('menu.shortcuts'),
+    title: sheet.title,
     wide: true,
-    body: [
-      h(
-        'div',
-        { class: 'fp-shortcuts' },
-        ...groups.map(([title, rows]) =>
-          h('section', {}, h('h3', { class: 'fp-form__title' }, t(title)), h('dl', { class: 'fp-keys' }, ...rows.flatMap(([k, label]) => [h('dt', {}, h('kbd', {}, k)), h('dd', {}, t(label))]))),
-        ),
-      ),
-      h('h3', { class: 'fp-form__title' }, t('shortcuts.tips')),
-      h('ul', { class: 'fp-tips' }, ...tips.map((k) => h('li', {}, t(k)))),
+    focus: search,
+    body: [search, h('div', { class: 'fp-cheat' }, ...sections, tips), empty],
+    actions: [
+      { label: t('cheat.open'), value: 'open', run: () => asDocument(false) },
+      { label: t('cheat.print'), value: 'print', run: () => asDocument(true) },
+      { label: t('action.close'), value: 'close', primary: true },
     ],
-    actions: [{ label: t('action.close'), value: 'close', primary: true }],
   })
 }
 

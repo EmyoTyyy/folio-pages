@@ -38,7 +38,7 @@ While you write, a backup copy is kept **in your browser only**. If the tab or
 the browser closes before you save, reopen the file: Folio Pages offers to
 restore the changes, and warns you if the backup is older than the file.
 
-## What it does (version 0.17)
+## What it does (version 0.18)
 
 - **A ribbon**: File first, then Home, Insert, Design, Layout, References,
   Mailings, Review, View, AI and Help, with contextual Table, Picture Format and
@@ -329,7 +329,20 @@ restore the changes, and warns you if the backup is older than the file.
 - **Also**: code blocks with syntax highlighting, links, special characters,
   page breaks, fields (`{{page}}`, `{{title}}`, `{{date:DD/MM/YYYY}}`…),
   Markdown as you type and on paste, paste without formatting, find and replace
-  with regular expressions (or only in highlighted text), word count, zoom, and a shortcuts window (<kbd>?</kbd> or <kbd>F1</kbd>).
+  with regular expressions (or only in highlighted text), word count, zoom.
+- **Cheat sheet (new in 0.18)**: <kbd>F1</kbd> or <kbd>?</kbd> opens every
+  keyboard shortcut, Markdown typing, field and formula, with tips and a search
+  box; **Print…** gives a two-page landscape cheat sheet (itself a Folio Pages
+  document), and `folio-pages.html#cheat-sheet` opens it directly. New
+  shortcuts, picked to be easy to remember: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>H</kbd>
+  highlight, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>9</kbd> check list (after 7
+  numbered and 8 bulleted), <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>
+  non-breaking space, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> column
+  break, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> / <kbd>T</kbd> / <kbd>P</kbd>
+  date, time and page number fields, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd>
+  table, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd> picture,
+  <kbd>Alt</kbd>+<kbd>Page Down</kbd> / <kbd>Page Up</kbd> next or previous
+  document.
 
 ## Asking an AI for a document
 

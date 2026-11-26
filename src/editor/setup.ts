@@ -19,7 +19,10 @@ import {
   applyStyle,
   changeCase,
   clearFormatting,
+  insertColumnBreak,
+  insertField,
   insertPageBreak,
+  insertText,
   outdentListItem,
   setAlign,
   stepFontSize,
@@ -153,7 +156,7 @@ export interface EditorContext {
   /** Graphiques : modification. */
   chart?: ChartHooks
   /** Raccourcis de l'application traités hors de l'éditeur (Ctrl+K, Ctrl+F…). */
-  onShortcut?: (name: 'link' | 'find' | 'replace' | 'painter-copy' | 'painter-paste' | 'footnote' | 'endnote' | 'comment' | 'equation' | 'mark-entry' | 'mark-citation' | 'bookmark' | 'thesaurus' | 'goto' | 'snippet' | 'define-term') => boolean
+  onShortcut?: (name: 'link' | 'find' | 'replace' | 'painter-copy' | 'painter-paste' | 'footnote' | 'endnote' | 'comment' | 'equation' | 'mark-entry' | 'mark-citation' | 'bookmark' | 'thesaurus' | 'goto' | 'snippet' | 'define-term' | 'highlight' | 'table' | 'picture') => boolean
 }
 
 export function editorPlugins(ctx?: EditorContext): Plugin[] {
@@ -204,6 +207,23 @@ export function editorPlugins(ctx?: EditorContext): Plugin[] {
       'Mod-Alt-6': applyStyle('heading6'),
       'Mod-Shift-7': toggleList('number'),
       'Mod-Shift-8': toggleList('bullet'),
+      // 7 numérotée, 8 à puces, 9 cases à cocher.
+      'Mod-Shift-9': toggleList('check'),
+      // H comme « highlight » : le surligneur (de la dernière couleur), ou l'enlever.
+      'Mod-Alt-h': shortcut('highlight'),
+      // T comme tableau, I comme image.
+      'Mod-Alt-t': shortcut('table'),
+      'Mod-Alt-i': shortcut('picture'),
+      // Espace insécable ; saut de colonne (à côté du saut de page, Ctrl+Entrée).
+      'Mod-Shift-Space': insertText('\u00a0'),
+      'Mod-Shift-Enter': insertColumnBreak,
+      // Champs : D comme date, T comme time (heure), P comme page.
+      'Alt-Shift-d': insertField('date'),
+      'Alt-Shift-D': insertField('date'),
+      'Alt-Shift-t': insertField('time'),
+      'Alt-Shift-T': insertField('time'),
+      'Alt-Shift-p': insertField('page'),
+      'Alt-Shift-P': insertField('page'),
       'Mod-\\': clearFormatting,
       'Mod-Space': clearFormatting,
       'Mod-Shift-.': (s, d) => stepFontSize(1, ctx?.styles() ?? {})(s, d),

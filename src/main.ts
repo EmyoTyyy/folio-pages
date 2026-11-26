@@ -14,6 +14,9 @@ import './ui/styles.css'
 import { publishApi, publishRefusal } from './api'
 import { FolioApp, type AppInit } from './app'
 import { demoDocument } from './demo/demo'
+import { cheatSheetDocument } from './help/cheatsheet'
+import { isMac } from './ui/dom'
+import { APP_VERSION } from './update'
 import { loadDocument } from './format/load'
 import { recoverText } from './format/recover'
 import { makeDoc } from './format/doc'
@@ -75,6 +78,11 @@ function boot(): void {
   document.documentElement.lang = lang()
 
   if (raw === null || raw === '') {
+    // « folio-pages.html#cheat-sheet » (lien du site) : l'aide-mémoire, prêt à lire ou à imprimer.
+    if (location.hash === '#cheat-sheet') {
+      start({ doc: cheatSheetDocument(baseLang(), isMac(), APP_VERSION), boot: 'template', report: null })
+      return
+    }
     start({ doc: demoDocument(baseLang()), boot: 'blank', report: null })
     return
   }

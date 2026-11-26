@@ -8746,3 +8746,51 @@ body.fp-shape-dragging * {
   height: 1px;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------- aide-mémoire --- */
+
+.fp-cheat__search {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.fp-dialog[data-dialog='shortcuts'] {
+  width: min(1080px, calc(100vw - 32px));
+}
+.fp-cheat {
+  columns: 3 290px;
+  column-gap: 30px;
+}
+.fp-cheat__section {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+.fp-cheat__section .fp-form__title {
+  margin-top: 0;
+}
+.fp-cheat__section[hidden],
+.fp-cheat [hidden] {
+  display: none;
+}
+.fp-cheat .fp-keys {
+  grid-template-columns: minmax(0, 46%) 1fr;
+  gap: 5px 10px;
+  font-size: 12.5px;
+}
+.fp-cheat .fp-keys dt {
+  white-space: normal;
+}
+.fp-cheat code {
+  font-family: var(--fp-mono);
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--fp-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.fp-cheat kbd {
+  white-space: normal;
+}
+.fp-cheat__or {
+  color: var(--fp-text-dim);
+}

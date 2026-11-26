@@ -18,6 +18,8 @@ import {
   type CaseMode,
 } from '../editor/commands'
 import { stats } from '../editor/stats'
+import { insertTable, markValue, setMark } from '../editor/commands'
+import { schema } from '../editor/schema'
 import type { Key } from '../i18n/dict'
 import { availableLanguages, baseLang, lang, onLangChange, setLang, t } from '../i18n/i18n'
 import { demoDocument } from '../demo/demo'
@@ -745,6 +747,18 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
       case 'define-term':
         GL.defineTermDialog(app)
         return true
+      case 'highlight': {
+        // Comme le bouton du surligneur ; sur du texte déjà surligné, l'enlève.
+        const on = markValue(app.state, schema.marks.highlight, 'value')
+        app.run(setMark(schema.marks.highlight, on ? null : { value: P.lastColor.highlight }))
+        return true
+      }
+      case 'table':
+        // Un tableau de 3 × 3 avec sa ligne d'en-tête (le ruban propose d'autres tailles).
+        return app.run(insertTable(3, 3))
+      case 'picture':
+        P.pickImage(app)
+        return true
     }
     return false
   }
@@ -783,6 +797,17 @@ function attachChrome(app: FolioApp, root: HTMLElement, canvas: HTMLElement, zoo
       return
     }
     if (isDialogOpen()) return
+    // Alt+Page suivante / précédente : l'onglet de document suivant ou précédent.
+    if (e.altKey && !mod && !e.shiftKey && (e.key === 'PageDown' || e.key === 'PageUp')) {
+      const tabs = app.tabs
+      if (tabs.length < 2) return
+      e.preventDefault()
+      const i = tabs.findIndex((d) => d.active)
+      const next = tabs[(i + (e.key === 'PageDown' ? 1 : tabs.length - 1)) % tabs.length]
+      app.switchToKey(next.key)
+      app.focus()
+      return
+    }
     if (mod && !e.altKey && !e.shiftKey && k === 'p') {
       e.preventDefault()
       printDialog(app)

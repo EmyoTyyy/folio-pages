@@ -9,7 +9,7 @@ import { EditorState, Plugin, TextSelection } from 'prosemirror-state'
 import { finalSlice } from '../editor/paste'
 import { EditorView } from 'prosemirror-view'
 import type { FolioApp } from '../app'
-import { setAlign, toggleFlag } from '../editor/commands'
+import { insertField, insertText, setAlign, toggleFlag } from '../editor/commands'
 import { blocksToPM, pmToBlocks } from '../editor/convert'
 import { markdownInputRules } from '../editor/inputrules'
 import { schema } from '../editor/schema'
@@ -72,6 +72,14 @@ export class HeaderFooterEditor {
           'Mod-Alt-f': () => app.onShortcut?.('footnote') ?? true,
           'Mod-Alt-d': () => app.onShortcut?.('endnote') ?? true,
           'Mod-Alt-m': () => app.onShortcut?.('comment') ?? true,
+          // Les champs, utiles surtout ici : la page (P), la date (D), l'heure (T).
+          'Alt-Shift-p': insertField('page'),
+          'Alt-Shift-P': insertField('page'),
+          'Alt-Shift-d': insertField('date'),
+          'Alt-Shift-D': insertField('date'),
+          'Alt-Shift-t': insertField('time'),
+          'Alt-Shift-T': insertField('time'),
+          'Mod-Shift-Space': insertText('\u00a0'),
           Escape: () => {
             this.close()
             this.io.onEscape?.()
